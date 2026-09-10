@@ -122,9 +122,10 @@ session, and cannot hand work to a different agent or a future one. The ledger
 is inspectable, editable, portable, and versioned.
 
 The ledger is also the handoff. Because the protocol is the same for every
-session, the prompt that resumes an initiative never changes: run
-`/grind:start`, or start in its folder or a pointed checkout and follow the
-installed Grind protocol. No per-session handoff document is written.
+session, context can be loaded with `/grind:context` or automatically from an
+initiative folder or associated checkout. Accompany it with the current request;
+use `/grind:start` to enter execution and resume work. No per-session handoff
+document is written.
 
 
 ## Proportionate execution
@@ -166,9 +167,9 @@ implement the fix.
 
 Notes are the user's review of the working tree, written while the agent was
 not looking. The agent reads them when the user says so, and checks every
-clone and worktree in `Tracking` for pending notes at session start. Pending
-notes are the user's most recent input and are handled before the recorded
-next action is resumed.
+clone and worktree in `Tracking` for pending notes during context loading.
+Loading context surfaces notes without processing them. Handle them when the
+user asks or before resuming execution, respecting the user's current instruction.
 
 Processing the notes in a sidecar:
 
@@ -192,29 +193,46 @@ it does not automatically commit unfinished application code.
 
 ## Session-start protocol
 
-Use the nearest enclosing `grind-workspace.config`, or an explicit workspace path
-when outside that boundary. Resolve the initiative from the requested identifier,
-the initiative working directory, or a checkout's verified `.initiative.md` pointer.
-If the pointer disagrees with Git, resolve ownership from unarchived Tracking
-records; stop on ambiguity. Small unrelated repository work needs no initiative.
+Load context automatically before responding to substantive work when the session
+begins inside an initiative folder or an associated checkout. Use the same shared
+workflow as `/grind:context [initiative]`. Explicit invocation also selects an
+initiative or refreshes context after external changes. Do not reload every turn.
 
-1. Resolve the initiative and entry mode from an explicit `grind start`, the
-   initiative working directory, or a verified checkout sidecar.
-2. Read the initiative's `intent.md` and `ledger.md`,
-   plus `spec.md` and `plan.md` where they exist.
-3. For an explicit start or initiative-folder entry, check every clone in
-   `Tracking` and perform the preflighted switch-in when necessary. For a
-   checkout entry, verify only that checkout and do not switch the initiative's
-   other repositories automatically.
-4. Check the relevant clones and worktrees for pending sidecar notes. Handle
-   them before continuing.
-5. Inspect the referenced repositories, branches, worktrees, diffs, and recent
-   commits.
-6. Reconcile the ledger with repository reality. If they disagree, trust the
-   repositories and correct the ledger.
-7. Confirm that the recorded next action still follows from the intent,
-   specification, and current code.
-8. Continue from the verified state.
+### Context loading
+
+1. Resolve the workspace from the nearest `grind-workspace.config`, or an explicit
+   workspace path outside that boundary. Resolve the initiative from an explicit
+   identifier, its folder, or a verified checkout pointer. If the pointer disagrees
+   with Git, derive ownership from unarchived Tracking records without rewriting
+   the pointer. Report ambiguity instead of selecting a guess.
+2. Read `intent.md`, `ledger.md`, and available `spec.md` and `plan.md`.
+3. Inspect the tracked repositories, branches, diffs, and recent commits. Report
+   missing checkouts and mismatches as observed state; do not change them.
+4. Surface pending sidecar and parked review notes, the recorded next action, and
+   unresolved decisions. Distinguish notes belonging to the current checkout's
+   branch from the selected initiative when they differ.
+5. Report material discrepancies and use the verified context for the user's
+   accompanying request. A context-only invocation gives a concise orientation
+   and waits for direction; it does not execute the ledger's next action.
+
+Context loading is read-only: do not fetch, switch branches, reopen work, repair
+pointers, process or remove notes, reconcile files, archive initiatives, or save a
+checkpoint. A closed initiative can be read without reopening. With no initiative,
+automatic discovery leaves ordinary work alone; an explicit context request reports
+that none could be resolved. Reading files alone does not earn a ledger update.
+
+### Enter execution
+
+`/grind:start [initiative]` reuses context loading, then explicitly enters execution.
+Preflight the tracked checkouts and use the CLI's supported switch/reopen mechanics.
+Stop if the transition cannot be performed safely or is unavailable. Reinspect
+state after a transition, handle relevant review notes, reconcile the ledger with
+repository reality, and continue from a next action that still follows from the
+intent, specification, and current user instructions.
+
+A substantive request accompanying context loading authorizes that requested work,
+not automatic execution of a different recorded task or unrelated checkout changes.
+Apply the normal work and checkpoint protocols to work actually performed.
 
 ## During-work update policy
 
@@ -281,10 +299,9 @@ An initiative closed for more than 60 days is archived: moved with `git mv` to
 `initiatives/_archive/<scope>/<name>/`, keeping its scope path, and committed.
 Archiving earlier by hand is always allowed.
 
-Nothing runs on a calendar, so the session-start hook is the enforcer: it lists
-closed initiatives past the 60-day mark as ready to archive, and whichever
-session sees the list performs the move. There is no judgment involved, so it
-never goes stale.
+Session-start inspection lists closed initiatives past the 60-day mark as ready
+to archive. Context loading only reports them. Perform eligible moves during an
+execution workflow, not merely because a session opened or context was requested.
 
 An archived initiative is read-only history. Work that resumes on the same
 subject is a new initiative whose `intent.md` links to the archived one, not a
