@@ -59,6 +59,16 @@ home. Split documents when separate decision scopes or reading needs justify it,
 not to prepopulate a roadmap. Link visual designs, research, schemas, and other
 supporting artifacts, explaining whether they are authoritative or exploratory.
 
+### Paths in artifacts
+
+Describe filesystem locations in artifact content relative to the workspace root,
+using `.` for the root itself. For example, write `grind` and
+`yyu-dev/grind-state`, not machine-specific absolute paths or home-directory paths.
+This keeps records portable across checkouts and machines. Markdown link targets
+remain relative to the containing document so they resolve normally. Structured
+fields retain their explicitly defined bases, such as initiative-relative worktree
+paths and repository-relative approval paths; do not change their interpretation.
+
 ### Frontmatter and interoperability
 
 Every non-index Markdown artifact has YAML frontmatter with a nonempty `type`.
