@@ -27,23 +27,85 @@ initiative: overall outcome
 ```
 
 An initiative starts the moment an idea is worth writing down. `grind create`
-creates `intent.md` and `ledger.md`; `spec.md` and `plan.md` appear only as the
-work earns them.
+creates `index.md`, `intent.md`, and `ledger.md`; specifications, plans, and
+supporting artifacts appear as the work earns them.
 
 
 ## Initiative artifacts
 
-`intent.md` and `ledger.md` are required. `spec.md` and `plan.md` are optional
-and appear when the work needs them. Optional means absent until relevant, not
-temporarily embedded in `intent.md`; each artifact keeps the same responsibility
-throughout the initiative.
+`index.md`, `intent.md`, and one `ledger.md` are required at the initiative root.
+`intent.md` remains the discovery marker. Specifications and plans may use any
+filename and split by milestone or another coherent decision scope. Nested indexes
+organize documents; they do not create nested initiatives.
 
-| Artifact | Question it answers |
+| Type | Question it answers |
 |---|---|
-| `intent.md` | Why are we doing this, and what outcome do we want? |
-| `spec.md` | What behaviour and technical solution have we agreed to build? |
-| `plan.md` | In what order will we implement and verify it? |
-| `ledger.md` | What is true now, and exactly where should work continue? |
+| `Initiative Intent` | Why are we doing this, and what outcome do we want? |
+| `Specification` | What behaviour and technical solution are proposed or agreed? |
+| `Implementation Plan` | In what order will we implement and verify it? |
+| `Initiative Ledger` | What is true now, and exactly where should work continue? |
+
+### Index and document scope
+
+`index.md` links to authoritative documents and explains each one's scope. It
+identifies shared constraints to read on every context load and links to optional
+nested indexes. Keep it current when documents are added, moved, or removed. It
+contains navigation, not duplicated status or checkpoint information.
+
+A top-level specification owns shared contracts; milestone specifications reference
+them and own their local contracts. A top-level plan owns milestone sequencing and
+dependencies; milestone plans own execution detail. Each rule has one authoritative
+home. Split documents when separate decision scopes or reading needs justify it,
+not to prepopulate a roadmap. Link visual designs, research, schemas, and other
+supporting artifacts, explaining whether they are authoritative or exploratory.
+
+### Frontmatter and interoperability
+
+Every non-index Markdown artifact has YAML frontmatter with a nonempty `type`.
+Use the four canonical types above for core roles. Supporting documents may use
+other descriptive types, such as `Visual Design` or `Research`; readers tolerate
+unknown types. Non-Markdown assets are linked resources. Filenames and paths do
+not determine the role of a specification or plan.
+
+Use standard OKF fields for document metadata: optional `title`, `description`,
+`tags`, `sources`, `generated`, `verified`, and document maturity `status`.
+Grind workflow fields belong under `grind`. Move structured facts into frontmatter
+rather than retaining a second authoritative copy in the body. The ledger owns
+initiative status, phase, current task, next action, and repository tracking;
+other documents must not duplicate those fields.
+
+Keep explanations and durable history in Markdown. Preserve unknown frontmatter
+keys and unrelated content during edits. Existing artifacts without frontmatter
+remain readable during migration; report missing metadata and migrate explicitly,
+never during context loading. Malformed optional metadata is diagnostic; malformed
+required Grind state prevents a mutating operation. A save does not normalize
+metadata or imply approval or verification.
+
+Indexes contain navigation without frontmatter, except that a bundle-root index
+may declare `okf_version`. This protocol does not yet declare the entire state tree
+an OKF bundle: its boundary, auxiliary Markdown, and disposable worktree exclusions
+must be defined before claiming full bundle compatibility.
+
+### Document approval and verification
+
+Approval is optional and records explicit human agreement to a document's proposed
+direction or contract. Do not infer it from `type`, document maturity, a save, or
+factual verification. Do not require approval for routine plans or ledger updates.
+Split a document by coherent decision scope when parts need independent approval;
+partial agreement does not approve an entire document.
+
+Record document approval under `grind.approvals`, identifying the human, time,
+and exact previously committed document revision and path. The reviewed revision
+precedes the commit recording approval, avoiding a self-referential commit hash.
+Preserve historical approvals after edits. Report changes since the approved
+revision; the agent explains whether substantive changes need renewed agreement.
+A changed revision alone is not an automatic execution block. Unavailable revision
+history means approval coverage cannot be established, not that it is current.
+
+`verified` records checking claims against evidence; it does not authorize
+implementation. Generation describes meaningful content production, not every save.
+Neither an earlier approval nor a verification event automatically covers later
+content. Do not invent human identities, approval events, or verification evidence.
 
 ### `intent.md`
 
@@ -58,10 +120,10 @@ Defines the enduring reason for the work:
 
 Change it only when the purpose or scope changes. Describe the outcome without
 summarising the feature list or prescribing implementation choices. Technical
-design belongs in `spec.md`; execution sequence and validation exercises belong
-in `plan.md`. Link to them when they exist.
+design belongs in specifications; execution sequence and validation exercises belong
+in plans. Link to them when they exist.
 
-### `spec.md`
+### Specifications
 
 Defines the agreed solution, including both intended system behaviour and the
 meaningful technical design needed to implement and review it:
@@ -86,7 +148,7 @@ structure, incidental control flow, or arbitrary library choices. Use examples,
 short signatures, schemas, or pseudocode only when they clarify behaviour,
 contracts, or design.
 
-### `plan.md`
+### Plans
 
 Defines the execution strategy:
 
@@ -101,7 +163,7 @@ Update it when the implementation strategy materially changes.
 A plan identifies outcomes, affected repositories and likely areas,
 constraints, dependencies, risks, edge cases, and verification. It does not
 redefine the solution or contain complete implementation code. Put contracts,
-schemas, and design details in `spec.md`; the plan may link to them and name the
+schemas, and design details in specifications; the plan may link to them and name the
 paths, commands, or checkpoints needed for execution. If code is already known
 well enough to be written verbatim, implement and test it instead of placing it
 in the plan.
@@ -144,7 +206,7 @@ the change belongs to an existing initiative.
 Clarify intent and constraints, compare viable approaches, and obtain approval
 before costly implementation when the direction could materially change.
 Update `intent.md` only if the chosen direction changes the intended outcome or
-scope. Record agreed behaviour and technical design in `spec.md`, creating it
+scope. Record agreed behaviour and technical design in a specification, creating it
 at that point if it does not yet exist.
 
 ### Large or cross-repository work
@@ -167,7 +229,7 @@ implement the fix.
 
 Notes are the user's review of the working tree, written while the agent was
 not looking. The agent reads them when the user says so, and checks every
-clone and worktree in `Tracking` for pending notes during context loading.
+clone and worktree in `grind.repositories` for pending notes during context loading.
 Loading context surfaces notes without processing them. Handle them when the
 user asks or before resuming execution, respecting the user's current instruction.
 
@@ -203,9 +265,12 @@ initiative or refreshes context after external changes. Do not reload every turn
 1. Resolve the workspace from the nearest `grind-workspace.config`, or an explicit
    workspace path outside that boundary. Resolve the initiative from an explicit
    identifier, its folder, or a verified checkout pointer. If the pointer disagrees
-   with Git, derive ownership from unarchived Tracking records without rewriting
+   with Git, derive ownership from unarchived repository tracking records without rewriting
    the pointer. Report ambiguity instead of selecting a guess.
-2. Read `intent.md`, `ledger.md`, and available `spec.md` and `plan.md`.
+2. Read `index.md`, `intent.md`, and `ledger.md`, then the shared constraints
+   identified by the index. Follow links to specifications, plans, supporting
+   artifacts, and approval records relevant to the request or recorded next action.
+   Report missing links or conflicting ownership; do not silently skip constraints.
 3. Inspect the tracked repositories, branches, diffs, and recent commits. Report
    missing checkouts and mismatches as observed state; do not change them.
 4. Surface pending sidecar and parked review notes, the recorded next action, and
@@ -248,10 +313,10 @@ Update the ledger when a meaningful milestone occurs, including:
 Do not update it for routine commands, minor edits, or every conversational
 turn. The aim is a useful checkpoint, not an activity log.
 
-Update `plan.md` when execution strategy changes. Update `spec.md` when the
+Update the relevant plan when execution strategy changes. Update its specification when the
 agreed behaviour or technical solution changes. Update `intent.md` only when
-purpose or scope changes. Create `spec.md` as soon as behaviour, contracts, or
-technical design need to be agreed and preserved; create `plan.md` as soon as
+purpose or scope changes. Create a specification as soon as behaviour, contracts, or
+technical design need to be agreed and preserved; create a plan as soon as
 execution requires meaningful sequencing. Do not stage either kind of content
 inside `intent.md`.
 
@@ -261,11 +326,11 @@ Before yielding control after meaningful work:
 
 1. Inspect repository and Git state again.
 2. Run proportionate validation or record what remains unverified.
-3. Update the mutable resume section with the exact current state and next
-   action.
+3. Update the ledger frontmatter and working-state narrative with the exact
+   current state and next action. Update indexes if document organization changed.
 4. Append durable decisions, discoveries, completed milestones, and open
    questions.
-5. Correct `plan.md`, `spec.md`, or `intent.md` if their corresponding truths
+5. Correct affected plans, specifications, or `intent.md` if their corresponding truths
    changed.
 6. Commit the initiative folder in the state repository, naming the initiative
    and the milestone in the message.
@@ -279,19 +344,20 @@ to preserve.
 
 When the outcome is delivered, or the work is deliberately dropped:
 
-1. Confirm every pull request in `Tracking` is merged or abandoned, and say
+1. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
    which in the ledger.
 2. Remove any worktrees with `git worktree remove` from their repositories and
    delete the `worktrees/` folder. Clones may stay on the initiative's branch
    until the next switch-in moves them.
-3. Set `Status: closed`, add the `Closed:` line, and reduce the resume section
-   to a single line saying where the result lives.
+3. Set `grind.status: closed` and `grind.closed` with the date and outcome.
+   Replace the open execution fields with `grind.result` saying where the result lives.
 4. Commit.
 
 The folder stays where it is. A closed initiative can bounce back through QA
 feedback or a production regression. Running `grind start` on an unarchived
-closed initiative sets `Status: open`, moves the prior `Closed:` marker into
-durable ledger history, and then follows the normal start protocol.
+closed initiative sets `grind.status: open`, moves the prior `grind.closed` and
+result into durable ledger history, restores execution fields, and then follows
+the normal start protocol.
 
 ## Archiving
 
