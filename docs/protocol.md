@@ -78,7 +78,9 @@ unknown types. Non-Markdown assets are linked resources. Filenames and paths do
 not determine the role of a specification or plan.
 
 Use standard OKF fields for document metadata: optional `title`, `description`,
-`tags`, `sources`, `generated`, `verified`, and document maturity `status`.
+`tags`, `sources`, `generated`, and `verified`. Specifications and plans carry no
+`status` field; their maturity derives from approval coverage. Other supporting
+documents may use `status`.
 Grind workflow fields belong under `grind`. Move structured facts into frontmatter
 rather than retaining a second authoritative copy in the body. The ledger owns
 initiative status, phase, current task, next action, and repository tracking;
@@ -111,6 +113,12 @@ Preserve historical approvals after edits. Report changes since the approved
 revision; the agent explains whether substantive changes need renewed agreement.
 A changed revision alone is not an automatic execution block. Unavailable revision
 history means approval coverage cannot be established, not that it is current.
+
+A specification or plan with no approval event is a draft; a current event means
+approved; an outdated event means approved with unreviewed changes. When entering
+execution, state which of these applies to the governing specification and plan
+and, for unreviewed changes, whether they are substantive. Renew approval with
+`grind approve` after the human has reviewed the committed revision.
 
 `verified` records checking claims against evidence; it does not authorize
 implementation. Generation describes meaningful content production, not every save.
