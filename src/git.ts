@@ -40,6 +40,13 @@ export async function gitCurrentBranch(dir: string): Promise<string | null> {
   return branch === '' ? null : branch;
 }
 
+/** Porcelain status lines of the working tree, or null when `dir` is not a repository. */
+export async function gitChangedFiles(dir: string): Promise<string[] | null> {
+  const result = await git(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], dir);
+  if (!result.ok) return null;
+  return result.stdout.split('\n').filter((line) => line !== '');
+}
+
 /** Content of `path` at `commit`, or null when either is unavailable. */
 export async function gitShowFile(
   repoRoot: string,

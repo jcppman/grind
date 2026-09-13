@@ -31,12 +31,12 @@ test('parseArgs separates command, positionals, and options', () => {
 });
 
 test('deferred commands report UNSUPPORTED_OPERATION through the JSON envelope', async () => {
-  const result = await runCli('status', '--json');
+  const result = await runCli('save', '--json');
   assert.equal(result.code, 1);
   const envelope = JSON.parse(result.stdout);
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'UNSUPPORTED_OPERATION');
-  assert.match(envelope.error.message, /1b/);
+  assert.match(envelope.error.message, /1d/);
   assert.match(result.stderr, /not implemented/);
 });
 
@@ -47,4 +47,49 @@ test('unknown commands are usage errors and help exits zero', async () => {
   const help = await runCli('--help');
   assert.equal(help.code, 0);
   assert.match(help.stdout, /Usage: grind/);
+});
+
+import { readFile } from 'node:fs/promises';
+import { makeCheckout, makeTempWorkspace, openLedger, writeInitiative, git } from './test-helpers.ts';
+
+async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: string): Promise<string> {
+  return [
+    await git(ws.stateGitRoot, 'status', '--porcelain'),
+    await git(checkout, 'status', '--porcelain'),
+    await git(checkout, 'symbolic-ref', '--short', 'HEAD'),
+    await readFile(path.join(ws.root, 'grind-state', 'initiatives', 'app', 'x', 'ledger.md'), 'utf8'),
+  ].join('\n---\n');
+}
+
+test('list, status, and start work from different entry directories and leave state unchanged', async () => {
+  const ws = await makeTempWorkspace();
+  try {
+    const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+    const app = await makeCheckout(ws, 'app', 'feature');
+    const before = await snapshot(ws, app);
+
+    const list = await execFileAsync(process.execPath, [CLI, 'list', '--json', '--workspace', ws.root], { encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(list.stdout).data.initiatives.map((i: { id: string }) => i.id), ['app/x']);
+
+    const fromCheckout = await execFileAsync(process.execPath, [CLI, 'status', '--json'], { cwd: app, encoding: 'utf8' });
+    const status = JSON.parse(fromCheckout.stdout);
+    assert.equal(status.ok, true);
+    assert.equal(status.data.inspection.id, 'app/x');
+    assert.equal(status.data.resolution.source, 'branch');
+
+    const fromFolder = await execFileAsync(process.execPath, [CLI, 'status'], { cwd: dir, encoding: 'utf8' });
+    assert.match(fromFolder.stdout, /app\/x {2}\[open\]/);
+    assert.match(fromFolder.stdout, /resolved via folder/);
+
+    const start = await execFileAsync(process.execPath, [CLI, 'start', 'app/x', '--json', '--workspace', ws.root], { cwd: ws.stateGitRoot, encoding: 'utf8' });
+    assert.equal(JSON.parse(start.stdout).data.switched, false);
+
+    const unresolved = await runCli('status', '--workspace', ws.root, '--json');
+    assert.equal(unresolved.code, 1);
+    assert.equal(JSON.parse(unresolved.stdout).error.code, 'INITIATIVE_UNRESOLVED');
+
+    assert.equal(await snapshot(ws, app), before);
+  } finally {
+    await ws.cleanup();
+  }
 });

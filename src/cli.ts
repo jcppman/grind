@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+import { listCommand, startCommand, statusCommand } from './commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
+import { formatList, formatStart, formatStatus } from './format.ts';
+import { loadWorkspace } from './workspace.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
-  list: 'milestone 1 increment 1b',
-  status: 'milestone 1 increment 1b',
-  start: 'milestone 1 increment 1b',
   create: 'milestone 1 increment 1c',
   save: 'milestone 1 increment 1d',
   init: 'a later milestone',
@@ -28,8 +28,9 @@ Options:
   --json              emit one JSON envelope on stdout
   --help              show this help
 
-No lifecycle command is available yet; this build ships the workspace and
-artifact reader only.`;
+This build inspects initiatives (list, status) and enters an open initiative
+whose checkouts already sit on their recorded branches (start). It never
+switches branches, reopens closed work, rewrites sidecars, or commits.`;
 
 export interface ParsedArgs {
   command: string | null;
@@ -68,14 +69,34 @@ export async function run(argv: readonly string[]): Promise<number> {
       return 0;
     }
     const increment = DEFERRED_COMMANDS[args.command];
-    if (increment === undefined) {
+    if (increment !== undefined) {
+      throw new GrindError(
+        'UNSUPPORTED_OPERATION',
+        `"grind ${args.command}" is not implemented yet; it is delivered in ${increment}`,
+        { command: args.command, increment },
+      );
+    }
+    if (!['list', 'status', 'start'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
-    throw new GrindError(
-      'UNSUPPORTED_OPERATION',
-      `"grind ${args.command}" is not implemented yet; it is delivered in ${increment}`,
-      { command: args.command, increment },
-    );
+    if (args.positional.length > (args.command === 'list' ? 0 : 1)) {
+      throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
+    }
+    const cwd = process.cwd();
+    const workspace = await loadWorkspace({ cwd, ...(args.workspace === undefined ? {} : { workspace: args.workspace }) });
+    const context = { workspace, cwd };
+    const identifier = args.positional[0];
+    if (args.command === 'list') {
+      const result = await listCommand(context);
+      emit(json, { ok: true, data: result }, formatList(result));
+    } else if (args.command === 'status') {
+      const result = await statusCommand(context, identifier);
+      emit(json, { ok: true, data: result }, formatStatus(result));
+    } else {
+      const result = await startCommand(context, identifier);
+      emit(json, { ok: true, data: result }, formatStart(result));
+    }
+    return 0;
   } catch (error) {
     const failure =
       error instanceof GrindError

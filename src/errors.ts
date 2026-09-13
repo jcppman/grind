@@ -9,6 +9,8 @@ export type ErrorCode =
   | 'INITIATIVE_AMBIGUOUS'
   | 'PATH_ESCAPE'
   | 'ARTIFACT_INVALID'
+  | 'START_BLOCKED'
+  | 'TRANSITION_UNSUPPORTED'
   | 'GIT_ERROR';
 
 export class GrindError extends Error {
