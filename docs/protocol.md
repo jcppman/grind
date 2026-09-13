@@ -66,8 +66,8 @@ using `.` for the root itself. For example, write `grind` and
 `yyu-dev/grind-state`, not machine-specific absolute paths or home-directory paths.
 This keeps records portable across checkouts and machines. Markdown link targets
 remain relative to the containing document so they resolve normally. Structured
-fields retain their explicitly defined bases, such as initiative-relative worktree
-paths and repository-relative approval paths; do not change their interpretation.
+fields retain their explicitly defined bases, such as repository-relative approval
+paths; do not change their interpretation.
 
 ### Frontmatter and interoperability
 
@@ -93,8 +93,8 @@ metadata or imply approval or verification.
 
 Indexes contain navigation without frontmatter, except that a bundle-root index
 may declare `okf_version`. This protocol does not yet declare the entire state tree
-an OKF bundle: its boundary, auxiliary Markdown, and disposable worktree exclusions
-must be defined before claiming full bundle compatibility.
+an OKF bundle: its boundary and auxiliary Markdown must be defined before claiming
+full bundle compatibility.
 
 ### Document approval and verification
 
@@ -356,9 +356,9 @@ When the outcome is delivered, or the work is deliberately dropped:
 
 1. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
    which in the ledger.
-2. Remove any worktrees with `git worktree remove` from their repositories and
-   delete the `worktrees/` folder. Clones may stay on the initiative's branch
-   until the next switch-in moves them.
+2. Remove any worktrees listed in `grind.repositories` with `git worktree remove`
+   from their repositories. Clones may stay on the initiative's branch until the
+   next switch-in moves them.
 3. Set `grind.status: closed` and `grind.closed` with the date and outcome.
    Replace the open execution fields with `grind.result` saying where the result lives.
 4. Commit.

@@ -68,6 +68,13 @@ export async function resolveIdentifier(
     });
   }
   const dir = await resolveWithin(workspace.initiativesDir, normalized);
+  const lexical = path.join(await realpath(workspace.initiativesDir), ...normalized.split('/'));
+  if (dir !== lexical) {
+    throw new GrindError('PATH_ESCAPE', `Initiative "${identifier}" passes through a symbolic link; links are not allowed beneath initiatives/`, {
+      identifier,
+      resolved: dir,
+    });
+  }
   if (!(await pathExists(path.join(dir, INTENT_FILENAME)))) {
     throw new GrindError('INITIATIVE_NOT_FOUND', `No initiative at initiatives/${normalized} (missing intent.md)`, {
       identifier: normalized,
@@ -162,7 +169,7 @@ async function verifyPointer(
   } catch (error) {
     return { entry: null, reason: (error as Error).message };
   }
-  const record = await readInitiative(entry.dir);
+  const record = await readInitiative(entry.dir, { workspace });
   const state = record.ledgerState?.state ?? null;
   if (state === null) return { entry: null, reason: 'its ledger state is unreadable' };
   const tracked = state.repositories.some(
@@ -180,9 +187,10 @@ export async function branchOwners(
   branch: string,
 ): Promise<InitiativeEntry[]> {
   const owners: InitiativeEntry[] = [];
-  for (const entry of await listInitiatives(workspace.initiativesDir)) {
+  const listing = await listInitiatives(workspace.initiativesDir);
+  for (const entry of listing.entries) {
     if (entry.archived) continue;
-    const record = await readInitiative(entry.dir);
+    const record = await readInitiative(entry.dir, { workspace });
     const repositories = record.ledgerState?.state?.repositories ?? [];
     if (repositories.some((r) => normalizeRepositoryPath(r.path) === repositoryPath && r.branch === branch)) {
       owners.push(entry);

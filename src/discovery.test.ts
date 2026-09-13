@@ -13,11 +13,11 @@ test('leaf rule: intent.md marks an initiative; scope folders and nested indexes
   });
   await writeInitiative(ws, 'givery/dock-web/some-fix');
   await writeInitiative(ws, '_archive/givery/old', { ledger: null });
-  await mkdir(path.join(ws.initiativesDir, 'givery', 'tcm-signin', 'worktrees', 'repo'), { recursive: true });
-  await writeFile(path.join(ws.initiativesDir, 'givery', 'tcm-signin', 'worktrees', 'repo', 'intent.md'), 'x');
   await mkdir(path.join(ws.initiativesDir, 'empty-scope'), { recursive: true });
+  await writeFile(path.join(ws.initiativesDir, 'givery', 'stray.md'), 'not an initiative');
 
-  const entries = await listInitiatives(ws.initiativesDir);
+  const { entries, diagnostics } = await listInitiatives(ws.initiativesDir);
+  assert.deepEqual(diagnostics, []);
   assert.deepEqual(
     entries.map((e) => [e.id, e.archived]),
     [
@@ -28,17 +28,22 @@ test('leaf rule: intent.md marks an initiative; scope folders and nested indexes
   );
 });
 
-test('symlinked initiative folders are listed, not silently dropped', async (t) => {
+test('symbolic links are reported and not followed', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   const real = await writeInitiative(ws, 'app/real');
   await makeSymlink(real, path.join(ws.initiativesDir, 'app', 'alias'));
-  const entries = await listInitiatives(ws.initiativesDir);
-  assert.deepEqual(entries.map((e) => e.id), ['app/alias', 'app/real']);
+  await makeSymlink(ws.root, path.join(ws.initiativesDir, 'escape'));
+  const { entries, diagnostics } = await listInitiatives(ws.initiativesDir);
+  assert.deepEqual(entries.map((e) => e.id), ['app/real']);
+  assert.deepEqual(
+    diagnostics.map((d) => [d.code, path.relative(ws.initiativesDir, d.path ?? '')]).sort(),
+    [['SYMLINK_NOT_ALLOWED', 'app/alias'], ['SYMLINK_NOT_ALLOWED', 'escape']],
+  );
 });
 
 test('missing initiatives directory lists nothing', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
-  assert.deepEqual(await listInitiatives(ws.initiativesDir), []);
+  assert.deepEqual(await listInitiatives(ws.initiativesDir), { entries: [], diagnostics: [] });
 });

@@ -1,5 +1,4 @@
 import { diagnostic, hasErrors, type Diagnostic } from './errors.ts';
-import { WORKTREES_FOLDER } from './discovery.ts';
 import { getString, isRecord, type Frontmatter } from './frontmatter.ts';
 import { isContainedRelativePath, normalizeRepositoryPath } from './paths.ts';
 
@@ -9,7 +8,7 @@ export interface RepositoryEntry {
   /** Workspace-relative path of the repository. */
   path: string;
   branch: string;
-  /** `clone`, or an initiative-relative worktree path. */
+  /** `clone`, or the workspace-relative path of a worktree outside the state directory. */
   checkout: string;
   pull_request: string | null;
 }
@@ -53,8 +52,17 @@ function hasLegacyFields(body: string): boolean {
   return LEGACY_FIELD.test(body) || LEGACY_TRACKING.test(body);
 }
 
+export interface ValidateLedgerOptions {
+  /** Workspace-relative state directory; worktrees recorded beneath it are rejected. */
+  statePathFromWorkspace?: string | null;
+}
+
 /** Validates ledger frontmatter against the shared artifact contract. */
-export function validateLedger(frontmatter: Frontmatter, path: string): LedgerValidation {
+export function validateLedger(
+  frontmatter: Frontmatter,
+  path: string,
+  options: ValidateLedgerOptions = {},
+): LedgerValidation {
   const diagnostics: Diagnostic[] = [];
   const legacyFields = hasLegacyFields(frontmatter.body);
 
@@ -133,10 +141,7 @@ export function validateLedger(frontmatter: Frontmatter, path: string): LedgerVa
     }
   }
 
-  const warn = (code: string, message: string): void => {
-    diagnostics.push(diagnostic('warning', code, message, path));
-  };
-  const repositories = parseRepositories(grind['repositories'], fail, warn);
+  const repositories = parseRepositories(grind['repositories'], fail, options.statePathFromWorkspace ?? null);
 
   if (hasErrors(diagnostics)) {
     return { state: null, legacy: legacyFields, diagnostics };
@@ -155,6 +160,10 @@ export function validateLedger(frontmatter: Frontmatter, path: string): LedgerVa
     legacy: false,
     diagnostics,
   };
+}
+
+function isWithin(prefix: string, candidate: string): boolean {
+  return candidate === prefix || candidate.startsWith(`${prefix}/`);
 }
 
 function parseClosure(
@@ -183,7 +192,7 @@ function parseClosure(
 function parseRepositories(
   value: unknown,
   fail: (code: string, message: string) => void,
-  warn: (code: string, message: string) => void,
+  statePath: string | null,
 ): RepositoryEntry[] | null {
   if (!Array.isArray(value)) {
     fail('INVALID_REPOSITORIES', '`grind.repositories` must be a list (empty when no repository is chosen)');
@@ -211,10 +220,11 @@ function parseRepositories(
       valid = false;
     }
     if (checkout === null || (checkout !== 'clone' && !isContainedRelativePath(checkout))) {
-      fail('INVALID_REPOSITORY_CHECKOUT', `${label}.checkout must be "clone" or an initiative-relative worktree path`);
+      fail('INVALID_REPOSITORY_CHECKOUT', `${label}.checkout must be "clone" or a workspace-relative worktree path`);
       valid = false;
-    } else if (checkout !== 'clone' && !checkout.startsWith(`${WORKTREES_FOLDER}/`)) {
-      warn('WORKTREE_LOCATION', `${label}.checkout should live under the initiative's ${WORKTREES_FOLDER}/ folder`);
+    } else if (checkout !== 'clone' && statePath !== null && isWithin(statePath, normalizeRepositoryPath(checkout))) {
+      fail('CHECKOUT_IN_STATE', `${label}.checkout must not lie inside the state directory ${statePath}`);
+      valid = false;
     }
     if (pullRequest !== undefined && pullRequest !== null && typeof pullRequest !== 'string') {
       fail('INVALID_PULL_REQUEST', `${label}.pull_request must be a string or null`);

@@ -30,6 +30,8 @@ test('identifiers that traverse or escape are rejected', async (t) => {
   const outside = await writeInitiative(ws, '../escaped');
   await makeSymlink(outside, path.join(ws.initiativesDir, 'link'));
   await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'link' }), { code: 'PATH_ESCAPE' });
+  await makeSymlink(path.join(ws.initiativesDir, 'app', 'feature'), path.join(ws.initiativesDir, 'app', 'alias'));
+  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/alias' }), { code: 'PATH_ESCAPE' });
 });
 
 test('enclosing folder resolves from nested milestone directories', async (t) => {

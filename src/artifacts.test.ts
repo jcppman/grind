@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { readInitiative } from './artifacts.ts';
 import { INTENT, makeSymlink, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
+import { loadWorkspace } from './workspace.ts';
 
 const codes = (diags: { code: string }[]) => diags.map((d) => d.code).sort();
 
@@ -18,7 +19,6 @@ test('reads typed split documents and nested indexes, preserving content', async
       'milestones/01/index.md': '# M1\n\n- [Spec](spec.md#section)\n- [Up](../../index.md)\n',
       'milestones/01/spec.md': '---\ntype: Specification\n---\n',
       'milestones/01/design.md': '---\ntype: Visual Design\n---\n',
-      'worktrees/repo/README.md': 'ignored',
     },
   });
   const record = await readInitiative(dir);
@@ -42,15 +42,28 @@ test('reads typed split documents and nested indexes, preserving content', async
   assert.equal(await readFile(path.join(dir, 'spec.md'), 'utf8'), spec);
 });
 
-test('symlinked artifacts are read through the link', async (t) => {
+test('symlinked artifacts are rejected, not read through', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   const dir = await writeInitiative(ws, 'app/linked', { ledger: null });
   const other = await writeInitiative(ws, 'app/source');
   await makeSymlink(path.join(other, 'ledger.md'), path.join(dir, 'ledger.md'));
   const record = await readInitiative(dir);
-  assert.deepEqual(record.diagnostics, []);
-  assert.equal(record.ledgerState?.state?.status, 'open');
+  assert.deepEqual(codes(record.diagnostics), ['MISSING_ARTIFACT', 'SYMLINK_NOT_ALLOWED']);
+  assert.equal(record.ledger, null);
+});
+
+test('a worktree recorded inside the state directory is rejected when the workspace is known', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(() => ws.cleanup());
+  const dir = await writeInitiative(ws, 'app/wt', {
+    ledger: openLedger([{ path: 'app', branch: 'x', checkout: 'grind-state/initiatives/app/wt/worktrees/app' }]),
+  });
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  assert.ok((await readInitiative(dir, { workspace })).diagnostics.some((d) => d.code === 'CHECKOUT_IN_STATE'));
+  assert.deepEqual((await readInitiative(dir)).diagnostics, []);
+  const outside = await writeInitiative(ws, 'app/ok', { ledger: openLedger([{ path: 'app', branch: 'x', checkout: 'worktrees/app' }]) });
+  assert.deepEqual((await readInitiative(outside, { workspace })).diagnostics, []);
 });
 
 test('reports missing required artifacts, broken index links, and missing types', async (t) => {

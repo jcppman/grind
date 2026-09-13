@@ -1,10 +1,10 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { WORKTREES_FOLDER } from './discovery.ts';
 import { diagnostic, type Diagnostic } from './errors.ts';
 import { getString, parseFrontmatter, type Frontmatter } from './frontmatter.ts';
 import { LEDGER_TYPE, validateLedger, type LedgerValidation } from './ledger.ts';
 import { pathExists, toPosix } from './paths.ts';
+import type { Workspace } from './workspace.ts';
 
 export const INTENT_TYPE = 'Initiative Intent';
 export const REQUIRED_ARTIFACTS = ['index.md', 'intent.md', 'ledger.md'] as const;
@@ -31,10 +31,18 @@ export interface InitiativeRecord {
   diagnostics: Diagnostic[];
 }
 
+export interface ReadInitiativeOptions {
+  /** Enables checks that need workspace geometry, such as worktrees inside the state directory. */
+  workspace?: Workspace;
+}
+
 /** Reads every Markdown artifact of an initiative without modifying anything. */
-export async function readInitiative(dir: string): Promise<InitiativeRecord> {
+export async function readInitiative(
+  dir: string,
+  options: ReadInitiativeOptions = {},
+): Promise<InitiativeRecord> {
   const diagnostics: Diagnostic[] = [];
-  const files = await collectMarkdown(dir, dir);
+  const files = await collectMarkdown(dir, diagnostics);
   const documents: ArtifactDocument[] = [];
   for (const file of files) {
     documents.push(await readDocument(dir, file, diagnostics));
@@ -49,7 +57,11 @@ export async function readInitiative(dir: string): Promise<InitiativeRecord> {
   const byRelative = (relative: string): ArtifactDocument | null =>
     documents.find((d) => d.relativePath === relative) ?? null;
   const ledger = byRelative('ledger.md');
-  const ledgerState = ledger ? validateLedger(ledger.frontmatter, ledger.path) : null;
+  const ledgerState = ledger
+    ? validateLedger(ledger.frontmatter, ledger.path, {
+        statePathFromWorkspace: statePathFromWorkspace(options.workspace),
+      })
+    : null;
   if (ledgerState) diagnostics.push(...ledgerState.diagnostics);
   for (const doc of documents) {
     if (doc.role === 'index') diagnostics.push(...(await checkIndexLinks(doc)));
@@ -65,19 +77,25 @@ export async function readInitiative(dir: string): Promise<InitiativeRecord> {
   };
 }
 
-async function collectMarkdown(root: string, dir: string): Promise<string[]> {
+/** Workspace-relative state directory, or null when the state lives outside the workspace. */
+function statePathFromWorkspace(workspace: Workspace | undefined): string | null {
+  if (!workspace) return null;
+  const relative = path.relative(workspace.root, workspace.stateDir);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return toPosix(relative);
+}
+
+async function collectMarkdown(dir: string, diagnostics: Diagnostic[]): Promise<string[]> {
   const result: string[] = [];
   for (const name of await readdir(dir)) {
     const full = path.join(dir, name);
-    let info;
-    try {
-      info = await stat(full);
-    } catch {
-      continue;
-    }
-    if (info.isDirectory()) {
-      if (name === WORKTREES_FOLDER) continue;
-      result.push(...(await collectMarkdown(root, full)));
+    const info = await lstat(full);
+    if (info.isSymbolicLink()) {
+      diagnostics.push(
+        diagnostic('error', 'SYMLINK_NOT_ALLOWED', 'Symbolic links are not allowed beneath initiatives/', full),
+      );
+    } else if (info.isDirectory()) {
+      result.push(...(await collectMarkdown(full, diagnostics)));
     } else if (info.isFile() && name.endsWith('.md')) {
       result.push(full);
     }
