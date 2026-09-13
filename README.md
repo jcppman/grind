@@ -11,5 +11,5 @@ shared context, create, start, save, and close skills with Codex and Claude Code
 manifests. The CLI will own deterministic filesystem and Git mechanics.
 
 Initiative artifacts belong in the workspace's configured private state repository,
-not in this implementation repository. Find `grind-workspace.config` by walking
+not in this implementation repository. Find `grind-workspace.json` by walking
 upward to the nearest enclosing workspace boundary.

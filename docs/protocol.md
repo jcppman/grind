@@ -272,7 +272,7 @@ initiative or refreshes context after external changes. Do not reload every turn
 
 ### Context loading
 
-1. Resolve the workspace from the nearest `grind-workspace.config`, or an explicit
+1. Resolve the workspace from the nearest `grind-workspace.json`, or an explicit
    workspace path outside that boundary. Resolve the initiative from an explicit
    identifier, its folder, or a verified checkout pointer. If the pointer disagrees
    with Git, derive ownership from unarchived repository tracking records without rewriting
