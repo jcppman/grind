@@ -179,3 +179,15 @@ test('save rejects nested Git repositories before staging', async (t) => {
   await assert.rejects(saveCommand(context, 'one', 'invalid'), { code: 'ARTIFACT_INVALID' });
   assert.equal(await git(ws.stateGitRoot, 'diff', '--cached'), '');
 });
+
+for (const header of [
+  'type: Specification\ngrind: {custom: 1, # trailing\n}\n',
+  '{type: Specification,}\n',
+  'type: Specification\ngrind: {approvals: [{by: \"human:Old\", at: \"2026-09-17T00:00:00Z\", revision: {commit: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", path: spec.md}},]}\n',
+]) {
+  test(`approval accepts flow collections with trailing commas: ${header}`, () => {
+    const updated = appendApproval(`---\n${header}---\nBody\n`, event);
+    const grind = parseFrontmatter(updated).data!['grind'] as { approvals: unknown[] };
+    assert.deepEqual(grind.approvals.at(-1), event);
+  });
+}

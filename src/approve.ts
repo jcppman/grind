@@ -1,13 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isMap, isSeq, parseDocument, stringify } from 'yaml';
+import { isMap, isSeq, parseDocument, stringify, type YAMLMap, type YAMLSeq } from 'yaml';
 import type { ApprovalEvent } from './approvals.ts';
 import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
 import { parseFrontmatter } from './frontmatter.ts';
 import { pathsBelow, resolveWithin, toPosix } from './paths.ts';
 import { checkedGit, rejectSymlinks, validateForWrite, withStateLock } from './writes.ts';
+
+function flowSeparator(node: YAMLMap | YAMLSeq): string {
+  const token = node.srcToken;
+  const last = token?.type === 'flow-collection' ? token.items.at(-1) : undefined;
+  const trailingComma = last && !last.value && last.start.some((part) => part.type === 'comma');
+  return node.items.length && !trailingComma ? ', ' : '';
+}
 
 export function appendApproval(raw: string, event: ApprovalEvent): string {
   const parsed = parseFrontmatter(raw);
@@ -16,7 +23,7 @@ export function appendApproval(raw: string, event: ApprovalEvent): string {
   const tail = raw.slice(opening.length);
   const closing = /^---[ \t]*(?:\r?\n|$)/m.exec(tail)!;
   const yaml = tail.slice(0, closing.index);
-  const document = parseDocument(yaml);
+  const document = parseDocument(yaml, { keepSourceTokens: true });
   if (!isMap(document.contents)) throw new GrindError('ARTIFACT_INVALID', 'Frontmatter must be a mapping');
   const newline = opening.endsWith('\r\n') ? '\r\n' : '\n';
   const grind = document.get('grind', true);
@@ -26,7 +33,7 @@ export function appendApproval(raw: string, event: ApprovalEvent): string {
   if (grind === undefined) {
     if (document.contents.flow) {
       offset = document.contents.range![1] - 1;
-      addition = `${document.contents.items.length ? ', ' : ''}grind: ${JSON.stringify({ approvals: [event] })}`;
+      addition = `${flowSeparator(document.contents)}grind: ${JSON.stringify({ approvals: [event] })}`;
     } else {
       offset = yaml.length;
       addition = stringify({ grind: { approvals: [event] } }).replace(/\n/g, newline);
@@ -38,7 +45,7 @@ export function appendApproval(raw: string, event: ApprovalEvent): string {
       if (!isSeq(approvals)) throw new GrindError('ARTIFACT_INVALID', 'grind.approvals must be a list');
       if (approvals.flow) {
         offset = approvals.range![1] - 1;
-        addition = `${approvals.items.length ? ', ' : ''}${JSON.stringify(event)}`;
+        addition = `${flowSeparator(approvals)}${JSON.stringify(event)}`;
       } else {
         offset = approvals.range![1];
         const indent = ' '.repeat(indentAt(approvals.range![0]));
@@ -46,12 +53,15 @@ export function appendApproval(raw: string, event: ApprovalEvent): string {
       }
     } else if (grind.flow) {
       offset = grind.range![1] - 1;
-      addition = `${grind.items.length ? ', ' : ''}approvals: ${JSON.stringify([event])}`;
+      addition = `${flowSeparator(grind)}approvals: ${JSON.stringify([event])}`;
     } else {
       offset = grind.range![1];
       const indent = ' '.repeat(indentAt(grind.range![0]));
       addition = stringify({ approvals: [event] }).trimEnd().split('\n').map((line) => indent + line).join(newline) + newline;
     }
+  }
+  if (yaml.slice(yaml.lastIndexOf('\n', offset - 1) + 1, offset).trim() === '' && yaml[offset] !== undefined && /[}\]]/.test(yaml[offset]!)) {
+    addition = '  ' + addition;
   }
   const updated = opening + yaml.slice(0, offset) + addition + yaml.slice(offset) + tail.slice(closing.index);
   const check = parseFrontmatter(updated);
