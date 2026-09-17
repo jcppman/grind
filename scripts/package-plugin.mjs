@@ -4,11 +4,18 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const output = path.join(root, 'build', 'grind');
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-const manifest = JSON.parse(await readFile(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
-if (pkg.version !== manifest.version) throw new Error('CLI and plugin versions must match');
+const codexManifest = JSON.parse(await readFile(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+const claudeManifest = JSON.parse(await readFile(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+const marketplace = JSON.parse(await readFile(path.join(root, '.claude-plugin', 'marketplace.json'), 'utf8'));
+if (pkg.version !== codexManifest.version || pkg.version !== claudeManifest.version) {
+  throw new Error('CLI, Codex plugin, and Claude Code plugin versions must match');
+}
+if (!marketplace.plugins.some((plugin) => plugin.name === 'grind' && plugin.source === './')) {
+  throw new Error('Claude Code marketplace must expose the repository-root Grind plugin');
+}
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const folder of ['dist', 'docs', 'skills', '.codex-plugin']) {
+for (const folder of ['dist', 'docs', 'skills', '.codex-plugin', '.claude-plugin']) {
   await cp(path.join(root, folder), path.join(output, folder), { recursive: true });
 }
 await mkdir(path.join(output, 'scripts'));

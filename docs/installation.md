@@ -1,8 +1,9 @@
-# Install the milestone 1 build
+# Install the milestone 1.5 build
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, non-switching `start`, `save`, and `approve`. Switching, reopening, close,
-init, doctor, and Claude Code delivery belong to later milestones.
+`status`, non-switching `start`, `save`, and `approve` through shared Codex and
+Claude Code skills. Switching, reopening, close, init, and doctor belong to later
+milestones.
 
 ## Build and package
 
@@ -15,11 +16,12 @@ npm run typecheck
 npm run test:package
 ```
 
-`build/grind` is a relocatable Codex plugin containing the matching compiled CLI,
-shared protocol and skills, and runtime dependencies. Copy the whole folder;
-copying only skills or dist is insufficient. No compiler or global Grind command
-is needed at runtime. The package smoke test copies it outside the checkout and
-executes real creation, persistence, approval, and read-only inspections.
+`build/grind` is a relocatable Codex and Claude Code plugin containing the matching
+compiled CLI, shared protocol and skills, platform manifests, and runtime
+dependencies. Copy the whole folder; copying only skills or dist is insufficient.
+No compiler or global Grind command is needed at runtime. The package smoke test
+copies it outside the checkout and executes real creation, persistence, approval,
+and read-only inspections.
 
 For terminal use, `npm pack` creates the npm artifact; install that artifact with
 `npm install --global <tarball>`. Plugin installation alone does not add `grind`
@@ -50,6 +52,28 @@ root relative to the installed SKILL.md, never by assuming a global CLI or the
 source checkout. To update a local installation, rebuild and replace the packaged
 folder, use plugin-creator's cachebuster helper, and reinstall from the same
 marketplace. The base CLI and plugin versions remain aligned.
+
+## Claude Code installation
+
+Validate and add the repository or packaged directory as a local marketplace,
+then install Grind from that marketplace:
+
+```sh
+claude plugin validate build/grind --strict
+claude plugin marketplace add "$PWD/build/grind" --scope user
+claude plugin install grind@grind-local --scope user
+```
+
+The marketplace source is `./`, so Claude Code loads the plugin from the selected
+directory. Keep that directory in place while the marketplace is registered. Start
+a fresh Claude Code session after installation.
+
+For automatic context loading, append the thin paragraph in
+[claude-code-adapter.md](claude-code-adapter.md) to the workspace's `CLAUDE.md`,
+preserving its existing instructions. The adapter routes to the installed shared
+context skill and does not define separate state or workflow. Without the adapter,
+invoke `/grind:context [initiative]` explicitly. `/grind:start [initiative]` enters
+work through the same compiled CLI and initiative records used by Codex.
 
 ## Workspace setup
 

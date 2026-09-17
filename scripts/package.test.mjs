@@ -15,8 +15,12 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   const install = path.join(temp, 'installed grind');
   await cp(path.resolve('build/grind'), install, { recursive: true });
   const pkg = JSON.parse(await readFile(path.join(install, 'package.json'), 'utf8'));
-  const manifest = JSON.parse(await readFile(path.join(install, '.codex-plugin/plugin.json'), 'utf8'));
-  assert.equal(pkg.version, manifest.version);
+  const codexManifest = JSON.parse(await readFile(path.join(install, '.codex-plugin/plugin.json'), 'utf8'));
+  const claudeManifest = JSON.parse(await readFile(path.join(install, '.claude-plugin/plugin.json'), 'utf8'));
+  const marketplace = JSON.parse(await readFile(path.join(install, '.claude-plugin/marketplace.json'), 'utf8'));
+  assert.equal(pkg.version, codexManifest.version);
+  assert.equal(pkg.version, claudeManifest.version);
+  assert.ok(marketplace.plugins.some((plugin) => plugin.name === 'grind' && plugin.source === './'));
   for (const skill of ['context', 'create', 'start', 'save']) {
     const text = await readFile(path.join(install, 'skills', skill, 'SKILL.md'), 'utf8');
     for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {

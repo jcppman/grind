@@ -16,8 +16,8 @@ upward to the nearest enclosing workspace boundary.
 
 Milestone 1 provides workspace/artifact reading, `list`, `status`, non-switching
 `start`, initiative creation, scoped checkpoint saves, and document approval.
-The Codex plugin bundles the matching compiled CLI and shared context/create/start/save
-skills. Branch switching, reopening, close, and Claude Code delivery are deferred.
+Milestone 1.5 packages the matching compiled CLI and shared context/create/start/save
+skills for Codex and Claude Code. Branch switching, reopening, and close are deferred.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
 setup, terminal use, and the automatic-context adapter.

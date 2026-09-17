@@ -1,6 +1,6 @@
 {
   "name": "grind",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
   "type": "module",
@@ -12,6 +12,7 @@
     "docs",
     "skills",
     ".codex-plugin",
+    ".claude-plugin",
     "scripts/grind.mjs"
   ],
   "engines": {
