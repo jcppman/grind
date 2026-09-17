@@ -14,11 +14,13 @@ upward to the nearest enclosing workspace boundary.
 
 ## Status
 
-Development is being bootstrapped. This build contains the workspace and artifact
-reader: workspace discovery, initiative resolution from an identifier, folder, or
-checkout, frontmatter and ledger validation, sidecar parsing, and approval coverage.
-No lifecycle command is implemented yet; `grind <command>` reports which increment
-delivers it.
+Milestone 1 provides workspace/artifact reading, `list`, `status`, non-switching
+`start`, initiative creation, scoped checkpoint saves, and document approval.
+The Codex plugin bundles the matching compiled CLI and shared context/create/start/save
+skills. Branch switching, reopening, close, and Claude Code delivery are deferred.
+
+See [installation and recovery](docs/installation.md) for packaging, workspace
+setup, terminal use, and the automatic-context adapter.
 
 ## Development
 
@@ -30,5 +32,6 @@ npm install
 npm test          # node --test over src/**/*.test.ts
 npm run typecheck
 npm run build     # emits dist/, including the grind bin entry
+npm run test:package # builds and exercises the relocatable plugin
 node dist/cli.js --help
 ```

@@ -1,0 +1,21 @@
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const root = path.resolve(import.meta.dirname, '..');
+const output = path.join(root, 'build', 'grind');
+const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const manifest = JSON.parse(await readFile(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+if (pkg.version !== manifest.version) throw new Error('CLI and plugin versions must match');
+await rm(output, { recursive: true, force: true });
+await mkdir(output, { recursive: true });
+for (const folder of ['dist', 'docs', 'skills', '.codex-plugin']) {
+  await cp(path.join(root, folder), path.join(output, folder), { recursive: true });
+}
+await mkdir(path.join(output, 'scripts'));
+await cp(path.join(root, 'scripts', 'grind.mjs'), path.join(output, 'scripts', 'grind.mjs'));
+await writeFile(path.join(output, 'package.json'), JSON.stringify({ ...pkg, scripts: undefined, devDependencies: undefined }, null, 2) + '\n');
+await cp(path.join(root, 'package-lock.json'), path.join(output, 'package-lock.json'));
+for (const name of Object.keys(pkg.dependencies)) {
+  await cp(path.join(root, 'node_modules', name), path.join(output, 'node_modules', name), { recursive: true, dereference: true });
+}
+process.stdout.write(`Plugin ${pkg.version}: ${output}\n`);

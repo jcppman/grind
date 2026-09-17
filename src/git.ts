@@ -10,7 +10,7 @@ interface GitResult {
   stderr: string;
 }
 
-async function git(args: readonly string[], cwd: string): Promise<GitResult> {
+export async function git(args: readonly string[], cwd: string): Promise<GitResult> {
   try {
     const { stdout, stderr } = await execFileAsync('git', [...args], {
       cwd,

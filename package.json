@@ -1,6 +1,6 @@
 {
   "name": "grind",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
   "type": "module",
@@ -9,7 +9,10 @@
   },
   "files": [
     "dist",
-    "docs"
+    "docs",
+    "skills",
+    ".codex-plugin",
+    "scripts/grind.mjs"
   ],
   "engines": {
     "node": ">=24"
@@ -17,7 +20,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --test 'src/**/*.test.ts'"
+    "test": "node --test 'src/**/*.test.ts'",
+    "package:plugin": "npm run build && node scripts/package-plugin.mjs",
+    "test:package": "npm run package:plugin && node --test scripts/package.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.1"
