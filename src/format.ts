@@ -1,6 +1,6 @@
 import type { ListResult, StartResult, StatusResult } from './commands.ts';
 import type { Diagnostic } from './errors.ts';
-import type { ArtifactSummary, InitiativeInspection } from './inspect.ts';
+import type { InitiativeInspection } from './inspect.ts';
 
 function diagnosticsBlock(diagnostics: readonly Diagnostic[]): string[] {
   return diagnostics.map((d) => `  ${d.severity === 'error' ? 'error' : 'warn '} ${d.code}: ${d.message}`);
@@ -35,7 +35,7 @@ function formatInspection(inspection: InitiativeInspection): string[] {
   }
   lines.push('  artifacts:');
   for (const artifact of inspection.artifacts) {
-    lines.push(`    ${artifact.path}  ${artifact.type ?? artifact.role}${maturity(artifact)}`);
+    lines.push(`    ${artifact.path}  ${artifact.type ?? artifact.role}`);
   }
   if (inspection.repositories.length > 0) lines.push('  repositories:');
   for (const repo of inspection.repositories) {
@@ -51,19 +51,6 @@ function formatInspection(inspection: InitiativeInspection): string[] {
   }
   lines.push(...diagnosticsBlock(inspection.diagnostics));
   return lines;
-}
-
-const APPROVABLE_TYPES = new Set(['Specification', 'Implementation Plan']);
-
-/** Approval coverage for specifications and plans. */
-function maturity(artifact: ArtifactSummary): string {
-  if (artifact.approvals.length === 0) {
-    return artifact.type !== null && APPROVABLE_TYPES.has(artifact.type) ? '  unapproved' : '';
-  }
-  const latest = artifact.approvals[artifact.approvals.length - 1] as ArtifactSummary['approvals'][number];
-  const label =
-    latest.coverage === 'current' ? 'approved' : latest.coverage === 'outdated' ? 'approved, unreviewed changes' : 'approval coverage unknown';
-  return `  ${label} (${latest.event.by}, ${latest.event.at})`;
 }
 
 export function formatStatus(result: StatusResult): string {

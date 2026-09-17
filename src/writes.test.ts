@@ -2,10 +2,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { approveCommand, appendApproval } from './approve.ts';
-import { checkApprovals } from './approvals.ts';
 import { readInitiative } from './artifacts.ts';
-import { parseFrontmatter } from './frontmatter.ts';
 import { createCommand, saveCommand, withStateLock } from './writes.ts';
 import { loadWorkspace } from './workspace.ts';
 import { commitState, git, makeTempWorkspace, writeInitiative } from './test-helpers.ts';
@@ -103,55 +100,6 @@ test('failed commit keeps prepared files and staged changes and releases the loc
   await assert.rejects(saveCommand(context, 'one', 'retry'), { code: 'INDEX_NOT_CLEAN' });
 });
 
-const event = { by: 'human:Tester', at: '2026-09-17T10:00:00+09:00', revision: { commit: 'a'.repeat(40), path: 'spec.md' } };
-for (const header of [
-  'type: Specification\ncustom: "keep quotes" # keep comment\n',
-  'type: Specification\ngrind:\n  custom: "keep quotes" # keep comment\nother: 4\n',
-  'type: Specification\ngrind: {custom: "keep quotes"}\n',
-  'type: Specification\ngrind:\n  approvals: [] # approvals comment\n  custom: "keep quotes"\n',
-  'type: Specification\ngrind:\n  approvals:\n    - by: human:Prior\n      at: "2026-09-13T10:00:00+09:00"\n      revision: {commit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", path: spec.md}\n  custom: "keep quotes"\n',
-  '{type: Specification, custom: "keep quotes"}\n',
-]) {
-  test(`approval preserves body and unrelated metadata: ${header.slice(0, 65)}`, () => {
-    const raw = `---\n${header}---\n\n# Body\n\nUnchanged bytes.\n`;
-    const result = appendApproval(raw, event);
-    const parsed = parseFrontmatter(result);
-    assert.equal(parsed.error, undefined);
-    assert.equal(parsed.body, parseFrontmatter(raw).body);
-    assert.match(result, /custom: "keep quotes"/);
-    const approvals = (parsed.data!['grind'] as { approvals: unknown[] }).approvals;
-    assert.deepEqual(approvals.at(-1), event);
-    if (header.includes('human:Prior')) assert.equal(approvals.length, 2);
-  });
-}
-
-test('approve requires committed content, preserves BOM/CRLF, and reads as current after save', async (t) => {
-  const { ws, context } = await setup(t);
-  const raw = '\uFEFF---\r\ntype: Specification\r\ncustom: "keep" # comment\r\n---\r\n\r\n# Body\r\n';
-  const dir = await writeInitiative(ws, 'one', { files: { 'spec.md': raw } });
-  const document = path.join(dir, 'spec.md');
-  await assert.rejects(approveCommand(context, document), { code: 'DOCUMENT_DIRTY' });
-  await commitState(ws);
-  await approveCommand(context, document);
-  const updated = await readFile(document, 'utf8');
-  assert.ok(updated.startsWith('\uFEFF---\r\n'));
-  assert.ok(updated.includes('custom: "keep" # comment\r\n'));
-  assert.equal(updated.replaceAll('\r\n', '').includes('\n'), false);
-  await assert.rejects(approveCommand(context, document), { code: 'DOCUMENT_DIRTY' });
-  await saveCommand(context, 'one', 'approval');
-  const record = await readInitiative(dir);
-  const report = await checkApprovals(record.documents.find((d) => d.relativePath === 'spec.md')!, ws.stateGitRoot);
-  assert.equal(report.coverages[0]?.coverage, 'current');
-});
-
-test('approval insertion retains existing event bytes and comments exactly', () => {
-  const old = '    - by: "human:Prior" # historical\n      at: "2026-09-13T10:00:00+09:00"\n      revision: {commit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", path: spec.md}\n';
-  const raw = `---\ntype: Specification\ngrind:\n  approvals:\n${old}  custom: yes # keep\n---\nBody\n`;
-  const updated = appendApproval(raw, event);
-  assert.ok(updated.includes(old));
-  assert.ok(updated.includes('  custom: yes # keep\n'));
-});
-
 test('lock spans linked state worktrees', async (t) => {
   const { ws, context } = await setup(t);
   const linked = path.join(ws.root, 'linked-state');
@@ -179,15 +127,3 @@ test('save rejects nested Git repositories before staging', async (t) => {
   await assert.rejects(saveCommand(context, 'one', 'invalid'), { code: 'ARTIFACT_INVALID' });
   assert.equal(await git(ws.stateGitRoot, 'diff', '--cached'), '');
 });
-
-for (const header of [
-  'type: Specification\ngrind: {custom: 1, # trailing\n}\n',
-  '{type: Specification,}\n',
-  'type: Specification\ngrind: {approvals: [{by: \"human:Old\", at: \"2026-09-17T00:00:00Z\", revision: {commit: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", path: spec.md}},]}\n',
-]) {
-  test(`approval accepts flow collections with trailing commas: ${header}`, () => {
-    const updated = appendApproval(`---\n${header}---\nBody\n`, event);
-    const grind = parseFrontmatter(updated).data!['grind'] as { approvals: unknown[] };
-    assert.deepEqual(grind.approvals.at(-1), event);
-  });
-}

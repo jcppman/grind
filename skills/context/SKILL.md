@@ -11,8 +11,8 @@ global Grind installation. Node.js 24+ and Git are required.
 
 Read the returned index, intent, ledger, shared constraints, and documents relevant
 to the user's request or recorded next action. Inspect repository state and pending
-notes. Report discrepancies, governing approval coverage, next action, and unresolved
-decisions. Refresh with the same command when explicitly requested.
+notes. Report discrepancies, the next action, and unresolved decisions. Refresh with
+the same command when explicitly requested.
 
 On automatic discovery, WORKSPACE_NOT_FOUND or INITIATIVE_UNRESOLVED with no stale
 pointer is quiet and leaves ordinary work alone. When the user explicitly invokes

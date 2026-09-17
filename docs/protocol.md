@@ -66,8 +66,7 @@ using `.` for the root itself. For example, write `grind` and
 `yyu-dev/grind-state`, not machine-specific absolute paths or home-directory paths.
 This keeps records portable across checkouts and machines. Markdown link targets
 remain relative to the containing document so they resolve normally. Structured
-fields retain their explicitly defined bases, such as repository-relative approval
-paths; do not change their interpretation.
+fields retain their explicitly defined bases; do not change their interpretation.
 
 ### Frontmatter and interoperability
 
@@ -79,8 +78,7 @@ not determine the role of a specification or plan.
 
 Use standard OKF fields for document metadata: optional `title`, `description`,
 `tags`, `sources`, `generated`, and `verified`. Specifications and plans carry no
-`status` field. Report their approval coverage separately from implementation
-progress and workflow readiness. Other supporting documents may use `status`.
+`status` field. Other supporting documents may use `status`.
 Grind workflow fields belong under `grind`. Move structured facts into frontmatter
 rather than retaining a second authoritative copy in the body. The ledger owns
 initiative status, phase, current task, next action, and repository tracking;
@@ -91,50 +89,28 @@ keys and unrelated content during edits. Existing artifacts without frontmatter
 remain readable during migration; report missing metadata and migrate explicitly,
 never during context loading. Malformed optional metadata is diagnostic; malformed
 required Grind state prevents a mutating operation. A save does not normalize
-metadata or imply approval or verification.
+metadata or imply verification.
 
 Indexes contain navigation without frontmatter, except that a bundle-root index
 may declare `okf_version`. This protocol does not yet declare the entire state tree
 an OKF bundle: its boundary and auxiliary Markdown must be defined before claiming
 full bundle compatibility.
 
-### Document approval and verification
+### Execution authorization and verification
 
-Approval is optional and records explicit human agreement to a document's proposed
-direction or contract. Do not infer it from `type`, document maturity, a save, or
-factual verification. Do not require approval for routine plans or ledger updates.
-Split a document by coherent decision scope when parts need independent approval;
-partial agreement does not approve an entire document.
+A substantive user instruction such as “implement this,” “let's do it,” “start,” or
+“continue” authorizes work consistent with the current specification, plan, ledger,
+and conversation. Do not require or record separate document sign-off metadata. When the
+direction is ambiguous or implementation reveals a material change, discuss it with
+the user before proceeding and update the governing documents and ledger afterward.
 
-Record document approval under `grind.approvals`, identifying the human, time,
-and exact previously committed document revision and path. The reviewed revision
-precedes the commit recording approval, avoiding a self-referential commit hash.
-Preserve historical approvals after edits. Report changes since the approved
-revision; the agent explains whether substantive changes need renewed agreement.
-A changed revision alone is not an automatic execution block. Unavailable revision
-history means approval coverage cannot be established, not that it is current.
+Keep implementation authorization separate from later external actions. Review,
+push, publication, deployment, and other consequential actions follow the user's
+instructions and the applicable repository workflow; do not infer one from another.
 
-A specification or plan with no approval event is unapproved; a current event means
-approved; an outdated event means approved with unreviewed changes. These labels
-describe approval coverage, not whether implementation has started or finished.
-When entering execution, state which applies to the governing specification and
-plan and, for unreviewed changes, whether they are substantive. Renew approval with
-`grind approve` only after the human has reviewed the committed revision.
-
-An explicit user request to implement authorizes that requested work even when its
-documents are unapproved, unless the user established document approval as a gate.
-Do not add optional document approval to the ledger's current task or next action
-solely because coverage is missing or outdated. If implementation precedes approval,
-reconcile the documents with the code and continue to report their coverage;
-subsequent approval is optional durable ratification. Keep commit review,
-authorization to push or publish, document approval, and deployment verification as
-separate actions. Record any required ordering only when the user explicitly chooses
-it or another governing constraint requires it.
-
-`verified` records checking claims against evidence; it does not authorize
-implementation. Generation describes meaningful content production, not every save.
-Neither an earlier approval nor a verification event automatically covers later
-content. Do not invent human identities, approval events, or verification evidence.
+`verified` records checking claims against evidence. Generation describes meaningful
+content production, not every save. A verification event does not automatically
+cover later content. Do not invent verification evidence.
 
 ### `intent.md`
 
@@ -232,8 +208,9 @@ the change belongs to an existing initiative.
 
 ### Ambiguous or consequential work
 
-Clarify intent and constraints, compare viable approaches, and obtain approval
-before costly implementation when the direction could materially change.
+Clarify intent and constraints and compare viable approaches before costly
+implementation when the direction could materially change. Proceed when the user's
+instruction selects or accepts a direction.
 Update `intent.md` only if the chosen direction changes the intended outcome or
 scope. Record agreed behaviour and technical design in a specification, creating it
 at that point if it does not yet exist.
@@ -298,7 +275,7 @@ initiative or refreshes context after external changes. Do not reload every turn
    the pointer. Report ambiguity instead of selecting a guess.
 2. Read `index.md`, `intent.md`, and `ledger.md`, then the shared constraints
    identified by the index. Follow links to specifications, plans, supporting
-   artifacts, and approval records relevant to the request or recorded next action.
+   artifacts relevant to the request or recorded next action.
    Report missing links or conflicting ownership; do not silently skip constraints.
 3. Inspect the tracked repositories, branches, diffs, and recent commits. Report
    missing checkouts and mismatches as observed state; do not change them.

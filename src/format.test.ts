@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formatStatus } from './format.ts';
 
-test('status reports missing approval without implying document maturity', () => {
+test('status reports artifact roles', () => {
   const output = formatStatus({
     resolution: { source: 'argument', stalePointer: null, checkout: null },
     inspection: {
@@ -11,12 +11,11 @@ test('status reports missing approval without implying document maturity', () =>
       archived: false,
       state: null,
       legacy: false,
-      artifacts: [{ path: 'spec.md', role: 'document', type: 'Specification', approvals: [] }],
+      artifacts: [{ path: 'spec.md', role: 'document', type: 'Specification' }],
       repositories: [],
       diagnostics: [],
     },
   });
 
-  assert.match(output, /spec\.md  Specification  unapproved/);
-  assert.doesNotMatch(output, /draft/);
+  assert.match(output, /\n    spec\.md  Specification$/);
 });

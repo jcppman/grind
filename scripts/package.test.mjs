@@ -36,9 +36,6 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   assert.equal((await run('create', 'cold')).data.id, 'cold');
   assert.equal((await run('start', 'cold')).data.switched, false);
   assert.equal((await run('save', 'cold', '--message', 'initial')).data.saved, true);
-  const intent = path.join(ws.initiativesDir, 'cold', 'intent.md');
-  assert.equal((await run('approve', intent)).ok, true);
-  assert.equal((await run('save', 'cold', '--message', 'approved')).data.saved, true);
   assert.equal((await run('save', 'cold', '--message', 'no-op')).data.saved, false);
   assert.equal((await run('list')).data.initiatives.length, 1);
   const status = await run('status', 'cold');

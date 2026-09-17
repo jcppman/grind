@@ -15,7 +15,7 @@ upward to the nearest enclosing workspace boundary.
 ## Status
 
 Milestone 1 provides workspace/artifact reading, `list`, `status`, non-switching
-`start`, initiative creation, scoped checkpoint saves, and document approval.
+`start`, initiative creation, and scoped checkpoint saves.
 Milestone 1.5 packages the matching compiled CLI and shared context/create/start/save
 skills for Codex and Claude Code. Branch switching, reopening, and close are deferred.
 

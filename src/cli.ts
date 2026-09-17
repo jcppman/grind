@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { approveCommand } from './approve.ts';
 import { createCommand, saveCommand } from './writes.ts';
 import { listCommand, startCommand, statusCommand } from './commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
@@ -19,7 +18,6 @@ Commands:
   create <name>       create an initiative
   start [initiative]  make an existing initiative active
   save [initiative]   validate and persist its prepared checkpoint
-  approve <document> record approval of a committed document
   close [initiative]  mark it delivered or abandoned
   list                list initiatives and their recorded state
   status [initiative] inspect initiative artifacts and recorded/observed state
@@ -28,14 +26,13 @@ Options:
   --workspace <dir>   directory containing grind-workspace.json
   --scope <folder>    workspace-relative scope for create
   --message <text>    checkpoint commit message for save
-  --by <identity>     human identity for approve (defaults to Git user.name)
   --json              emit one JSON envelope on stdout
   --help              show this help
 
 This build inspects initiatives (list, status) and enters an open initiative
 whose checkouts already sit on their recorded branches (start). It never
-switches branches, reopens closed work, rewrites sidecars, during start. Create writes templates; save commits a prepared checkpoint;
-approve records an explicit human approval without committing.`;
+switches branches, reopens closed work, or rewrites sidecars during start. Create
+writes templates; save commits a prepared checkpoint.`;
 
 export interface ParsedArgs {
   command: string | null;
@@ -45,7 +42,6 @@ export interface ParsedArgs {
   workspace?: string;
   scope?: string;
   message?: string;
-  by?: string;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -59,10 +55,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
       parsed.workspace = value;
       i += 1;
-    } else if (['--scope', '--message', '--by'].includes(arg)) {
+    } else if (['--scope', '--message'].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new GrindError('USAGE', `${arg} requires a value`);
-      parsed[arg.slice(2) as 'scope' | 'message' | 'by'] = value;
+      parsed[arg.slice(2) as 'scope' | 'message'] = value;
     } else if (arg.startsWith('--workspace=')) parsed.workspace = arg.slice('--workspace='.length);
     else if (arg.startsWith('-')) throw new GrindError('USAGE', `Unknown option ${arg}`);
     else if (parsed.command === null) parsed.command = arg;
@@ -88,16 +84,16 @@ export async function run(argv: readonly string[]): Promise<number> {
         { command: args.command, increment },
       );
     }
-    if (!['list', 'status', 'start', 'create', 'save', 'approve'].includes(args.command)) {
+    if (!['list', 'status', 'start', 'create', 'save'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
     if (args.positional.length > (args.command === 'list' ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
-    for (const [option, command] of [['scope', 'create'], ['message', 'save'], ['by', 'approve']] as const) {
+    for (const [option, command] of [['scope', 'create'], ['message', 'save']] as const) {
       if (args[option] !== undefined && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
-    if (['create', 'approve'].includes(args.command) && args.positional.length !== 1) throw new GrindError('USAGE', `${args.command} requires an argument`);
+    if (args.command === 'create' && args.positional.length !== 1) throw new GrindError('USAGE', 'create requires an argument');
     if (args.command === 'save' && !args.message?.trim()) throw new GrindError('USAGE', 'save requires --message');
     const cwd = process.cwd();
     const workspace = await loadWorkspace({ cwd, ...(args.workspace === undefined ? {} : { workspace: args.workspace }) });
@@ -109,9 +105,6 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'save') {
       const result = await saveCommand(context, identifier, args.message!);
       emit(json, { ok: true, data: result }, result.saved ? `Saved ${result.id}: ${result.commit}` : `${result.id}: nothing to save`);
-    } else if (args.command === 'approve') {
-      const result = await approveCommand(context, identifier!, args.by);
-      emit(json, { ok: true, data: result }, `Recorded approval for ${result.document}; use save to commit it`);
     } else if (args.command === 'list') {
       const result = await listCommand(context);
       emit(json, { ok: true, data: result }, formatList(result));

@@ -4,7 +4,6 @@ export type ErrorCode =
   | 'WRITE_FAILED'
   | 'INDEX_NOT_CLEAN'
   | 'COMMIT_FAILED'
-  | 'DOCUMENT_DIRTY'
   | 'USAGE'
   | 'UNSUPPORTED_OPERATION'
   | 'WORKSPACE_NOT_FOUND'

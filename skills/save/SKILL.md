@@ -7,9 +7,7 @@ Read the [shared operating protocol](../../docs/protocol.md), particularly the
 During-work update and Session-end protocols. Inspect current repository state and
 validation evidence. Update the ledger with what is true and an exact next action;
 update other artifacts only when their corresponding facts changed. Keep artifact
-content paths workspace-relative. Do not make optional document approval a current
-task or next action unless the user explicitly established it as a gate. Reading
-context alone earns no checkpoint.
+content paths workspace-relative. Reading context alone earns no checkpoint.
 
 Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs save [initiative] --message <milestone> --json`,
@@ -17,8 +15,3 @@ with `--workspace <directory>` if needed. Report the returned commit or no-op.
 Do not stage unrelated work, reset an index, push, or retry failed commits blindly.
 A failed commit preserves staged changes: inspect and resolve that state before
 retrying. Verify a lock owner has exited before removing its lock directory.
-
-Only after explicit human approval of a committed document, record it with
-`node <plugin-root>/scripts/grind.mjs approve <document-path> [--by <identity>] --json`
-and save the resulting event. The path is relative to the working directory.
-Approval never follows merely from saving, testing, or drafting a document.

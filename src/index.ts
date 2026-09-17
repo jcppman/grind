@@ -1,4 +1,3 @@
-export * from './approvals.ts';
 export * from './artifacts.ts';
 export * from './discovery.ts';
 export * from './errors.ts';

@@ -1,9 +1,8 @@
 # Install the milestone 1.5 build
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, non-switching `start`, `save`, and `approve` through shared Codex and
-Claude Code skills. Switching, reopening, close, init, and doctor belong to later
-milestones.
+`status`, non-switching `start`, and `save` through shared Codex and Claude Code
+skills. Switching, reopening, close, init, and doctor belong to later milestones.
 
 ## Build and package
 
@@ -20,8 +19,8 @@ npm run test:package
 compiled CLI, shared protocol and skills, platform manifests, and runtime
 dependencies. Copy the whole folder; copying only skills or dist is insufficient.
 No compiler or global Grind command is needed at runtime. The package smoke test
-copies it outside the checkout and executes real creation, persistence, approval,
-and read-only inspections.
+copies it outside the checkout and executes real creation, persistence, and
+read-only inspections.
 
 For terminal use, `npm pack` creates the npm artifact; install that artifact with
 `npm install --global <tarball>`. Plugin installation alone does not add `grind`
@@ -96,16 +95,11 @@ grind create outcome --scope app
 grind status app/outcome
 grind start app/outcome
 grind save app/outcome --message 'outcome: clarify intent'
-grind approve private-state/initiatives/app/outcome/intent.md
-grind save app/outcome --message 'outcome: record approval'
 ```
 
 Scope selects an existing workspace folder and does not infer repository tracking
-or branch ownership. Populate the ledger from verified repository state. Approval
-is a deliberate human action on a committed document, not a consequence of tests
-passing. `approve` defaults to the state repository's Git `user.name`; `--by`
-selects another explicitly supplied identity. Document paths are relative to the
-working directory. All commands support `--json` and `--workspace`.
+or branch ownership. Populate the ledger from verified repository state. All
+commands support `--json` and `--workspace`.
 
 ## Recovery
 
@@ -120,11 +114,9 @@ working directory. All commands support `--json` and `--workspace`.
 - `COMMIT_FAILED`: prepared files and staged changes remain. Fix the hook, author,
   signing, or other reported failure, then deliberately commit or unstage the
   prepared paths before retrying. Never blindly reset unrelated work.
-- `DOCUMENT_DIRTY`: commit the reviewed document before recording approval.
 - `ARTIFACT_INVALID`: repair the reported record or link; save does not normalize it.
 - `TRANSITION_UNSUPPORTED`: this release cannot switch branches or reopen work.
   Inspect context without starting, or arrange the required checkout deliberately.
 
-The CLI never pushes. Unknown approval revisions are diagnostic and do not imply
-current approval. Automatic context discovery without an initiative is quiet;
+The CLI never pushes. Automatic context discovery without an initiative is quiet;
 explicit unresolved or ambiguous requests report a usable error.

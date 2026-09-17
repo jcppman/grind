@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { checkApprovals, type ApprovalCoverage } from './approvals.ts';
 import { readInitiative, type InitiativeRecord } from './artifacts.ts';
 import type { InitiativeEntry } from './discovery.ts';
 import { diagnostic, hasErrors, type Diagnostic } from './errors.ts';
@@ -13,7 +12,6 @@ export interface ArtifactSummary {
   path: string;
   role: string;
   type: string | null;
-  approvals: ApprovalCoverage[];
 }
 
 export interface ObservedCheckout {
@@ -53,7 +51,7 @@ export async function inspectInitiative(
 ): Promise<InitiativeInspection> {
   const record = await readInitiative(entry.dir, { workspace });
   const diagnostics = [...record.diagnostics];
-  const artifacts = await summarizeArtifacts(record, workspace, diagnostics);
+  const artifacts = summarizeArtifacts(record);
   const state = record.ledgerState?.state ?? null;
   const repositories: RepositoryInspection[] = [];
   for (const recorded of state?.repositories ?? []) {
@@ -71,18 +69,8 @@ export async function inspectInitiative(
   };
 }
 
-async function summarizeArtifacts(
-  record: InitiativeRecord,
-  workspace: Workspace,
-  diagnostics: Diagnostic[],
-): Promise<ArtifactSummary[]> {
-  const summaries: ArtifactSummary[] = [];
-  for (const doc of record.documents) {
-    const report = await checkApprovals(doc, workspace.stateGitRoot);
-    diagnostics.push(...report.diagnostics);
-    summaries.push({ path: doc.relativePath, role: doc.role, type: doc.type, approvals: report.coverages });
-  }
-  return summaries;
+function summarizeArtifacts(record: InitiativeRecord): ArtifactSummary[] {
+  return record.documents.map((doc) => ({ path: doc.relativePath, role: doc.role, type: doc.type }));
 }
 
 async function inspectRepository(
