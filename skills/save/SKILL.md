@@ -7,7 +7,9 @@ Read the [shared operating protocol](../../docs/protocol.md), particularly the
 During-work update and Session-end protocols. Inspect current repository state and
 validation evidence. Update the ledger with what is true and an exact next action;
 update other artifacts only when their corresponding facts changed. Keep artifact
-content paths workspace-relative. Reading context alone earns no checkpoint.
+content paths workspace-relative. Do not make optional document approval a current
+task or next action unless the user explicitly established it as a gate. Reading
+context alone earns no checkpoint.
 
 Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs save [initiative] --message <milestone> --json`,

@@ -79,8 +79,8 @@ not determine the role of a specification or plan.
 
 Use standard OKF fields for document metadata: optional `title`, `description`,
 `tags`, `sources`, `generated`, and `verified`. Specifications and plans carry no
-`status` field; their maturity derives from approval coverage. Other supporting
-documents may use `status`.
+`status` field. Report their approval coverage separately from implementation
+progress and workflow readiness. Other supporting documents may use `status`.
 Grind workflow fields belong under `grind`. Move structured facts into frontmatter
 rather than retaining a second authoritative copy in the body. The ledger owns
 initiative status, phase, current task, next action, and repository tracking;
@@ -114,11 +114,22 @@ revision; the agent explains whether substantive changes need renewed agreement.
 A changed revision alone is not an automatic execution block. Unavailable revision
 history means approval coverage cannot be established, not that it is current.
 
-A specification or plan with no approval event is a draft; a current event means
-approved; an outdated event means approved with unreviewed changes. When entering
-execution, state which of these applies to the governing specification and plan
-and, for unreviewed changes, whether they are substantive. Renew approval with
-`grind approve` after the human has reviewed the committed revision.
+A specification or plan with no approval event is unapproved; a current event means
+approved; an outdated event means approved with unreviewed changes. These labels
+describe approval coverage, not whether implementation has started or finished.
+When entering execution, state which applies to the governing specification and
+plan and, for unreviewed changes, whether they are substantive. Renew approval with
+`grind approve` only after the human has reviewed the committed revision.
+
+An explicit user request to implement authorizes that requested work even when its
+documents are unapproved, unless the user established document approval as a gate.
+Do not add optional document approval to the ledger's current task or next action
+solely because coverage is missing or outdated. If implementation precedes approval,
+reconcile the documents with the code and continue to report their coverage;
+subsequent approval is optional durable ratification. Keep commit review,
+authorization to push or publish, document approval, and deployment verification as
+separate actions. Record any required ordering only when the user explicitly chooses
+it or another governing constraint requires it.
 
 `verified` records checking claims against evidence; it does not authorize
 implementation. Generation describes meaningful content production, not every save.

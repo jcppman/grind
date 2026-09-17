@@ -12,7 +12,8 @@ This release starts only open initiatives whose checkouts already match their
 recorded branches. Stop on unsupported switches, reopening, or archival. Do not
 simulate success with manual lifecycle changes. State the governing specification
 and plan's approval coverage and whether unreviewed changes are substantive;
-coverage alone does not block execution. Do not invent human approval events.
+coverage alone does not block execution or become the next action. Do not invent
+human approval events.
 
 Surface and handle relevant review notes according to the protocol and current
 user request. Reconcile observed state and resume the next action consistent with

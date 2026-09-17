@@ -55,10 +55,10 @@ function formatInspection(inspection: InitiativeInspection): string[] {
 
 const APPROVABLE_TYPES = new Set(['Specification', 'Implementation Plan']);
 
-/** Maturity derived from approval coverage; only specifications and plans have one. */
+/** Approval coverage for specifications and plans. */
 function maturity(artifact: ArtifactSummary): string {
   if (artifact.approvals.length === 0) {
-    return artifact.type !== null && APPROVABLE_TYPES.has(artifact.type) ? '  draft' : '';
+    return artifact.type !== null && APPROVABLE_TYPES.has(artifact.type) ? '  unapproved' : '';
   }
   const latest = artifact.approvals[artifact.approvals.length - 1] as ArtifactSummary['approvals'][number];
   const label =

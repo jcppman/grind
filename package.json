@@ -1,6 +1,6 @@
 {
   "name": "grind",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
   "type": "module",
