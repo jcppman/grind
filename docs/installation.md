@@ -74,6 +74,8 @@ preserving its existing instructions. The adapter routes to the installed shared
 context skill and does not define separate state or workflow. Without the adapter,
 invoke `/grind:context [initiative]` explicitly. `/grind:start [initiative]` enters
 work through the same compiled CLI and initiative records used by Codex.
+Both commands accept no initiative argument: they discover from the current folder
+when possible and otherwise offer the workspace's available initiatives for selection.
 
 ## Workspace setup
 

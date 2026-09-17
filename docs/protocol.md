@@ -301,8 +301,10 @@ initiative or refreshes context after external changes. Do not reload every turn
 Context loading is read-only: do not fetch, switch branches, reopen work, repair
 pointers, process or remove notes, reconcile files, archive initiatives, or save a
 checkpoint. A closed initiative can be read without reopening. With no initiative,
-automatic discovery leaves ordinary work alone; an explicit context request reports
-that none could be resolved. Reading files alone does not earn a ledger update.
+automatic discovery leaves ordinary work alone. For an explicit context request,
+try folder or checkout discovery first; if none resolves, list available initiatives
+and let the user choose without requiring the full identifier. Reading files alone
+does not earn a ledger update.
 
 ### Enter execution
 

@@ -1,6 +1,6 @@
 ---
 name: start
-description: Enter execution on an existing Grind initiative and resume its recorded work. Use when the user requests starting or continuing an initiative, rather than context alone.
+description: Enter execution on an existing Grind initiative and resume its recorded work, offering a choice list when the initiative is omitted. Use when the user requests starting or continuing an initiative, rather than context alone.
 ---
 
 Load the [context workflow](../context/SKILL.md), then follow Enter execution in the

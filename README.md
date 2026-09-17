@@ -22,6 +22,11 @@ skills for Codex and Claude Code. Branch switching, reopening, and close are def
 See [installation and recovery](docs/installation.md) for packaging, workspace
 setup, terminal use, and the automatic-context adapter.
 
+The initiative argument is optional for context and start. From an initiative folder
+or associated checkout, Grind resolves it automatically. Elsewhere, invoke
+`/grind:context` or `/grind:start` without an argument to choose from the initiatives
+in the current workspace.
+
 ## Development
 
 Requires Node.js 24 or later. Tests and the source entry point run directly on
