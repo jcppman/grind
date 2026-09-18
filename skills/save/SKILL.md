@@ -14,4 +14,6 @@ Resolve the plugin root from this SKILL.md and run
 with `--workspace <directory>` if needed. Report the returned commit or no-op.
 Do not stage unrelated work, reset an index, push, or retry failed commits blindly.
 A failed commit preserves staged changes: inspect and resolve that state before
-retrying. Verify a lock owner has exited before removing its lock directory.
+retrying. A pending lifecycle journal must be resumed with its original start, close,
+or archive command before saving. Verify a lock owner has exited before removing its
+lock directory.

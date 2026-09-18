@@ -164,6 +164,9 @@ export function formatStatus(result: StatusResult, options: FormatOptions = {}):
   for (const operation of result.pendingOperations) {
     lines.push(...field('Pending', `${operation.kind} operation ${operation.id}: ${operation.step}`, width));
   }
+  if (result.inspection.state?.status === 'closed' && !result.inspection.archived) {
+    lines.push(...field('Archive', result.archiveEligibility.eligible ? 'eligible' : result.archiveEligibility.blockers.join('; '), width));
+  }
   return lines.join('\n');
 }
 

@@ -8,7 +8,7 @@ import { resolveInitiative, type Resolution } from './resolve.ts';
 import type { Workspace } from './workspace.ts';
 import { pendingOperationSummaries, readPendingOperations, type PendingOperationSummary } from './operations.ts';
 import { beginStartSwitch, repairStartPointers, resumeStartSwitch } from './switching.ts';
-import { assertReopenable, reopenPreparedInitiative } from './lifecycle-commands.ts';
+import { assertReopenable, inspectArchiveEligibility, reopenPreparedInitiative, type ArchiveEligibility } from './lifecycle-commands.ts';
 
 export interface CommandContext {
   workspace: Workspace;
@@ -59,6 +59,7 @@ export interface StatusResult {
   resolution: Pick<Resolution, 'source' | 'stalePointer'> & { checkout: string | null };
   inspection: InitiativeInspection;
   pendingOperations: PendingOperationSummary[];
+  archiveEligibility: ArchiveEligibility;
 }
 
 export async function statusCommand(context: CommandContext, identifier?: string): Promise<StatusResult> {
@@ -67,11 +68,13 @@ export async function statusCommand(context: CommandContext, identifier?: string
   const pendingOperations = (await pendingOperationSummaries(context.workspace)).filter(
     (operation) => operation.target === inspection.id || `_archive/${operation.target}` === inspection.id,
   );
+  const archiveEligibility = await inspectArchiveEligibility(context.workspace, inspection);
   inspection.diagnostics.unshift(...resolution.diagnostics);
   return {
     resolution: { source: resolution.source, stalePointer: resolution.stalePointer, checkout: resolution.checkout?.root ?? null },
     inspection,
     pendingOperations,
+    archiveEligibility,
   };
 }
 
@@ -103,7 +106,8 @@ export async function startCommand(context: CommandContext, identifier?: string)
       await reopenPreparedInitiative(context.workspace, inspection);
       const refreshed = await statusCommand(context, inspection.id);
       const plan = await planStart(context.workspace, refreshed.inspection);
-      return { ...refreshed, switched: false, switchedRepositories: [], noteTransfers: [], dependencyChanges: [], pendingNotes: 0, plan };
+      const pendingNotes = refreshed.inspection.repositories.reduce((sum, repository) => sum + (repository.observed.sidecar?.pendingNotes ?? 0), 0);
+      return { ...refreshed, switched: false, switchedRepositories: [], noteTransfers: [], dependencyChanges: [], pendingNotes, plan };
     }
     if (pending[0].kind !== 'start') throw new GrindError('OPERATION_PENDING', `Pending ${pending[0].kind} operation must be resumed with its original command`);
     const execution = await resumeStartSwitch(context.workspace, inspection, pending[0]);

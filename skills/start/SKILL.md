@@ -8,12 +8,13 @@ Load the [context workflow](../context/SKILL.md), then follow Enter execution in
 this SKILL.md and run `node <plugin-root>/scripts/grind.mjs start [initiative] --json`
 with `--workspace <directory>` if needed.
 
-This release starts only open initiatives whose checkouts already match their
-recorded branches. Stop on unsupported switches, reopening, or archival. Do not
-simulate success with manual lifecycle changes. A substantive user instruction to
-implement, continue, or proceed authorizes work consistent with the current
-specification, plan, ledger, and conversation. Discuss material changes in direction
-before taking them.
+Start performs the complete preflight before changing any checkout. It may fetch,
+park and restore notes, switch clean clones, repair pointers, resume a pending
+operation, and reopen closed work after checkout preparation succeeds. Report a
+blocker instead of committing, stashing, discarding, merging, pushing, deleting a
+branch, or stealing a lock. A substantive user instruction to implement, continue,
+or proceed authorizes work consistent with the current specification, plan, ledger,
+and conversation. Discuss material changes in direction before taking them.
 
 Surface and handle relevant review notes according to the protocol and current
 user request. Reconcile observed state and resume the next action consistent with

@@ -70,6 +70,7 @@ test('status reports artifact roles', () => {
   const output = formatStatus({
     resolution: { source: 'argument', stalePointer: null, checkout: null },
     pendingOperations: [],
+    archiveEligibility: { eligible: false, closedDays: null, blockers: ['initiative is not closed'] },
     inspection: {
       id: 'app/outcome',
       dir: '/workspace/state/initiatives/app/outcome',

@@ -1,9 +1,9 @@
-# Install the milestone 1.5 build
+# Install the milestone 2 build
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, non-switching `start`, `save`, and the `agent-note` writer through shared
-Codex and Claude Code skills. Switching, reopening, close, init, and doctor belong
-to later milestones.
+`status`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
+writer through shared Codex and Claude Code skills. Init and doctor belong to later
+milestones.
 
 ## Build and package
 
@@ -100,6 +100,8 @@ grind create outcome --scope app
 grind status app/outcome
 grind start app/outcome
 grind save app/outcome --message 'outcome: clarify intent'
+grind close app/outcome --outcome delivered --result 'release/v1' --notes handled
+grind archive app/outcome
 ```
 
 Scope selects an existing workspace folder and does not infer repository tracking
@@ -119,11 +121,17 @@ An observed current branch alone does not establish ownership. All commands supp
 - `INDEX_NOT_CLEAN`: inspect the entire state repository's staged changes. Finish
   or otherwise resolve that staging intentionally, then retry. Grind does not reset it.
 - `COMMIT_FAILED`: prepared files and staged changes remain. Fix the hook, author,
-  signing, or other reported failure, then deliberately commit or unstage the
-  prepared paths before retrying. Never blindly reset unrelated work.
+  signing, or other reported failure, then retry the same lifecycle command when
+  a journal is pending. Never blindly reset unrelated work.
 - `ARTIFACT_INVALID`: repair the reported record or link; save does not normalize it.
-- `TRANSITION_UNSUPPORTED`: this release cannot switch branches or reopen work.
-  Inspect context without starting, or arrange the required checkout deliberately.
+- `START_BLOCKED`: follow the reported preflight blocker. Grind does not stash,
+  commit, discard, merge, or delete application work to make a switch possible.
+- `OPERATION_PENDING`: use status to inspect the operation, then rerun start for the
+  same target or the original close/archive command. Completed steps remain in place.
+- `REPOSITORY_LOCKED`: verify the recorded owner has exited before removing the lock.
+  Age alone is not evidence that a lock is abandoned.
+- `ARCHIVE_BLOCKED`: retain the closed initiative until it is old enough, every
+  owned branch is absent from all linked worktrees, and all notes are resolved.
 
 The CLI never pushes. Automatic context discovery without an initiative is quiet;
 explicit unresolved or ambiguous requests report a usable error.

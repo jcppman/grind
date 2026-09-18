@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { startCommand } from './commands.ts';
+import { startCommand, statusCommand } from './commands.ts';
 import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { parseFrontmatter } from './frontmatter.ts';
 import { validateLedger } from './ledger.ts';
@@ -55,7 +55,10 @@ test('archive blocks the 60-day boundary and checked-out owned branches, then pr
   await writeFile(ledger, (await readFile(ledger, 'utf8')).replace(`date: ${date}`, `date: ${old}`).replace(`date: "${date}"`, `date: "${old}"`));
   await commitState(ws, 'age correction');
   await assert.rejects(archiveCommand(context, 'app/old'), { code: 'ARCHIVE_BLOCKED' });
+  assert.match((await statusCommand(context, 'app/old')).archiveEligibility.blockers.join('\n'), /checked out/);
   await git(app, 'checkout', '-q', '--detach');
+
+  assert.equal((await statusCommand(context, 'app/old')).archiveEligibility.eligible, true);
 
   const archived = await archiveCommand(context, 'app/old');
   assert.equal(archived.archivedId, '_archive/app/old');
@@ -111,4 +114,24 @@ test('failed reopen preparation leaves the initiative closed', async (t) => {
   await assert.rejects(startCommand(context, 'work'), { code: 'START_BLOCKED' });
   assert.equal(validateLedger(parseFrontmatter(await readFile(path.join(dir, 'ledger.md'), 'utf8')), 'ledger.md').state?.status, 'closed');
   assert.equal(await readFile(path.join(app, 'dirty.txt'), 'utf8'), 'keep me\n');
+});
+
+test('start resumes a reopen whose state commit failed', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'work', { ledger: openLedger() });
+  await commitState(ws, 'initiative');
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const context = { workspace, cwd: ws.root };
+  await closeCommand(context, 'work', { outcome: 'delivered', result: 'v1', notes: 'handled' });
+  const hook = path.join(ws.stateGitRoot, '.git', 'hooks', 'pre-commit');
+  await writeFile(hook, '#!/bin/sh\nexit 1\n');
+  await chmod(hook, 0o755);
+
+  await assert.rejects(startCommand(context, 'work'), { code: 'COMMIT_FAILED' });
+  assert.equal((await readPendingOperations(workspace))[0]?.kind, 'reopen');
+  await rm(hook);
+  const result = await startCommand(context, 'work');
+  assert.equal(result.inspection.state?.status, 'open');
+  assert.deepEqual(await readPendingOperations(workspace), []);
 });

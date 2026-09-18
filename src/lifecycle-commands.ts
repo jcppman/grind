@@ -5,7 +5,7 @@ import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
 import { git } from './git.ts';
 import { inspectInitiative, type InitiativeInspection } from './inspect.ts';
-import { listParkedNoteBatches, parkCheckoutNotes } from './notes.ts';
+import { parkCheckoutNotes } from './notes.ts';
 import {
   deleteOperation,
   newLifecycleOperation,
@@ -29,6 +29,12 @@ export interface CloseOptions {
   result: string;
   notes: 'handled' | 'parked';
   date?: string;
+}
+
+export interface ArchiveEligibility {
+  eligible: boolean;
+  closedDays: number | null;
+  blockers: string[];
 }
 
 export async function assertReopenable(inspection: InitiativeInspection): Promise<void> {
@@ -68,7 +74,10 @@ async function assertInitialIndexClean(workspace: Workspace): Promise<void> {
 }
 
 function operationCheckouts(inspection: InitiativeInspection): OperationCheckout[] {
-  return inspection.repositories.map((repository) => ({
+  return inspection.repositories.filter((repository) =>
+    repository.onRecordedBranch &&
+    (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id),
+  ).map((repository) => ({
     repository: repository.recorded.path,
     checkout: repository.observed.path,
     sourceBranch: repository.recorded.branch,
@@ -93,7 +102,10 @@ export async function closeCommand(context: CommandContext, identifier: string |
   const invalid = inspection.diagnostics.filter((item) => item.severity === 'error');
   if (invalid.length > 0) throw new GrindError('ARTIFACT_INVALID', 'Repair initiative and repository records before closing', { diagnostics: invalid });
   await assertInitialIndexClean(context.workspace);
-  const pendingNotes = inspection.repositories.reduce((sum, repository) => sum + (repository.observed.sidecar?.pendingNotes ?? 0), 0);
+  const pendingNotes = inspection.repositories.reduce((sum, repository) =>
+    sum + (repository.onRecordedBranch && (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id)
+      ? repository.observed.sidecar?.pendingNotes ?? 0
+      : 0), 0);
   const parkedNotes = (await readFile(ledgerPath(inspection), 'utf8')).includes('<!-- grind-note-batch:');
   if (options.notes === 'handled' && (pendingNotes > 0 || parkedNotes)) {
     throw new GrindError('PENDING_NOTES', 'Unresolved notes remain; handle them or use --notes parked');
@@ -168,6 +180,39 @@ function checkedOutBranches(raw: string): string[] {
   return raw.split('\n').filter((line) => line.startsWith('branch refs/heads/')).map((line) => line.slice('branch refs/heads/'.length));
 }
 
+export async function inspectArchiveEligibility(workspace: Workspace, inspection: InitiativeInspection): Promise<ArchiveEligibility> {
+  const blockers: string[] = [];
+  let closedDays: number | null = null;
+  if (inspection.archived) blockers.push('initiative is already archived');
+  if (inspection.state?.status !== 'closed' || inspection.state.closed === null) {
+    blockers.push('initiative is not closed');
+  } else {
+    const closedAt = Date.parse(`${inspection.state.closed.date}T00:00:00Z`);
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    if (Number.isFinite(closedAt)) closedDays = Math.floor((todayUtc - closedAt) / 86_400_000);
+    if (closedDays === null || closedDays <= 60) blockers.push('initiative has not been closed for more than 60 days');
+  }
+  blockers.push(...inspection.diagnostics.filter((item) => item.severity === 'error').map((item) => item.message));
+  const pending = (await readPendingOperations(workspace)).filter((operation) => operation.target === inspection.id);
+  if (pending.length > 0) blockers.push('a lifecycle operation is pending');
+  const file = ledgerPath(inspection);
+  const raw = await readFile(file, 'utf8').catch(() => '');
+  if (raw.includes('<!-- grind-note-batch:')) blockers.push('unresolved parked notes remain');
+  for (const repository of inspection.repositories) {
+    const relevantSidecarNotes = repository.onRecordedBranch &&
+      (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id)
+      ? repository.observed.sidecar?.pendingNotes ?? 0
+      : 0;
+    if (relevantSidecarNotes > 0) blockers.push(`unresolved notes remain for ${repository.recorded.path}`);
+    if (!repository.observed.repository) continue;
+    const worktrees = await git(['worktree', 'list', '--porcelain'], repository.observed.path);
+    if (!worktrees.ok) blockers.push(`linked worktrees cannot be inspected for ${repository.recorded.path}`);
+    else if (checkedOutBranches(worktrees.stdout).includes(repository.recorded.branch)) blockers.push(`${repository.recorded.branch} is checked out in a linked worktree`);
+  }
+  return { eligible: blockers.length === 0, closedDays, blockers: [...new Set(blockers)] };
+}
+
 export async function archiveCommand(context: CommandContext, identifier?: string) {
   const pending = await readPendingOperations(context.workspace);
   if (pending.length > 0) {
@@ -178,26 +223,8 @@ export async function archiveCommand(context: CommandContext, identifier?: strin
   }
   const { initiative } = await resolveInitiative({ ...context, ...(identifier === undefined ? {} : { identifier }) });
   const inspection = await inspectInitiative(context.workspace, initiative);
-  if (inspection.archived || inspection.state?.status !== 'closed' || inspection.state.closed === null) {
-    throw new GrindError('ARCHIVE_BLOCKED', 'Only a closed, unarchived initiative can be archived');
-  }
-  const closedAt = Date.parse(`${inspection.state.closed.date}T00:00:00Z`);
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  if (!Number.isFinite(closedAt) || (todayUtc - closedAt) / 86_400_000 <= 60) throw new GrindError('ARCHIVE_BLOCKED', `${inspection.id} has not been closed for more than 60 days`);
-  if (inspection.diagnostics.some((item) => item.severity === 'error')) throw new GrindError('ARCHIVE_BLOCKED', 'Repository or initiative state cannot be verified', { diagnostics: inspection.diagnostics });
-  const raw = await readFile(ledgerPath(inspection), 'utf8');
-  if (raw.includes('<!-- grind-note-batch:')) throw new GrindError('ARCHIVE_BLOCKED', 'Unresolved parked notes remain');
-  for (const repository of inspection.repositories) {
-    if ((repository.observed.sidecar?.pendingNotes ?? 0) > 0 || listParkedNoteBatches(raw, repository.recorded.path).length > 0) {
-      throw new GrindError('ARCHIVE_BLOCKED', `Unresolved notes remain for ${repository.recorded.path}`);
-    }
-    const worktrees = await git(['worktree', 'list', '--porcelain'], repository.observed.path);
-    if (!worktrees.ok) throw new GrindError('ARCHIVE_BLOCKED', `Cannot inspect linked worktrees for ${repository.recorded.path}`);
-    if (checkedOutBranches(worktrees.stdout).includes(repository.recorded.branch)) {
-      throw new GrindError('ARCHIVE_BLOCKED', `${repository.recorded.branch} is checked out in a linked worktree`, { repository: repository.recorded.path });
-    }
-  }
+  const eligibility = await inspectArchiveEligibility(context.workspace, inspection);
+  if (!eligibility.eligible) throw new GrindError('ARCHIVE_BLOCKED', `${inspection.id} is not eligible for archival: ${eligibility.blockers.join('; ')}`, eligibility);
   await assertInitialIndexClean(context.workspace);
   const destination = path.join(context.workspace.initiativesDir, '_archive', ...inspection.id.split('/'));
   if (await lstat(destination).catch(() => null)) throw new GrindError('ARCHIVE_BLOCKED', `Archive destination already exists: ${destination}`);

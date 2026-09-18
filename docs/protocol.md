@@ -378,12 +378,11 @@ When the outcome is delivered, or the work is deliberately dropped:
 
 1. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
    which in the ledger.
-2. Remove any worktrees listed in `grind.repositories` with `git worktree remove`
-   from their repositories. Clones may stay on the initiative's branch until the
-   next switch-in moves them.
-3. Set `grind.status: closed` and `grind.closed` with the date and outcome.
-   Replace the open execution fields with `grind.result` saying where the result lives.
-4. Commit.
+2. Prepare a valid checkpoint. Handle every pending review note or choose the explicit
+   parked disposition so the exact note payload is retained in the ledger.
+3. Run `grind close` with delivered or abandoned outcome, result location, and note
+   disposition. The CLI records the prior execution checkpoint in lifecycle history
+   and commits only the initiative state.
 
 The folder stays where it is. A closed initiative can bounce back through QA
 feedback or a production regression. Running `grind start` on an unarchived
@@ -393,9 +392,11 @@ the normal start protocol.
 
 ## Archiving
 
-An initiative closed for more than 60 days is archived: moved with `git mv` to
-`initiatives/_archive/<scope>/<name>/`, keeping its scope path, and committed.
-Archiving earlier by hand is always allowed.
+An initiative closed for more than 60 days is archived with `grind archive`: moved
+to `initiatives/_archive/<scope>/<name>/`, keeping its scope path, and committed.
+Pending operations, unresolved notes, missing repositories, unverifiable worktree
+state, destination collisions, and any owned branch checked out in a linked worktree
+block archival.
 
 Session-start inspection lists closed initiatives past the 60-day mark as ready
 to archive. Context loading only reports them. Perform eligible moves during an

@@ -14,10 +14,10 @@ upward to the nearest enclosing workspace boundary.
 
 ## Status
 
-Milestone 1 provides workspace/artifact reading, `list`, `status`, non-switching
-`start`, initiative creation, and scoped checkpoint saves.
-Milestone 1.5 packages the matching compiled CLI and shared context/create/start/save
-skills for Codex and Claude Code. Branch switching, reopening, and close are deferred.
+Milestone 2 provides recoverable branch switching and note transfer, closure and
+reopening, retention archival, `agent-note`, and scoped checkpoint saves. The matching
+compiled CLI and shared context/create/start/save/close skills run in Codex and
+Claude Code from the same relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
 setup, terminal use, and the automatic-context adapter.
