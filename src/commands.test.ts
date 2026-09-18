@@ -55,7 +55,7 @@ test('start enters a clean open initiative and never switches', async (t) => {
   assert.equal(await git(app, 'symbolic-ref', '--short', 'HEAD'), 'feature');
 });
 
-test('start refuses closed, archived, mismatched, and missing checkouts without changing anything', async (t) => {
+test('start refuses closed, archived, unsafe mismatched, and missing checkouts without changing anything', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   await writeInitiative(ws, 'app/closed', { ledger: closedLedger([{ path: 'app', branch: 'main' }]) });
@@ -69,8 +69,7 @@ test('start refuses closed, archived, mismatched, and missing checkouts without 
   await assert.rejects(startCommand(context, 'app/closed'), { code: 'TRANSITION_UNSUPPORTED' });
   await assert.rejects(startCommand(context, '_archive/app/old'), { code: 'TRANSITION_UNSUPPORTED' });
   await assert.rejects(startCommand(context, 'app/mismatch'), (error: { code: string; details: { blockers: string[] } }) => {
-    assert.equal(error.code, 'TRANSITION_UNSUPPORTED');
-    assert.deepEqual(error.details.blockers, ['app is on main, not feature']);
+    assert.equal(error.code, 'START_BLOCKED');
     return true;
   });
   await assert.rejects(startCommand(context, 'app/missing'), { code: 'START_BLOCKED' });

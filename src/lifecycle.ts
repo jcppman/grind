@@ -84,6 +84,27 @@ async function planTargetSource(
   return 'remote-default';
 }
 
+async function targetReference(
+  checkout: string,
+  branch: string,
+  source: PlannedCheckout['targetSource'],
+): Promise<string | null> {
+  if (source === 'local') return `refs/heads/${branch}`;
+  if (source === 'remote') {
+    const refs = await git(['for-each-ref', '--format=%(refname)', `refs/remotes/*/${branch}`], checkout);
+    const matches = refs.ok ? refs.stdout.split('\n').filter(Boolean) : [];
+    return matches.length === 1 ? matches[0] as string : null;
+  }
+  if (source === 'remote-default') {
+    const remotes = await git(['remote'], checkout);
+    const names = remotes.ok ? remotes.stdout.split('\n').filter(Boolean) : [];
+    if (names.length !== 1) return null;
+    const head = await git(['symbolic-ref', '--quiet', `refs/remotes/${names[0]}/HEAD`], checkout);
+    return head.ok ? head.stdout.trim() : null;
+  }
+  return null;
+}
+
 async function inspectCheckout(
   workspace: Workspace,
   target: string,
@@ -122,6 +143,20 @@ async function inspectCheckout(
   }
   if (repository.onRecordedBranch) return planned;
   planned.targetSource = await planTargetSource(observed.path, recorded.branch, blockers, recorded.path);
+  const targetRef = await targetReference(observed.path, recorded.branch, planned.targetSource);
+  if (targetRef !== null) {
+    const checkoutCheck = await git(['read-tree', '-n', '-m', '-u', 'HEAD', targetRef], observed.path);
+    if (!checkoutCheck.ok) {
+      blockers.push(`${recorded.path} cannot switch cleanly: ${checkoutCheck.stderr.trim() || 'target tree conflicts with checkout files'}`);
+    }
+    const changed = await git(['diff', '--name-only', '-z', 'HEAD', targetRef], observed.path);
+    for (const relative of changed.ok ? changed.stdout.split('\0').filter(Boolean) : []) {
+      const tracked = await git(['ls-files', '--error-unmatch', '--', relative], observed.path);
+      if (!tracked.ok && await lstat(path.join(observed.path, relative)).then(() => true, () => false)) {
+        blockers.push(`${recorded.path} cannot switch cleanly: ${relative} is an untracked or ignored checkout obstruction`);
+      }
+    }
+  }
   if (observed.changedFiles.length > 0) {
     blockers.push(`${recorded.path} must switch but has ${observed.changedFiles.length} changed file(s)`);
   }

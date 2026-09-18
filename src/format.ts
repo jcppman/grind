@@ -170,7 +170,16 @@ export function formatStatus(result: StatusResult, options: FormatOptions = {}):
 export function formatStart(result: StartResult, options: FormatOptions = {}): string {
   const width = outputWidth(options);
   const lines = formatInspection(result.inspection, width, options);
-  lines.push('', ...wrap(`Entered ${result.inspection.id}; no checkout was switched.`, width));
+  const switchText = result.switched
+    ? `Entered ${result.inspection.id}; switched ${result.switchedRepositories.join(', ')}.`
+    : `Entered ${result.inspection.id}; no checkout was switched.`;
+  lines.push('', ...wrap(switchText, width));
+  for (const transfer of result.noteTransfers.filter((item) => item.parked > 0 || item.restored > 0)) {
+    lines.push(...wrap(`${transfer.repository}: parked ${transfer.parked} note(s), restored ${transfer.restored}.`, width));
+  }
+  if (result.dependencyChanges.length > 0) {
+    lines.push(...wrap(`Dependency files changed: ${result.dependencyChanges.join(', ')}`, width));
+  }
   if (result.pendingNotes > 0) lines.push(...wrap(`${result.pendingNotes} review note(s) await handling before resuming.`, width));
   return lines.join('\n');
 }

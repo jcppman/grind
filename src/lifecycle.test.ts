@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -130,4 +130,25 @@ test('locked start plan revalidates checkout state after acquiring locks', async
     assert.match(error.details.blockers.join('\n'), /must switch but has 1 changed file/);
     return true;
   });
+});
+
+test('switch preflight catches an ignored file that would obstruct checkout', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  const app = await makeCheckout(ws, 'app');
+  await git(app, 'checkout', '-q', '-b', 'feature');
+  await writeFile(path.join(app, 'blocked.txt'), 'tracked on feature');
+  await git(app, 'add', 'blocked.txt');
+  await git(app, 'commit', '-q', '-m', 'feature file');
+  await git(app, 'checkout', '-q', 'main');
+  const gitDir = await git(app, 'rev-parse', '--git-dir');
+  await writeFile(path.resolve(app, gitDir, 'info', 'exclude'), 'blocked.txt\n');
+  await writeFile(path.join(app, 'blocked.txt'), 'ignored local file');
+
+  const result = await plan(ws, 'app/x', dir);
+
+  assert.match(result.blockers.join('\n'), /cannot switch cleanly/);
+  assert.equal(await readFile(path.join(app, 'blocked.txt'), 'utf8'), 'ignored local file');
+  assert.equal(await git(app, 'symbolic-ref', '--short', 'HEAD'), 'main');
 });

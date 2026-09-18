@@ -90,7 +90,7 @@ test('parking writes journal, ledger destination, and sidecar source in recovera
   assert.equal(completed.checkouts[0]?.notePayload, `${notes}\n`);
   assert.equal((await readPendingOperations(workspace))[0]?.checkouts[0]?.noteState, 'removed');
   assert.equal(parseSidecar(await readFile(path.join(app, '.grind.md'), 'utf8'), '.grind.md').notes.length, 0);
-  const restored = restoreNotesFromLedger(await readFile(path.join(initiative, 'ledger.md'), 'utf8'), operation.id);
+  const restored = restoreNotesFromLedger(await readFile(path.join(initiative, 'ledger.md'), 'utf8'), `${operation.id}.0`);
   assert.equal(restored.payload, `${notes}\n`);
 });
 
@@ -106,16 +106,16 @@ test('parking resumes after ledger write or sidecar removal without duplicating 
   ]);
   const ledgerPath = path.join(initiative, 'ledger.md');
   const ledger = await readFile(ledgerPath, 'utf8');
-  await writeFile(ledgerPath, parkNotesInLedger(ledger, 'app', base.id, `${notes}\n`));
+  await writeFile(ledgerPath, parkNotesInLedger(ledger, 'app', `${base.id}.0`, `${notes}\n`));
 
   const afterLedgerCrash = await parkCheckoutNotes(workspace, base, 0, ledgerPath);
   assert.equal(afterLedgerCrash.checkouts[0]?.noteState, 'removed');
-  assert.equal((await readFile(ledgerPath, 'utf8').then((raw) => raw.match(new RegExp(`<!-- grind-note-batch:${base.id} -->`, 'g'))?.length)), 1);
+  assert.equal((await readFile(ledgerPath, 'utf8').then((raw) => raw.match(new RegExp(`<!-- grind-note-batch:${base.id}\\.0 -->`, 'g'))?.length)), 1);
 
   const second = newStartOperation('app/target', [
     { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', notePayload: `${notes}\n`, noteState: 'parked' },
   ]);
-  await writeFile(ledgerPath, parkNotesInLedger(await readFile(ledgerPath, 'utf8'), 'app', second.id, `${notes}\n`));
+  await writeFile(ledgerPath, parkNotesInLedger(await readFile(ledgerPath, 'utf8'), 'app', `${second.id}.0`, `${notes}\n`));
   const afterSidecarCrash = await parkCheckoutNotes(workspace, second, 0, ledgerPath);
   assert.equal(afterSidecarCrash.checkouts[0]?.noteState, 'removed');
 });

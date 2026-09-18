@@ -1,6 +1,6 @@
 import { GrindError } from './errors.ts';
 import { parseFrontmatter } from './frontmatter.ts';
-import { atomicWriteFile, writeOperation, type OperationRecord } from './operations.ts';
+import { atomicWriteFile, updateOperationCheckout, writeOperation, type OperationRecord } from './operations.ts';
 import { parseSidecar, renderSidecar, restoredSidecarBatches } from './sidecar.ts';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -109,18 +109,6 @@ export function listParkedNoteBatches(raw: string, repository: string): ParkedNo
   return batches;
 }
 
-function updateCheckout(
-  operation: OperationRecord,
-  checkoutIndex: number,
-  update: Partial<OperationRecord['checkouts'][number]>,
-  step: string,
-): OperationRecord {
-  const current = operation.checkouts[checkoutIndex];
-  if (current === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
-  const checkouts = operation.checkouts.map((checkout, index) => index === checkoutIndex ? { ...checkout, ...update } : checkout);
-  return { ...operation, updatedAt: new Date().toISOString(), step, checkouts };
-}
-
 /**
  * Durably parks one checkout's notes. The journal is advanced before and after
  * each destination/source write so a repeated call resumes without duplication.
@@ -142,7 +130,7 @@ export async function parkCheckoutNotes(
       throw error;
     });
     const payload = sidecarRaw === '' ? '' : splitSidecarNotes(sidecarRaw, sidecarPath).payload;
-    current = updateCheckout(current, checkoutIndex, { notePayload: payload, noteState: 'captured' }, `notes:${checkout.repository}:captured`);
+    current = updateOperationCheckout(current, checkoutIndex, { notePayload: payload, noteState: 'captured' }, `notes:${checkout.repository}:captured`);
     await writeOperation(workspace, current);
     checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
   }
@@ -150,7 +138,7 @@ export async function parkCheckoutNotes(
   const payload = checkout.notePayload as string;
   if (payload === '') {
     if (checkout.noteState !== 'removed') {
-      current = updateCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
+      current = updateOperationCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
       await writeOperation(workspace, current);
     }
     return current;
@@ -158,9 +146,9 @@ export async function parkCheckoutNotes(
 
   if (checkout.noteState === 'captured') {
     const ledgerRaw = await readFile(sourceLedgerPath, 'utf8');
-    const parked = parkNotesInLedger(ledgerRaw, checkout.repository, current.id, payload);
+    const parked = parkNotesInLedger(ledgerRaw, checkout.repository, `${current.id}.${checkoutIndex}`, payload);
     if (parked !== ledgerRaw) await atomicWriteFile(sourceLedgerPath, parked);
-    current = updateCheckout(current, checkoutIndex, { noteState: 'parked' }, `notes:${checkout.repository}:parked`);
+    current = updateOperationCheckout(current, checkoutIndex, { noteState: 'parked' }, `notes:${checkout.repository}:parked`);
     await writeOperation(workspace, current);
     checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
   }
@@ -177,7 +165,7 @@ export async function parkCheckoutNotes(
       }
       if (split.payload !== '') await atomicWriteFile(sidecarPath, split.withoutNotes);
     }
-    current = updateCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
+    current = updateOperationCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
     await writeOperation(workspace, current);
   }
   return current;
@@ -199,7 +187,7 @@ export async function restoreCheckoutNotes(
   if (checkout.restoreBatches === undefined) {
     const ledgerRaw = await readFile(targetLedgerPath, 'utf8');
     const batches = listParkedNoteBatches(ledgerRaw, checkout.repository);
-    current = updateCheckout(current, checkoutIndex, { restoreBatches: batches, restoreState: 'captured' }, `restore:${checkout.repository}:captured`);
+    current = updateOperationCheckout(current, checkoutIndex, { restoreBatches: batches, restoreState: 'captured' }, `restore:${checkout.repository}:captured`);
     await writeOperation(workspace, current);
     checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
   }
@@ -220,7 +208,7 @@ export async function restoreCheckoutNotes(
     }
     next = renderSidecar(next, targetInitiative, undefined, ids);
     if (next !== raw) await atomicWriteFile(sidecarPath, next);
-    current = updateCheckout(current, checkoutIndex, { restoreState: 'copied' }, `restore:${checkout.repository}:copied`);
+    current = updateOperationCheckout(current, checkoutIndex, { restoreState: 'copied' }, `restore:${checkout.repository}:copied`);
     await writeOperation(workspace, current);
     checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
   }
@@ -236,7 +224,7 @@ export async function restoreCheckoutNotes(
       nextLedger = restored.ledger;
     }
     if (nextLedger !== ledgerRaw) await atomicWriteFile(targetLedgerPath, nextLedger);
-    current = updateCheckout(current, checkoutIndex, { restoreState: 'removed' }, `restore:${checkout.repository}:removed`);
+    current = updateOperationCheckout(current, checkoutIndex, { restoreState: 'removed' }, `restore:${checkout.repository}:removed`);
     await writeOperation(workspace, current);
     checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
   }
@@ -247,7 +235,7 @@ export async function restoreCheckoutNotes(
     const remainingIds = restoredSidecarBatches(raw).filter((id) => !restoredIds.has(id));
     const cleaned = renderSidecar(raw, targetInitiative, undefined, remainingIds);
     if (cleaned !== raw) await atomicWriteFile(sidecarPath, cleaned);
-    current = updateCheckout(current, checkoutIndex, { restoreState: 'complete' }, `restore:${checkout.repository}:complete`);
+    current = updateOperationCheckout(current, checkoutIndex, { restoreState: 'complete' }, `restore:${checkout.repository}:complete`);
     await writeOperation(workspace, current);
   }
   return current;

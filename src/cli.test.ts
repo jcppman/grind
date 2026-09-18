@@ -50,7 +50,7 @@ test('unknown commands are usage errors and help exits zero', async () => {
 });
 
 import { readFile } from 'node:fs/promises';
-import { makeCheckout, makeTempWorkspace, openLedger, writeInitiative, git } from './test-helpers.ts';
+import { makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, git } from './test-helpers.ts';
 
 async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: string): Promise<string> {
   return [
@@ -66,6 +66,7 @@ test('list, status, and start work from different entry directories and leave st
   try {
     const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
     const app = await makeCheckout(ws, 'app', 'feature');
+    await writeSidecar(app, 'app/x');
     const before = await snapshot(ws, app);
 
     const list = await execFileAsync(process.execPath, [CLI, 'list', '--json', '--workspace', ws.root], { encoding: 'utf8' });
@@ -75,7 +76,7 @@ test('list, status, and start work from different entry directories and leave st
     const status = JSON.parse(fromCheckout.stdout);
     assert.equal(status.ok, true);
     assert.equal(status.data.inspection.id, 'app/x');
-    assert.equal(status.data.resolution.source, 'branch');
+    assert.equal(status.data.resolution.source, 'sidecar');
 
     const fromFolder = await execFileAsync(process.execPath, [CLI, 'status'], { cwd: dir, encoding: 'utf8' });
     assert.match(fromFolder.stdout, /app\/x {2}\[open\]/);

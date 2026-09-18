@@ -14,4 +14,5 @@ export * from './operations.ts';
 export * from './paths.ts';
 export * from './resolve.ts';
 export * from './sidecar.ts';
+export * from './switching.ts';
 export * from './workspace.ts';

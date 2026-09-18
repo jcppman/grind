@@ -16,6 +16,8 @@ export interface OperationCheckout {
   noteState?: 'captured' | 'parked' | 'removed';
   restoreBatches?: Array<{ operationId: string; payload: string }>;
   restoreState?: 'captured' | 'copied' | 'removed' | 'complete';
+  targetSource?: 'local' | 'remote' | 'remote-default';
+  switchState?: 'planned' | 'notes-parked' | 'checkout-planned' | 'checked-out' | 'notes-restored';
 }
 
 export interface OperationRecord {
@@ -84,6 +86,8 @@ function isOperationCheckout(value: unknown): value is OperationCheckout {
   if (checkout['notePayload'] !== undefined && typeof checkout['notePayload'] !== 'string') return false;
   if (checkout['noteState'] !== undefined && !['captured', 'parked', 'removed'].includes(checkout['noteState'] as string)) return false;
   if (checkout['restoreState'] !== undefined && !['captured', 'copied', 'removed', 'complete'].includes(checkout['restoreState'] as string)) return false;
+  if (checkout['targetSource'] !== undefined && !['local', 'remote', 'remote-default'].includes(checkout['targetSource'] as string)) return false;
+  if (checkout['switchState'] !== undefined && !['planned', 'notes-parked', 'checkout-planned', 'checked-out', 'notes-restored'].includes(checkout['switchState'] as string)) return false;
   if (checkout['restoreBatches'] !== undefined && (!Array.isArray(checkout['restoreBatches']) || !checkout['restoreBatches'].every((batch) => {
     if (typeof batch !== 'object' || batch === null || Array.isArray(batch)) return false;
     const item = batch as Record<string, unknown>;
@@ -161,6 +165,23 @@ export async function writeOperation(workspace: Workspace, operation: OperationR
     throw error;
   }
   return file;
+}
+
+export function updateOperationCheckout(
+  operation: OperationRecord,
+  checkoutIndex: number,
+  update: Partial<OperationCheckout>,
+  step: string,
+): OperationRecord {
+  const current = operation.checkouts[checkoutIndex];
+  if (current === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
+  const checkouts = operation.checkouts.map((checkout, index) => index === checkoutIndex ? { ...checkout, ...update } : checkout);
+  return { ...operation, updatedAt: new Date().toISOString(), step, checkouts };
+}
+
+export async function deleteOperation(workspace: Workspace, operationId: string): Promise<void> {
+  const dir = await operationsDir(workspace);
+  await rm(path.join(dir, `${operationId}.json`), { force: true });
 }
 
 export async function atomicWriteFile(file: string, content: string): Promise<void> {
