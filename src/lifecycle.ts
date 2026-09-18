@@ -1,8 +1,10 @@
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
+import { GrindError } from './errors.ts';
 import { branchOwners } from './resolve.ts';
 import { git } from './git.ts';
-import type { InitiativeInspection, RepositoryInspection } from './inspect.ts';
+import { inspectInitiative, type InitiativeInspection, type RepositoryInspection } from './inspect.ts';
+import { withLifecycleLocks } from './operations.ts';
 import type { Workspace } from './workspace.ts';
 
 export interface PlannedCheckout {
@@ -149,4 +151,32 @@ export async function planStart(workspace: Workspace, inspection: InitiativeInsp
     checkouts.push(await inspectCheckout(workspace, inspection.id, repository, blockers));
   }
   return { target: inspection.id, checkouts, blockers: [...new Set(blockers)] };
+}
+
+/** Acquires state and repository locks, then rebuilds the plan before any lifecycle mutation. */
+export async function withLockedStartPlan<T>(
+  workspace: Workspace,
+  inspection: InitiativeInspection,
+  operationId: string,
+  action: (plan: StartPlan) => Promise<T>,
+): Promise<T> {
+  const repositoryRoots = inspection.repositories
+    .filter((repository) => repository.observed.repository)
+    .map((repository) => repository.observed.path);
+  return withLifecycleLocks(workspace, repositoryRoots, operationId, async () => {
+    const refreshed = await inspectInitiative(workspace, {
+      id: inspection.id,
+      dir: inspection.dir,
+      archived: inspection.archived,
+    });
+    const plan = await planStart(workspace, refreshed);
+    if (plan.blockers.length > 0) {
+      throw new GrindError('START_BLOCKED', `${inspection.id} changed before lifecycle locks were acquired`, {
+        initiative: inspection.id,
+        blockers: plan.blockers,
+        plan,
+      });
+    }
+    return action(plan);
+  });
 }

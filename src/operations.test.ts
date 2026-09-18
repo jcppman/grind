@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { statusCommand } from './commands.ts';
@@ -10,7 +10,7 @@ import {
   withLifecycleLocks,
   writeOperation,
 } from './operations.ts';
-import { commitState, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
+import { commitState, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
 import { saveCommand } from './writes.ts';
 
@@ -56,4 +56,26 @@ test('lifecycle locks cover state and repository common directories and release 
   });
   await assert.rejects(withLifecycleLocks(workspace, [app], 'failure', async () => { throw new Error('boom'); }), /boom/);
   await withLifecycleLocks(workspace, [app], 'after', async () => {});
+});
+
+test('repository lock contention preserves an old lock for operator reconciliation', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const app = await makeCheckout(ws, 'app');
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const commonText = await git(app, 'rev-parse', '--git-common-dir');
+  const common = path.resolve(app, commonText);
+  const lock = path.join(common, 'grind-repository.lock');
+  await mkdir(lock);
+  const owner = { operationId: 'abandoned', pid: 999999, host: 'another-host', createdAt: '2000-01-01T00:00:00.000Z' };
+  await writeFile(path.join(lock, 'owner.json'), `${JSON.stringify(owner)}\n`);
+
+  await assert.rejects(withLifecycleLocks(workspace, [app], 'blocked', async () => {}), (error: { code: string; details: { owner: string } }) => {
+    assert.equal(error.code, 'REPOSITORY_LOCKED');
+    assert.deepEqual(JSON.parse(error.details.owner), owner);
+    return true;
+  });
+  assert.deepEqual(JSON.parse(await readFile(path.join(lock, 'owner.json'), 'utf8')), owner);
+  await rm(lock, { recursive: true });
+  await withLifecycleLocks(workspace, [app], 'after-reconciliation', async () => {});
 });
