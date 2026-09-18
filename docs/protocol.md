@@ -72,7 +72,7 @@ organize documents; they do not create nested initiatives.
 ### Index and document scope
 
 `index.md` links to authoritative documents and explains each one's scope. It
-identifies shared constraints to read on every context load and links to optional
+identifies specific shared constraint sections needed on every context load and links to optional
 nested indexes. Keep it current when documents are added, moved, or removed. It
 contains navigation, not duplicated status or checkpoint information.
 
@@ -201,6 +201,20 @@ in the plan.
 
 ### `ledger.md`
 
+Keep the ledger focused on resumption. At each checkpoint, rewrite working state
+to describe what is true now. Remove superseded observations, repeated completion
+details, and obsolete validation results. Keep the latest relevant verification
+with its commit or artifact reference and limitations. Preserve historical rationale
+only when it still affects future decisions; Git retains earlier checkpoints.
+Do not create a separate history file by default.
+
+Current rules belong in their authoritative specification, plan, or protocol;
+link to them instead of maintaining another copy in the ledger. Record the next
+concrete task or unresolved decision in `next_action`, not routine workflow such as
+asking the user what to do. It is a candidate task, not execution authorization.
+Preserve pending parked notes, lifecycle records needed for recovery, and unknown
+metadata when trimming prose.
+
 Provides resumable external working memory:
 
 - what is true now
@@ -299,10 +313,12 @@ initiative or refreshes context after external changes. Do not reload every turn
    identifier, its folder, or a verified checkout pointer. If the pointer disagrees
    with Git, derive ownership from unarchived repository tracking records without rewriting
    the pointer. Report ambiguity instead of selecting a guess.
-2. Read `index.md`, `intent.md`, and `ledger.md`, then the shared constraints
-   identified by the index. Follow links to specifications, plans, supporting
-   artifacts relevant to the request or recorded next action.
-   Report missing links or conflicting ownership; do not silently skip constraints.
+2. Read `index.md`, `intent.md`, and `ledger.md`, then the specific shared
+   constraint sections identified by the index. Load specifications, plans, and
+   supporting artifacts when the user's chosen topic requires them. A recorded
+   next action alone does not require loading its detailed documents. Read the
+   relevant protocol sections for the current operation, not the entire protocol
+   on every boot. Report missing required links or conflicting ownership.
 3. Inspect the tracked repositories, branches, diffs, and recent commits. Report
    missing checkouts and mismatches as observed state; do not change them.
 4. Surface pending sidecar and parked review notes, the recorded next action, and
@@ -366,10 +382,12 @@ Before yielding control after meaningful work:
 
 1. Inspect repository and Git state again.
 2. Run proportionate validation or record what remains unverified.
-3. Update the ledger frontmatter and working-state narrative with the exact
-   current state and next action. Update indexes if document organization changed.
-4. Append durable decisions, discoveries, completed milestones, and open
-   questions.
+3. Rewrite ledger working state and update frontmatter with the current state
+   and concrete next action. Remove stale observations and duplicated history;
+   retain relevant evidence and unresolved questions. Update indexes if navigation
+   changed.
+4. Put durable decisions in their authoritative documents. Retain a brief rationale
+   or evidence reference in the ledger only when it helps future work.
 5. Correct affected plans, specifications, or `intent.md` if their corresponding truths
    changed.
 6. Commit the initiative folder in the state repository, naming the initiative
