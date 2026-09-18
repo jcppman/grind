@@ -9,6 +9,7 @@ export * from './inspect.ts';
 export * from './git.ts';
 export * from './ledger.ts';
 export * from './lifecycle.ts';
+export * from './notes.ts';
 export * from './operations.ts';
 export * from './paths.ts';
 export * from './resolve.ts';

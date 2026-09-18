@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { stringify } from 'yaml';
 import { diagnostic, type Diagnostic } from './errors.ts';
 import { getString, parseFrontmatter } from './frontmatter.ts';
 
@@ -18,6 +19,8 @@ export interface SidecarNote {
 
 export interface Sidecar {
   path: string;
+  raw: string;
+  body: string;
   /** Initiative path relative to `initiatives/`, or null when the pointer is absent. */
   initiative: string | null;
   notes: SidecarNote[];
@@ -52,7 +55,21 @@ export function parseSidecar(raw: string, sidecarPath: string): Sidecar {
       );
     }
   }
-  return { path: sidecarPath, initiative, notes: parseNotes(frontmatter.body), diagnostics };
+  return { path: sidecarPath, raw, body: frontmatter.body, initiative, notes: parseNotes(frontmatter.body), diagnostics };
+}
+
+/** Rewrites only the pointer mapping while preserving the Markdown body. */
+export function renderSidecar(raw: string, initiative: string | null, body?: string): string {
+  const frontmatter = parseFrontmatter(raw);
+  if (frontmatter.error !== undefined || frontmatter.data === null && frontmatter.hasFrontmatter) {
+    throw new Error(frontmatter.error ?? 'Invalid sidecar frontmatter');
+  }
+  const data = { ...(frontmatter.data ?? {}) };
+  if (initiative === null) delete data['initiative'];
+  else data['initiative'] = initiative;
+  const nextBody = body ?? frontmatter.body;
+  if (Object.keys(data).length === 0) return nextBody;
+  return `---\n${stringify(data)}---\n${nextBody}`;
 }
 
 function parseNotes(body: string): SidecarNote[] {
