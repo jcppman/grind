@@ -103,8 +103,10 @@ grind save app/outcome --message 'outcome: clarify intent'
 ```
 
 Scope selects an existing workspace folder and does not infer repository tracking
-or branch ownership. Populate the ledger from verified repository state. All
-commands support `--json` and `--workspace`.
+or branch ownership. Populate repository tracking only for checkouts and branches
+established as initiative work, following [Creating an initiative](protocol.md#creating-an-initiative).
+An observed current branch alone does not establish ownership. All commands support
+`--json` and `--workspace`.
 
 ## Recovery
 

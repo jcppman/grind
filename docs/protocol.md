@@ -30,6 +30,30 @@ An initiative starts the moment an idea is worth writing down. `grind create`
 creates `index.md`, `intent.md`, and `ledger.md`; specifications, plans, and
 supporting artifacts appear as the work earns them.
 
+### Creating an initiative
+
+Creation captures intent; it does not authorize implementation or checkout changes.
+Before writing the intent, ask focused clarification questions when uncertainty
+about the desired outcome, scope, success criteria, or constraints would materially
+change what is recorded. Use the current conversation to avoid asking questions
+already answered. Do not turn plausible assumptions into agreed requirements.
+Design and execution choices that can wait belong as open questions in the ledger,
+with clarification or investigation as the next action when needed.
+
+`grind.repositories` records checkouts and exact branches assigned to initiative
+work, not every repository consulted. A checkout's current branch is evidence of
+its state, not evidence that the branch belongs to this initiative. During creation,
+record an existing branch only when its association with the initiative is
+established by the user or verified initiative work. Otherwise leave
+`grind.repositories` empty and describe candidate repositories in the ledger's
+working state. Do not invent branch names to fill the required field or put
+placeholder branches in tracking records.
+
+Choose and create new branches or worktrees when execution needs them, following
+the repository's branching rules, then record the verified checkout and branch.
+Creation alone does not create or switch branches. Repositories used only as
+references do not need an initiative branch or tracking entry.
+
 
 ## Initiative artifacts
 
