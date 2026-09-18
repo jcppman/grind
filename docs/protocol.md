@@ -122,9 +122,11 @@ full bundle compatibility.
 
 ### Execution authorization and verification
 
-A substantive user instruction such as “implement this,” “let's do it,” “start,” or
+A substantive user instruction such as “implement this,” “let's do it,” or
 “continue” authorizes work consistent with the current specification, plan, ledger,
-and conversation. Do not require or record separate document sign-off metadata. When the
+and conversation. A bare `/grind:start` authorizes preparation only; ask what the
+user wants to do before undertaking substantive work. Do not require or record
+separate document sign-off metadata. When the
 direction is ambiguous or implementation reveals a material change, discuss it with
 the user before proceeding and update the governing documents and ledger afterward.
 
@@ -215,7 +217,7 @@ is inspectable, editable, portable, and versioned.
 The ledger is also the handoff. Because the protocol is the same for every
 session, context can be loaded with `/grind:context` or automatically from an
 initiative folder or associated checkout. Accompany it with the current request;
-use `/grind:start` to enter execution and resume work. No per-session handoff
+use `/grind:start` to prepare the initiative and choose what to do next. No per-session handoff
 document is written.
 
 
@@ -318,14 +320,20 @@ try folder or checkout discovery first; if none resolves, list available initiat
 and let the user choose without requiring the full identifier. Reading files alone
 does not earn a ledger update.
 
-### Enter execution
+### Prepare an initiative
 
-`/grind:start [initiative]` reuses context loading, then explicitly enters execution.
+`/grind:start [initiative]` reuses context loading and prepares the initiative.
 Preflight the tracked checkouts and use the CLI's supported switch/reopen mechanics.
 Stop if the transition cannot be performed safely or is unavailable. Reinspect
-state after a transition, handle relevant review notes, reconcile the ledger with
-repository reality, and continue from a next action that still follows from the
-intent, specification, and current user instructions.
+state after a transition and surface relevant review notes, discrepancies, and the
+recorded next action. Then ask what the user wants to do and wait; the ledger's
+next action is context, not an instruction to execute. Do not process review notes
+or begin substantive work on a bare start. The user may want to discuss the work.
+
+When start accompanies a substantive task, proceed with that task without asking
+what to do again. Follow the user's requested scope and the normal review-note,
+execution, and checkpoint rules. Preparation may still perform the CLI's required
+note parking/restoration and lifecycle persistence.
 
 A substantive request accompanying context loading authorizes that requested work,
 not automatic execution of a different recorded task or unrelated checkout changes.
