@@ -11,6 +11,11 @@ export interface OperationCheckout {
   checkout: string;
   sourceBranch: string;
   targetBranch: string;
+  sourceInitiative?: string | null;
+  notePayload?: string;
+  noteState?: 'captured' | 'parked' | 'removed';
+  restoreBatches?: Array<{ operationId: string; payload: string }>;
+  restoreState?: 'captured' | 'copied' | 'removed' | 'complete';
 }
 
 export interface OperationRecord {
@@ -71,9 +76,20 @@ function parseOperation(value: unknown, file: string): OperationRecord {
 function isOperationCheckout(value: unknown): value is OperationCheckout {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const checkout = value as Record<string, unknown>;
-  return ['repository', 'checkout', 'sourceBranch', 'targetBranch'].every(
+  const required = ['repository', 'checkout', 'sourceBranch', 'targetBranch'].every(
     (key) => typeof checkout[key] === 'string' && (checkout[key] as string).trim() !== '',
   );
+  if (!required) return false;
+  if (checkout['sourceInitiative'] !== undefined && checkout['sourceInitiative'] !== null && typeof checkout['sourceInitiative'] !== 'string') return false;
+  if (checkout['notePayload'] !== undefined && typeof checkout['notePayload'] !== 'string') return false;
+  if (checkout['noteState'] !== undefined && !['captured', 'parked', 'removed'].includes(checkout['noteState'] as string)) return false;
+  if (checkout['restoreState'] !== undefined && !['captured', 'copied', 'removed', 'complete'].includes(checkout['restoreState'] as string)) return false;
+  if (checkout['restoreBatches'] !== undefined && (!Array.isArray(checkout['restoreBatches']) || !checkout['restoreBatches'].every((batch) => {
+    if (typeof batch !== 'object' || batch === null || Array.isArray(batch)) return false;
+    const item = batch as Record<string, unknown>;
+    return typeof item['operationId'] === 'string' && typeof item['payload'] === 'string';
+  }))) return false;
+  return true;
 }
 
 export async function readPendingOperations(workspace: Workspace): Promise<Array<OperationRecord & { path: string }>> {
@@ -145,6 +161,17 @@ export async function writeOperation(workspace: Workspace, operation: OperationR
     throw error;
   }
   return file;
+}
+
+export async function atomicWriteFile(file: string, content: string): Promise<void> {
+  const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
+  await writeFile(temp, content, { flag: 'wx' });
+  try {
+    await rename(temp, file);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 }
 
 export interface LockOwner {

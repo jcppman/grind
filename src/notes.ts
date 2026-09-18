@@ -1,6 +1,10 @@
 import { GrindError } from './errors.ts';
 import { parseFrontmatter } from './frontmatter.ts';
-import { parseSidecar, renderSidecar } from './sidecar.ts';
+import { atomicWriteFile, writeOperation, type OperationRecord } from './operations.ts';
+import { parseSidecar, renderSidecar, restoredSidecarBatches } from './sidecar.ts';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { Workspace } from './workspace.ts';
 
 const NOTE_START = /^## @.+?#\d+(?:-\d+)?\s*$/m;
 
@@ -75,4 +79,176 @@ export function restoreNotesFromLedger(raw: string, operationId: string): { ledg
   const payload = body.slice(payloadStart, end);
   const removalEnd = end + marker.end.length + (body[end + marker.end.length] === '\n' ? 1 : 0);
   return { ledger: `${prefix}${body.slice(0, start)}${body.slice(removalEnd)}`, payload };
+}
+
+export interface ParkedNoteBatch {
+  operationId: string;
+  payload: string;
+}
+
+export function listParkedNoteBatches(raw: string, repository: string): ParkedNoteBatch[] {
+  const { body } = bodyPrefix(raw);
+  const batches: ParkedNoteBatch[] = [];
+  let currentRepository: string | null = null;
+  const lines = [...body.matchAll(/^### (.+)\s*$/gm)];
+  for (let index = 0; index < lines.length; index += 1) {
+    currentRepository = lines[index]?.[1] ?? null;
+    if (currentRepository !== repository) continue;
+    const sectionStart = (lines[index]?.index ?? 0) + (lines[index]?.[0].length ?? 0);
+    const sectionEnd = lines[index + 1]?.index ?? body.length;
+    const section = body.slice(sectionStart, sectionEnd);
+    for (const match of section.matchAll(/<!-- grind-note-batch:([A-Za-z0-9._-]+) -->\n/g)) {
+      const operationId = match[1] as string;
+      const payloadStart = (match.index ?? 0) + match[0].length;
+      const endMarker = `<!-- /grind-note-batch:${operationId} -->`;
+      const payloadEnd = section.indexOf(endMarker, payloadStart);
+      if (payloadEnd === -1) throw new GrindError('ARTIFACT_INVALID', `Parked note batch ${operationId} has no closing marker`);
+      batches.push({ operationId, payload: section.slice(payloadStart, payloadEnd) });
+    }
+  }
+  return batches;
+}
+
+function updateCheckout(
+  operation: OperationRecord,
+  checkoutIndex: number,
+  update: Partial<OperationRecord['checkouts'][number]>,
+  step: string,
+): OperationRecord {
+  const current = operation.checkouts[checkoutIndex];
+  if (current === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
+  const checkouts = operation.checkouts.map((checkout, index) => index === checkoutIndex ? { ...checkout, ...update } : checkout);
+  return { ...operation, updatedAt: new Date().toISOString(), step, checkouts };
+}
+
+/**
+ * Durably parks one checkout's notes. The journal is advanced before and after
+ * each destination/source write so a repeated call resumes without duplication.
+ */
+export async function parkCheckoutNotes(
+  workspace: Workspace,
+  operation: OperationRecord,
+  checkoutIndex: number,
+  sourceLedgerPath: string,
+): Promise<OperationRecord> {
+  let current = operation;
+  let checkout = current.checkouts[checkoutIndex];
+  if (checkout === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
+  const sidecarPath = path.join(checkout.checkout, '.grind.md');
+
+  if (checkout.notePayload === undefined) {
+    const sidecarRaw = await readFile(sidecarPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    });
+    const payload = sidecarRaw === '' ? '' : splitSidecarNotes(sidecarRaw, sidecarPath).payload;
+    current = updateCheckout(current, checkoutIndex, { notePayload: payload, noteState: 'captured' }, `notes:${checkout.repository}:captured`);
+    await writeOperation(workspace, current);
+    checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
+  }
+
+  const payload = checkout.notePayload as string;
+  if (payload === '') {
+    if (checkout.noteState !== 'removed') {
+      current = updateCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
+      await writeOperation(workspace, current);
+    }
+    return current;
+  }
+
+  if (checkout.noteState === 'captured') {
+    const ledgerRaw = await readFile(sourceLedgerPath, 'utf8');
+    const parked = parkNotesInLedger(ledgerRaw, checkout.repository, current.id, payload);
+    if (parked !== ledgerRaw) await atomicWriteFile(sourceLedgerPath, parked);
+    current = updateCheckout(current, checkoutIndex, { noteState: 'parked' }, `notes:${checkout.repository}:parked`);
+    await writeOperation(workspace, current);
+    checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
+  }
+
+  if (checkout.noteState === 'parked') {
+    const sidecarRaw = await readFile(sidecarPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    });
+    if (sidecarRaw !== '') {
+      const split = splitSidecarNotes(sidecarRaw, sidecarPath);
+      if (split.payload !== '' && split.payload !== payload) {
+        throw new GrindError('NOTE_INVALID', `Notes in ${sidecarPath} changed after the operation captured them`);
+      }
+      if (split.payload !== '') await atomicWriteFile(sidecarPath, split.withoutNotes);
+    }
+    current = updateCheckout(current, checkoutIndex, { noteState: 'removed' }, `notes:${checkout.repository}:removed`);
+    await writeOperation(workspace, current);
+  }
+  return current;
+}
+
+/** Restores all parked batches for one target checkout with journal-backed deduplication. */
+export async function restoreCheckoutNotes(
+  workspace: Workspace,
+  operation: OperationRecord,
+  checkoutIndex: number,
+  targetLedgerPath: string,
+  targetInitiative: string,
+): Promise<OperationRecord> {
+  let current = operation;
+  let checkout = current.checkouts[checkoutIndex];
+  if (checkout === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
+  const sidecarPath = path.join(checkout.checkout, '.grind.md');
+
+  if (checkout.restoreBatches === undefined) {
+    const ledgerRaw = await readFile(targetLedgerPath, 'utf8');
+    const batches = listParkedNoteBatches(ledgerRaw, checkout.repository);
+    current = updateCheckout(current, checkoutIndex, { restoreBatches: batches, restoreState: 'captured' }, `restore:${checkout.repository}:captured`);
+    await writeOperation(workspace, current);
+    checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
+  }
+
+  const batches = checkout.restoreBatches as ParkedNoteBatch[];
+  if (checkout.restoreState === 'captured') {
+    const raw = await readFile(sidecarPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    });
+    const existingIds = restoredSidecarBatches(raw);
+    let next = renderSidecar(raw, targetInitiative);
+    const ids = [...existingIds];
+    for (const batch of batches) {
+      if (ids.includes(batch.operationId)) continue;
+      next = appendSidecarNotes(next, targetInitiative, batch.payload);
+      ids.push(batch.operationId);
+    }
+    next = renderSidecar(next, targetInitiative, undefined, ids);
+    if (next !== raw) await atomicWriteFile(sidecarPath, next);
+    current = updateCheckout(current, checkoutIndex, { restoreState: 'copied' }, `restore:${checkout.repository}:copied`);
+    await writeOperation(workspace, current);
+    checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
+  }
+
+  if (checkout.restoreState === 'copied') {
+    const ledgerRaw = await readFile(targetLedgerPath, 'utf8');
+    let nextLedger = ledgerRaw;
+    for (const batch of batches) {
+      const restored = restoreNotesFromLedger(nextLedger, batch.operationId);
+      if (restored.payload !== '' && restored.payload !== batch.payload) {
+        throw new GrindError('NOTE_INVALID', `Parked note batch ${batch.operationId} changed after capture`);
+      }
+      nextLedger = restored.ledger;
+    }
+    if (nextLedger !== ledgerRaw) await atomicWriteFile(targetLedgerPath, nextLedger);
+    current = updateCheckout(current, checkoutIndex, { restoreState: 'removed' }, `restore:${checkout.repository}:removed`);
+    await writeOperation(workspace, current);
+    checkout = current.checkouts[checkoutIndex] as OperationRecord['checkouts'][number];
+  }
+
+  if (checkout.restoreState === 'removed') {
+    const raw = await readFile(sidecarPath, 'utf8');
+    const restoredIds = new Set(batches.map((batch) => batch.operationId));
+    const remainingIds = restoredSidecarBatches(raw).filter((id) => !restoredIds.has(id));
+    const cleaned = renderSidecar(raw, targetInitiative, undefined, remainingIds);
+    if (cleaned !== raw) await atomicWriteFile(sidecarPath, cleaned);
+    current = updateCheckout(current, checkoutIndex, { restoreState: 'complete' }, `restore:${checkout.repository}:complete`);
+    await writeOperation(workspace, current);
+  }
+  return current;
 }

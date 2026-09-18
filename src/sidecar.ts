@@ -59,7 +59,12 @@ export function parseSidecar(raw: string, sidecarPath: string): Sidecar {
 }
 
 /** Rewrites only the pointer mapping while preserving the Markdown body. */
-export function renderSidecar(raw: string, initiative: string | null, body?: string): string {
+export function renderSidecar(
+  raw: string,
+  initiative: string | null,
+  body?: string,
+  restoredBatches?: readonly string[] | null,
+): string {
   const frontmatter = parseFrontmatter(raw);
   if (frontmatter.error !== undefined || frontmatter.data === null && frontmatter.hasFrontmatter) {
     throw new Error(frontmatter.error ?? 'Invalid sidecar frontmatter');
@@ -67,9 +72,24 @@ export function renderSidecar(raw: string, initiative: string | null, body?: str
   const data = { ...(frontmatter.data ?? {}) };
   if (initiative === null) delete data['initiative'];
   else data['initiative'] = initiative;
+  if (restoredBatches !== undefined) {
+    if (restoredBatches === null || restoredBatches.length === 0) delete data['grind_note_batches'];
+    else data['grind_note_batches'] = [...restoredBatches];
+  }
   const nextBody = body ?? frontmatter.body;
   if (Object.keys(data).length === 0) return nextBody;
   return `---\n${stringify(data)}---\n${nextBody}`;
+}
+
+export function restoredSidecarBatches(raw: string): string[] {
+  const frontmatter = parseFrontmatter(raw);
+  if (frontmatter.error !== undefined) throw new Error(frontmatter.error);
+  const value = frontmatter.data?.['grind_note_batches'];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error('`grind_note_batches` must be a list of strings');
+  }
+  return value;
 }
 
 function parseNotes(body: string): SidecarNote[] {

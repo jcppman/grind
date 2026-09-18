@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { addAgentNote } from './agent-note.ts';
@@ -60,4 +60,22 @@ test('agent-note reports repository lock contention without writing', async (t) 
     });
   });
   assert.equal(await readSidecar(app), null);
+});
+
+test('agent-note creates a missing sidecar without a pointer and rejects a symlink escape', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const app = await makeCheckout(ws, 'app');
+  const source = path.join(app, 'src.ts');
+  await writeFile(source, 'one\n');
+  await addAgentNote({ file: source, start: 1, end: 1, comment: 'new note' });
+  const sidecar = await readSidecar(app);
+  assert.equal(sidecar?.initiative, null);
+  assert.equal(sidecar?.notes.length, 1);
+
+  const outside = path.join(ws.root, 'outside.ts');
+  const link = path.join(app, 'escaped.ts');
+  await writeFile(outside, 'outside\n');
+  await symlink(outside, link);
+  await assert.rejects(addAgentNote({ file: link, start: 1, end: 1, comment: 'escape' }), { code: 'NOTE_INVALID' });
 });
