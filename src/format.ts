@@ -56,6 +56,9 @@ function formatInspection(inspection: InitiativeInspection): string[] {
 export function formatStatus(result: StatusResult): string {
   const lines = formatInspection(result.inspection);
   lines.splice(1, 0, `  resolved via ${result.resolution.source}${result.resolution.stalePointer ? ` (stale pointer ${result.resolution.stalePointer.pointed})` : ''}`);
+  for (const operation of result.pendingOperations) {
+    lines.push(`  pending ${operation.kind} operation ${operation.id}: ${operation.step}`);
+  }
   return lines.join('\n');
 }
 

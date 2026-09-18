@@ -5,6 +5,7 @@ import { formatStatus } from './format.ts';
 test('status reports artifact roles', () => {
   const output = formatStatus({
     resolution: { source: 'argument', stalePointer: null, checkout: null },
+    pendingOperations: [],
     inspection: {
       id: 'app/outcome',
       dir: '/workspace/state/initiatives/app/outcome',

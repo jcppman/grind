@@ -5,7 +5,8 @@
   "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
   "type": "module",
   "bin": {
-    "grind": "./dist/cli.js"
+    "grind": "./dist/cli.js",
+    "agent-note": "./dist/agent-note.js"
   },
   "files": [
     "dist",

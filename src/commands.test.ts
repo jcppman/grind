@@ -63,6 +63,7 @@ test('start refuses closed, archived, mismatched, and missing checkouts without 
   await writeInitiative(ws, 'app/mismatch', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
   await writeInitiative(ws, 'app/missing', { ledger: openLedger([{ path: 'nowhere', branch: 'main' }]) });
   const app = await makeCheckout(ws, 'app', 'main');
+  await git(app, 'branch', 'feature');
   const workspace = await loadWorkspace({ cwd: ws.root });
   const context = { workspace, cwd: ws.root };
   await assert.rejects(startCommand(context, 'app/closed'), { code: 'TRANSITION_UNSUPPORTED' });

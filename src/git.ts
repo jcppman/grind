@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -38,6 +39,15 @@ export async function gitCurrentBranch(dir: string): Promise<string | null> {
   if (!result.ok) return null;
   const branch = result.stdout.trim();
   return branch === '' ? null : branch;
+}
+
+/** Real Git common directory shared by a repository and all of its worktrees. */
+export async function gitCommonDir(dir: string): Promise<string | null> {
+  const result = await git(['rev-parse', '--git-common-dir'], dir);
+  if (!result.ok) return null;
+  const common = result.stdout.trim();
+  if (common === '') return null;
+  return realpath(path.resolve(dir, common));
 }
 
 /** Porcelain status lines of the working tree, or null when `dir` is not a repository. */

@@ -1,8 +1,9 @@
 # Install the milestone 1.5 build
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, non-switching `start`, and `save` through shared Codex and Claude Code
-skills. Switching, reopening, close, init, and doctor belong to later milestones.
+`status`, non-switching `start`, `save`, and the `agent-note` writer through shared
+Codex and Claude Code skills. Switching, reopening, close, init, and doctor belong
+to later milestones.
 
 ## Build and package
 
@@ -25,6 +26,10 @@ read-only inspections.
 For terminal use, `npm pack` creates the npm artifact; install that artifact with
 `npm install --global <tarball>`. Plugin installation alone does not add `grind`
 to PATH. Both entry points use the same compiled CLI.
+
+During development, `npm run build && npm link` links both `grind` and
+`agent-note` from the checkout. Rebuild after source changes because the linked
+commands execute the compiled files in `dist/`.
 
 ## Codex installation
 

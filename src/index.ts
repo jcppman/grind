@@ -1,4 +1,5 @@
 export * from './artifacts.ts';
+export * from './agent-note.ts';
 export * from './discovery.ts';
 export * from './errors.ts';
 export * from './commands.ts';
@@ -7,6 +8,8 @@ export * from './frontmatter.ts';
 export * from './inspect.ts';
 export * from './git.ts';
 export * from './ledger.ts';
+export * from './lifecycle.ts';
+export * from './operations.ts';
 export * from './paths.ts';
 export * from './resolve.ts';
 export * from './sidecar.ts';

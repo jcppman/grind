@@ -1,5 +1,4 @@
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { stringify } from 'yaml';
 import { readInitiative } from './artifacts.ts';
@@ -7,6 +6,7 @@ import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
 import { git } from './git.ts';
 import { pathsBelow, resolveWithin, toPosix } from './paths.ts';
+import { assertNoPendingOperation, withLifecycleLocks } from './operations.ts';
 import { resolveInitiative } from './resolve.ts';
 import { findNestedWorkspaceConfig, type Workspace } from './workspace.ts';
 
@@ -17,21 +17,7 @@ export async function checkedGit(root: string, ...args: string[]): Promise<strin
 }
 
 export async function withStateLock<T>(workspace: Workspace, action: () => Promise<T>): Promise<T> {
-  const common = (await checkedGit(workspace.stateGitRoot, 'rev-parse', '--git-common-dir')).trim();
-  const lock = path.resolve(workspace.stateGitRoot, common, 'grind-write.lock');
-  try {
-    await mkdir(lock);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const owner = await readFile(path.join(lock, 'owner.json'), 'utf8').catch(() => 'Owner information unavailable');
-    throw new GrindError('STATE_LOCKED', `State repository is locked at ${lock}. Verify the owner has exited before manually removing this directory.`, { lock, owner });
-  }
-  try {
-    await writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, host: os.hostname(), at: new Date().toISOString() }));
-    return await action();
-  } finally {
-    await rm(lock, { recursive: true });
-  }
+  return withLifecycleLocks(workspace, [], `state-${process.pid}`, action);
 }
 
 export async function rejectSymlinks(base: string, target: string): Promise<void> {
@@ -123,6 +109,7 @@ export async function saveCommand(context: CommandContext, identifier: string | 
   const { workspace } = context;
   return withStateLock(workspace, async () => {
     const { initiative } = await resolveInitiative({ ...context, ...(identifier === undefined ? {} : { identifier }) });
+    await assertNoPendingOperation(workspace, initiative.id);
     if (initiative.archived) throw new GrindError('UNSUPPORTED_OPERATION', 'Archived initiatives are read-only');
     const root = workspace.stateGitRoot;
     if ((await checkedGit(root, 'diff', '--cached', '--name-only', '-z')).length) {
