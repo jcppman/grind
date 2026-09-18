@@ -31,12 +31,12 @@ test('parseArgs separates command, positionals, and options', () => {
 });
 
 test('deferred commands report UNSUPPORTED_OPERATION through the JSON envelope', async () => {
-  const result = await runCli('close', '--json');
+  const result = await runCli('init', '--json');
   assert.equal(result.code, 1);
   const envelope = JSON.parse(result.stdout);
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'UNSUPPORTED_OPERATION');
-  assert.match(envelope.error.message, /milestone 2/);
+  assert.match(envelope.error.message, /later milestone/);
   assert.match(result.stderr, /not implemented/);
 });
 

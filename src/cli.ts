@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { createCommand, saveCommand } from './writes.ts';
 import { listCommand, startCommand, statusCommand } from './commands.ts';
+import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
 import { formatList, formatStart, formatStatus } from './format.ts';
 import { loadWorkspace } from './workspace.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
   init: 'a later milestone',
-  close: 'milestone 2',
   doctor: 'a later milestone',
   dashboard: 'a later milestone',
 };
@@ -19,6 +19,7 @@ Commands:
   start [initiative]  make an existing initiative active
   save [initiative]   validate and persist its prepared checkpoint
   close [initiative]  mark it delivered or abandoned
+  archive [initiative] move eligible closed work to read-only history
   list                list initiatives and their recorded state
   status [initiative] inspect initiative artifacts and recorded/observed state
 
@@ -26,13 +27,17 @@ Options:
   --workspace <dir>   directory containing grind-workspace.json
   --scope <folder>    workspace-relative scope for create
   --message <text>    checkpoint commit message for save
+  --outcome <value>   delivered or abandoned for close
+  --result <text>     result location or summary for close
+  --notes <value>     handled or parked for close
+  --date <YYYY-MM-DD> closure date override
   --json              emit one JSON envelope on stdout
   --help              show this help
 
-This build inspects initiatives (list, status) and enters an open initiative
-whose checkouts already sit on their recorded branches (start). It never
-switches branches, reopens closed work, or rewrites sidecars during start. Create
-writes templates; save commits a prepared checkpoint.`;
+Start preflights and switches tracked clean checkouts, transfers review notes,
+and reopens closed work. Close persists an outcome and archive moves eligible
+history after its retention period. Create writes templates; save commits a
+prepared checkpoint.`;
 
 export interface ParsedArgs {
   command: string | null;
@@ -42,6 +47,10 @@ export interface ParsedArgs {
   workspace?: string;
   scope?: string;
   message?: string;
+  outcome?: string;
+  result?: string;
+  notes?: string;
+  date?: string;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -55,10 +64,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
       parsed.workspace = value;
       i += 1;
-    } else if (['--scope', '--message'].includes(arg)) {
+    } else if (['--scope', '--message', '--outcome', '--result', '--notes', '--date'].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new GrindError('USAGE', `${arg} requires a value`);
-      parsed[arg.slice(2) as 'scope' | 'message'] = value;
+      parsed[arg.slice(2) as 'scope' | 'message' | 'outcome' | 'result' | 'notes' | 'date'] = value;
     } else if (arg.startsWith('--workspace=')) parsed.workspace = arg.slice('--workspace='.length);
     else if (arg.startsWith('-')) throw new GrindError('USAGE', `Unknown option ${arg}`);
     else if (parsed.command === null) parsed.command = arg;
@@ -84,17 +93,22 @@ export async function run(argv: readonly string[]): Promise<number> {
         { command: args.command, increment },
       );
     }
-    if (!['list', 'status', 'start', 'create', 'save'].includes(args.command)) {
+    if (!['list', 'status', 'start', 'create', 'save', 'close', 'archive'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
     if (args.positional.length > (args.command === 'list' ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
-    for (const [option, command] of [['scope', 'create'], ['message', 'save']] as const) {
+    for (const [option, command] of [['scope', 'create'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
       if (args[option] !== undefined && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
     if (args.command === 'create' && args.positional.length !== 1) throw new GrindError('USAGE', 'create requires an argument');
     if (args.command === 'save' && !args.message?.trim()) throw new GrindError('USAGE', 'save requires --message');
+    if (args.command === 'close') {
+      if (!['delivered', 'abandoned'].includes(args.outcome ?? '')) throw new GrindError('USAGE', 'close requires --outcome delivered|abandoned');
+      if (!args.result?.trim()) throw new GrindError('USAGE', 'close requires --result');
+      if (!['handled', 'parked'].includes(args.notes ?? '')) throw new GrindError('USAGE', 'close requires --notes handled|parked');
+    }
     const cwd = process.cwd();
     const workspace = await loadWorkspace({ cwd, ...(args.workspace === undefined ? {} : { workspace: args.workspace }) });
     const context = { workspace, cwd };
@@ -105,6 +119,12 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'save') {
       const result = await saveCommand(context, identifier, args.message!);
       emit(json, { ok: true, data: result }, result.saved ? `Saved ${result.id}: ${result.commit}` : `${result.id}: nothing to save`);
+    } else if (args.command === 'close') {
+      const result = await closeCommand(context, identifier, { outcome: args.outcome as 'delivered' | 'abandoned', result: args.result!, notes: args.notes as 'handled' | 'parked', ...(args.date === undefined ? {} : { date: args.date }) });
+      emit(json, { ok: true, data: result }, `Closed ${result.id}: ${result.commit ?? 'already committed'}`);
+    } else if (args.command === 'archive') {
+      const result = await archiveCommand(context, identifier);
+      emit(json, { ok: true, data: result }, `Archived ${result.id} as ${result.archivedId}`);
     } else if (args.command === 'list') {
       const result = await listCommand(context);
       emit(json, { ok: true, data: result }, formatList(result));

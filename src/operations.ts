@@ -23,12 +23,13 @@ export interface OperationCheckout {
 export interface OperationRecord {
   version: 1;
   id: string;
-  kind: 'start';
+  kind: 'start' | 'close' | 'reopen' | 'archive';
   target: string;
   createdAt: string;
   updatedAt: string;
   step: string;
   checkouts: OperationCheckout[];
+  details?: Record<string, string>;
 }
 
 export interface PendingOperationSummary {
@@ -53,11 +54,12 @@ function parseOperation(value: unknown, file: string): OperationRecord {
   if (
     record['version'] !== 1 ||
     typeof record['id'] !== 'string' ||
-    record['kind'] !== 'start' ||
+    !['start', 'close', 'reopen', 'archive'].includes(record['kind'] as string) ||
     typeof record['target'] !== 'string' ||
     typeof record['createdAt'] !== 'string' ||
     typeof record['updatedAt'] !== 'string' ||
     typeof record['step'] !== 'string' ||
+    (record['details'] !== undefined && !isStringRecord(record['details'])) ||
     !Array.isArray(record['checkouts']) ||
     !record['checkouts'].every(isOperationCheckout)
   ) {
@@ -66,13 +68,18 @@ function parseOperation(value: unknown, file: string): OperationRecord {
   return {
     version: 1,
     id: record['id'] as string,
-    kind: 'start',
+    kind: record['kind'] as OperationRecord['kind'],
     target: record['target'] as string,
     createdAt: record['createdAt'] as string,
     updatedAt: record['updatedAt'] as string,
     step: record['step'] as string,
     checkouts: record['checkouts'] as OperationCheckout[],
+    ...(isStringRecord(record['details']) ? { details: record['details'] } : {}),
   };
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every((item) => typeof item === 'string');
 }
 
 function isOperationCheckout(value: unknown): value is OperationCheckout {
@@ -150,6 +157,20 @@ export function newStartOperation(target: string, checkouts: OperationCheckout[]
     step: 'planned',
     checkouts,
   };
+}
+
+export function newLifecycleOperation(
+  kind: Exclude<OperationRecord['kind'], 'start'>,
+  target: string,
+  details: Record<string, string>,
+  checkouts: OperationCheckout[] = [],
+): OperationRecord {
+  const now = new Date().toISOString();
+  return { version: 1, id: randomUUID(), kind, target, createdAt: now, updatedAt: now, step: 'planned', checkouts, details };
+}
+
+export function updateOperation(operation: OperationRecord, step: string): OperationRecord {
+  return { ...operation, updatedAt: new Date().toISOString(), step };
 }
 
 export async function writeOperation(workspace: Workspace, operation: OperationRecord): Promise<string> {

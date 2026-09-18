@@ -66,7 +66,7 @@ test('start refuses closed, archived, unsafe mismatched, and missing checkouts w
   await git(app, 'branch', 'feature');
   const workspace = await loadWorkspace({ cwd: ws.root });
   const context = { workspace, cwd: ws.root };
-  await assert.rejects(startCommand(context, 'app/closed'), { code: 'TRANSITION_UNSUPPORTED' });
+  await assert.rejects(startCommand(context, 'app/closed'), { code: 'ARTIFACT_INVALID' });
   await assert.rejects(startCommand(context, '_archive/app/old'), { code: 'TRANSITION_UNSUPPORTED' });
   await assert.rejects(startCommand(context, 'app/mismatch'), (error: { code: string; details: { blockers: string[] } }) => {
     assert.equal(error.code, 'START_BLOCKED');

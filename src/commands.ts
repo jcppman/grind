@@ -8,6 +8,7 @@ import { resolveInitiative, type Resolution } from './resolve.ts';
 import type { Workspace } from './workspace.ts';
 import { pendingOperationSummaries, readPendingOperations, type PendingOperationSummary } from './operations.ts';
 import { beginStartSwitch, repairStartPointers, resumeStartSwitch } from './switching.ts';
+import { assertReopenable, reopenPreparedInitiative } from './lifecycle-commands.ts';
 
 export interface CommandContext {
   workspace: Workspace;
@@ -64,7 +65,7 @@ export async function statusCommand(context: CommandContext, identifier?: string
   const resolution = await resolveInitiative({ workspace: context.workspace, cwd: context.cwd, ...(identifier === undefined ? {} : { identifier }) });
   const inspection = await inspectInitiative(context.workspace, resolution.initiative);
   const pendingOperations = (await pendingOperationSummaries(context.workspace)).filter(
-    (operation) => operation.target === inspection.id,
+    (operation) => operation.target === inspection.id || `_archive/${operation.target}` === inspection.id,
   );
   inspection.diagnostics.unshift(...resolution.diagnostics);
   return {
@@ -90,9 +91,7 @@ export async function startCommand(context: CommandContext, identifier?: string)
   if (inspection.archived) {
     throw new GrindError('TRANSITION_UNSUPPORTED', `${inspection.id} is archived and read-only; start a new initiative instead`, { initiative: inspection.id });
   }
-  if (inspection.state?.status === 'closed') {
-    throw new GrindError('TRANSITION_UNSUPPORTED', `${inspection.id} is closed; reopening is not supported in this increment`, { initiative: inspection.id });
-  }
+  await assertReopenable(inspection);
   const pending = await readPendingOperations(context.workspace);
   if (pending.length > 0) {
     if (pending.length !== 1 || pending[0]?.target !== inspection.id) {
@@ -100,7 +99,18 @@ export async function startCommand(context: CommandContext, identifier?: string)
         operations: pending.map(({ path: file, ...operation }) => ({ ...operation, path: file })),
       });
     }
+    if (pending[0].kind === 'reopen') {
+      await reopenPreparedInitiative(context.workspace, inspection);
+      const refreshed = await statusCommand(context, inspection.id);
+      const plan = await planStart(context.workspace, refreshed.inspection);
+      return { ...refreshed, switched: false, switchedRepositories: [], noteTransfers: [], dependencyChanges: [], pendingNotes: 0, plan };
+    }
+    if (pending[0].kind !== 'start') throw new GrindError('OPERATION_PENDING', `Pending ${pending[0].kind} operation must be resumed with its original command`);
     const execution = await resumeStartSwitch(context.workspace, inspection, pending[0]);
+    if (inspection.state?.status === 'closed') {
+      const prepared = await statusCommand(context, inspection.id);
+      await reopenPreparedInitiative(context.workspace, prepared.inspection);
+    }
     const refreshed = await statusCommand(context, inspection.id);
     const pendingNotes = refreshed.inspection.repositories.reduce((sum, repository) => sum + (repository.observed.sidecar?.pendingNotes ?? 0), 0);
     return { ...refreshed, switched: execution.switchedRepositories.length > 0, switchedRepositories: execution.switchedRepositories, noteTransfers: execution.noteTransfers, dependencyChanges: execution.dependencyChanges, pendingNotes, plan: execution.plan };
@@ -118,11 +128,16 @@ export async function startCommand(context: CommandContext, identifier?: string)
   const needsSwitch = plan.checkouts.some((checkout) => checkout.action === 'switch');
   if (needsSwitch) {
     const execution = await beginStartSwitch(context.workspace, inspection, plan);
+    if (inspection.state?.status === 'closed') {
+      const prepared = await statusCommand(context, inspection.id);
+      await reopenPreparedInitiative(context.workspace, prepared.inspection);
+    }
     const refreshed = await statusCommand(context, inspection.id);
     const refreshedPendingNotes = refreshed.inspection.repositories.reduce((sum, repository) => sum + (repository.observed.sidecar?.pendingNotes ?? 0), 0);
     return { ...refreshed, switched: true, switchedRepositories: execution.switchedRepositories, noteTransfers: execution.noteTransfers, dependencyChanges: execution.dependencyChanges, pendingNotes: refreshedPendingNotes, plan: execution.plan };
   }
   await repairStartPointers(context.workspace, inspection);
+  if (inspection.state?.status === 'closed') await reopenPreparedInitiative(context.workspace, inspection);
   const refreshed = await statusCommand(context, inspection.id);
   return { ...refreshed, switched: false, switchedRepositories: [], noteTransfers: [], dependencyChanges: [], pendingNotes, plan };
 }
