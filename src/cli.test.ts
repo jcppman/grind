@@ -79,7 +79,7 @@ test('list, status, and start work from different entry directories and leave st
 
     const fromFolder = await execFileAsync(process.execPath, [CLI, 'status'], { cwd: dir, encoding: 'utf8' });
     assert.match(fromFolder.stdout, /app\/x {2}\[open\]/);
-    assert.match(fromFolder.stdout, /resolved via folder/);
+    assert.match(fromFolder.stdout, /Resolved via folder/);
 
     const start = await execFileAsync(process.execPath, [CLI, 'start', 'app/x', '--json', '--workspace', ws.root], { cwd: ws.stateGitRoot, encoding: 'utf8' });
     assert.equal(JSON.parse(start.stdout).data.switched, false);
