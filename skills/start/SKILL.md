@@ -1,6 +1,6 @@
 ---
 name: start
-description: Prepare an existing Grind initiative for the session, then ask what the user wants to do. Offer a choice list when the initiative is omitted. Use when the user requests starting or switching into an initiative.
+description: Prepare an existing Grind init (initiative) for the session, then ask what the user wants to do. Offer a choice list when the initiative is omitted. Use when the user requests starting or switching into an init or initiative.
 ---
 
 Load the [context workflow](../context/SKILL.md), then follow Prepare an initiative in the

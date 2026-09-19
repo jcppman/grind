@@ -1,9 +1,10 @@
 ---
 name: context
-description: Load or refresh a Grind initiative from its identifier, initiative folder, associated checkout, or a choice list when omitted. Use at session entry when Grind is configured or when the user requests initiative context; context alone is read-only.
+description: Load or refresh a Grind init (initiative) from its identifier, initiative folder, associated checkout, or a choice list when omitted. Use at session entry when Grind is configured or when the user requests init or initiative context; context alone is read-only.
 ---
 
-Read the Context loading section of the [shared operating protocol](../../docs/protocol.md#context-loading).
+Read the Terminology and Context loading sections of the
+[shared operating protocol](../../docs/protocol.md).
 Resolve the plugin root from this SKILL.md's location. Invoke its matching CLI as
 `node <plugin-root>/scripts/grind.mjs status [initiative] --json`, adding
 `--workspace <directory>` when discovery cannot reach the workspace. Do not use a

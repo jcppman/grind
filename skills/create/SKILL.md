@@ -1,6 +1,6 @@
 ---
 name: create
-description: Create a Grind initiative for a coherent development outcome and clarify its intent. Use when the user asks to start tracking substantial work as an initiative.
+description: Create a Grind init (initiative) for a coherent development outcome and clarify its intent. Use when the user asks to create an init or initiative, or start tracking substantial work.
 ---
 
 Read the [shared operating protocol](../../docs/protocol.md), especially Creating

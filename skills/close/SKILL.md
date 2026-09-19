@@ -1,6 +1,6 @@
 ---
 name: close
-description: Close or archive a Grind initiative after verifying its outcome, checkpoint, notes, and repository state. Use when work is delivered, abandoned, or ready for retention archival.
+description: Close or archive a Grind init (initiative) after verifying its outcome, checkpoint, notes, and repository state. Use when work is delivered, abandoned, or ready for retention archival.
 ---
 
 Load the [context workflow](../context/SKILL.md), then follow Closing an initiative

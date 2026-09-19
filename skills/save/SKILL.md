@@ -1,6 +1,6 @@
 ---
 name: save
-description: Prepare and persist a resumable Grind initiative checkpoint after meaningful work or on explicit request. Use for initiative records, not automatic commits of application code.
+description: Prepare and persist a resumable Grind init (initiative) checkpoint after meaningful work or on explicit request. Use for initiative records, not automatic commits of application code.
 ---
 
 Read the ledger, During-work update, and Session-end sections of the

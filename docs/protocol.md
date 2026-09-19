@@ -6,6 +6,13 @@ protocol. Follow the available command's documented capabilities and stop when a
 required operation is unavailable. Initiative-specific limitations and temporary
 manual procedures belong in that initiative's ledger and plan.
 
+## Terminology
+
+Use **init** (plural **inits**) as the short name for an initiative in conversation.
+Accept both names for the same workflows, including “create an init for…” and
+“save this init.” Documentation may use the full term. Command names, stored paths,
+JSON fields, and artifact types retain their existing names.
+
 ## What counts as an initiative
 
 An initiative is a coherent body of work with one intended outcome, potentially

@@ -4,6 +4,10 @@ Grind is a vendor-neutral plugin and CLI for resumable development initiatives.
 It separates shared workflow instructions, private initiative state, and application
 repositories. Repository contents and Git state remain the final authority.
 
+Call an initiative an **init** for short: “create an init for xxx,” “start this
+init,” or “save this init.” Both names select the same workflows. For an explicit
+command, use `/grind:create xxx`.
+
 Read [the operating protocol](docs/protocol.md) for the workflow. Grind will ship
 shared context, create, start, save, and close skills with Codex and Claude Code plugin
 manifests. The CLI will own deterministic filesystem and Git mechanics.
