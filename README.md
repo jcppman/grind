@@ -30,8 +30,12 @@ in the current workspace.
 ## Dashboard
 
 Run `grind dashboard` and open the printed local URL to see initiatives, their
-status, and repository checkouts. Copy directory commands with the initiative or
-repository buttons. Refresh rereads local state; Ctrl-C stops the server.
+status, and repository checkouts. Initiatives follow their scope folders in
+collapsible groups. Expand an initiative row for details and directory copy buttons.
+Search reveals matching initiatives inside collapsed groups; clearing it restores
+the previous group view. Status filters update the group counts. Refresh rereads
+local state and keeps expansion choices until the page is reloaded; Ctrl-C stops
+the server.
 
 ## Development
 

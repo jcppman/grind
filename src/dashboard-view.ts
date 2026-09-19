@@ -25,7 +25,7 @@ p{line-height:1.6}
 .filter{border:0;background:transparent;padding:9px 13px;border-radius:6px;color:#617367}
 .filter[aria-pressed=true]{background:#dce8d8;color:#234a33;font-weight:650}
 input{border:1px solid #d2d9cd;border-radius:7px;background:#fafbf8;padding:10px 12px;min-width:240px}
-.card{background:#fff;border:1px solid #dce1d7;border-radius:12px;margin-bottom:18px;overflow:hidden}
+.card{background:#fff;border:1px solid #dce1d7;border-radius:12px;margin-bottom:8px;overflow:hidden}
 .cardhead{padding:23px 25px 18px;display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
 h2{font-size:18px;letter-spacing:-.3px;margin:9px 0;overflow-wrap:anywhere}
 .badges{display:flex;gap:7px}
@@ -52,6 +52,26 @@ footer{margin-top:25px;display:flex;justify-content:space-between;font-size:11px
 #fallback{background:#fff5df;padding:18px;border-radius:8px;margin-bottom:18px}
 #fallback textarea{display:block;width:100%;margin-top:10px;padding:10px;min-height:70px;border:1px solid #d3c7a8;border-radius:5px}
 #error{color:#984e35;margin:16px 0}
+.group{margin:0 0 18px;min-width:0}
+.groupheading{margin:0 0 8px;font-size:16px}
+.grouptoggle{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-radius:6px;padding:10px 8px;background:transparent;color:#24352e;font-weight:650;overflow-wrap:anywhere}
+.grouptoggle:hover{background:#e8ede4}
+.groupcount{font-size:12px;font-weight:400;color:#617367}
+.chevron{width:12px;flex-shrink:0}
+.groupcontent{margin-left:13px;padding-left:16px;border-left:1px solid #dce1d7}
+.groupcontent[hidden]{display:none}
+.groupcontent>.group{margin-top:16px}
+.initiative-summary{cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:12px;list-style:none}
+.initiative-summary::-webkit-details-marker{display:none}
+.initiative-summary:before{content:'▸';color:#617367;flex-shrink:0}
+.card[open]>.initiative-summary:before{content:'▾'}
+.card[open]>.initiative-summary{border-bottom:1px solid #eef0ea}
+.initiative-summary:focus-visible{outline:3px solid #84a98c;outline-offset:-3px}
+.initiative-label{min-width:0;flex:1}
+.initiative-name{display:block;font-weight:650;font-size:14px;overflow-wrap:anywhere}
+.summary-task{display:block;font-size:13px;color:#617367;margin-top:5px;overflow-wrap:anywhere}
+.badges{flex-wrap:wrap}
+@media(max-width:650px){.initiative-summary{flex-wrap:wrap;padding:14px 12px}.initiative-summary>.badges{width:100%;margin-left:24px}.groupcontent{margin-left:4px;padding-left:8px}}
  @media(max-width:650px){main{padding:28px 16px}
 h1{font-size:30px}
 .toolbar{align-items:stretch;flex-direction:column}
@@ -71,10 +91,39 @@ footer{gap:14px}
 <p id="notice" role="status" aria-live="polite"></p><div id="fallback" hidden><label for="command">Clipboard unavailable. Copy this command manually.</label><textarea id="command" readonly></textarea></div><div id="error" role="alert"></div><div id="listing" aria-live="polite"></div><footer><span>Records stay in your workspace.</span><span id="updated"></span></footer></main><script nonce="${nonce}" src="app.js"></script></body></html>`;
 }
 
-export const dashboardScript = String.raw`
+export const dashboardTreeScript = String.raw`
+function groupInitiatives(entries) {
+  const root = { path: '', name: 'Workspace', groups: new Map(), initiatives: [], count: 0 };
+  for (const initiative of entries) {
+    const parts = initiative.id.split('/');
+    if (initiative.archived && parts[0] === '_archive') parts.shift();
+    parts.pop();
+    let group = root;
+    group.count++;
+    for (const name of parts) {
+      const path = group.path ? group.path + '/' + name : name;
+      if (!group.groups.has(name)) group.groups.set(name, { path, name, groups: new Map(), initiatives: [], count: 0 });
+      group = group.groups.get(name);
+      group.count++;
+    }
+    group.initiatives.push(initiative);
+  }
+  return root;
+}
+function matchingInitiatives(initiatives, filter, query) {
+  query = query.trim().toLowerCase();
+  return initiatives.filter(i =>
+    (filter === 'all' || (filter === 'archived' ? i.archived : !i.archived && i.status === filter)) &&
+    (i.id + ' ' + (i.task || '')).toLowerCase().includes(query));
+}
+`;
+
+export const dashboardScript = dashboardTreeScript + String.raw`
 const $ = (id) => document.getElementById(id);
 let data = null;
 let filter = 'all';
+const collapsedGroups = new Set();
+const expandedInitiatives = new Set();
 function element(tag, className, text) {
   const node = document.createElement(tag);
   node.className = className;
@@ -115,14 +164,55 @@ function copyButton(command, label) {
   return button;
 }
 function render() {
-  const query = $('search').value.toLowerCase();
-  const entries = data.initiatives.filter(i =>
-    (filter === 'all' || (filter === 'archived' ? i.archived : !i.archived && i.status === filter)) &&
-    (i.id + ' ' + (i.task || '')).toLowerCase().includes(query));
+  const query = $('search').value.trim();
+  const entries = matchingInitiatives(data.initiatives, filter, query);
   $('listing').replaceChildren();
   if (!entries.length) $('listing').append(element('div', 'empty', data.initiatives.length ? 'No initiatives match this view.' : 'No initiatives yet. Create an initiative to see it here.'));
-  for (const initiative of entries) {
-    const card = element('article', 'card');
+  const root = groupInitiatives(entries);
+  function renderGroup(group, parent) {
+    const section = element('section', 'group');
+    const heading = element('h2', 'groupheading');
+    const toggle = element('button', 'grouptoggle');
+    const open = Boolean(query) || !collapsedGroups.has(group.path);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.append(element('span', 'chevron', open ? '▾' : '▸'), element('span', '', group.name), element('span', 'groupcount', String(group.count)));
+    const content = element('div', 'groupcontent');
+    content.hidden = !open;
+    toggle.addEventListener('click', () => {
+      const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.firstChild.textContent = expanded ? '▾' : '▸';
+      content.hidden = !expanded;
+      if (!query) {
+        if (expanded) collapsedGroups.delete(group.path);
+        else collapsedGroups.add(group.path);
+      }
+    });
+    heading.append(toggle);
+    section.append(heading, content);
+    parent.append(section);
+    for (const initiative of group.initiatives) renderInitiative(initiative, content);
+    for (const child of [...group.groups.values()].sort((a, b) => a.name.localeCompare(b.name))) renderGroup(child, content);
+  }
+  function renderInitiative(initiative, parent) {
+    const card = element('details', 'card');
+    card.open = expandedInitiatives.has(initiative.id);
+    card.addEventListener('toggle', () => {
+      if (!card.isConnected) return;
+      if (card.open) expandedInitiatives.add(initiative.id);
+      else expandedInitiatives.delete(initiative.id);
+    });
+    const row = element('summary', 'initiative-summary');
+    const label = element('span', 'initiative-label');
+    label.append(element('span', 'initiative-name', initiative.id.split('/').pop()));
+    if (initiative.task) label.append(element('span', 'summary-task', initiative.task));
+    row.append(label);
+    const rowBadges = element('span', 'badges');
+    rowBadges.append(element('span', 'badge ' + (initiative.status || 'unavailable'), initiative.status || 'Status unavailable'));
+    if (initiative.archived) rowBadges.append(element('span', 'badge archived', 'Archived'));
+    if (initiative.diagnostics.length) rowBadges.append(element('span', 'badge unavailable', 'Needs attention'));
+    row.append(rowBadges);
+    card.append(row);
     const head = element('div', 'cardhead');
     const summary = element('div', '');
     const badges = element('div', 'badges');
@@ -156,8 +246,10 @@ function render() {
       for (const item of initiative.diagnostics) diagnostics.append(element('li', '', item.message));
       card.append(diagnostics);
     }
-    $('listing').append(card);
+    parent.append(card);
   }
+  if (root.initiatives.length) renderGroup({ ...root, groups: new Map(), count: root.initiatives.length }, $('listing'));
+  for (const group of [...root.groups.values()].sort((a, b) => a.name.localeCompare(b.name))) renderGroup(group, $('listing'));
 }
 async function refresh() {
   $('refresh').disabled = true;
