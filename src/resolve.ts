@@ -1,10 +1,10 @@
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { readInitiative } from './artifacts.ts';
-import { INTENT_FILENAME, isArchivedId, listInitiatives, type InitiativeEntry } from './discovery.ts';
+import { isInitiativeRoot, isArchivedId, listInitiatives, type InitiativeEntry } from './discovery.ts';
 import { diagnostic, GrindError, type Diagnostic } from './errors.ts';
 import { gitCurrentBranch, gitToplevel } from './git.ts';
-import { isContainedRelativePath, normalizeRepositoryPath, pathExists, resolveWithin, toPosix } from './paths.ts';
+import { isContainedRelativePath, normalizeRepositoryPath, resolveWithin, toPosix } from './paths.ts';
 import { readSidecar, type Sidecar } from './sidecar.ts';
 import { findNestedWorkspaceConfig, type Workspace } from './workspace.ts';
 
@@ -68,17 +68,23 @@ export async function resolveIdentifier(
     });
   }
   const dir = await resolveWithin(workspace.initiativesDir, normalized);
-  const lexical = path.join(await realpath(workspace.initiativesDir), ...normalized.split('/'));
+  const initiativesDir = await realpath(workspace.initiativesDir);
+  const lexical = path.join(initiativesDir, ...normalized.split('/'));
   if (dir !== lexical) {
     throw new GrindError('PATH_ESCAPE', `Initiative "${identifier}" passes through a symbolic link; links are not allowed beneath initiatives/`, {
       identifier,
       resolved: dir,
     });
   }
-  if (!(await pathExists(path.join(dir, INTENT_FILENAME)))) {
-    throw new GrindError('INITIATIVE_NOT_FOUND', `No initiative at initiatives/${normalized} (missing intent.md)`, {
+  if (!(await isInitiativeRoot(dir))) {
+    throw new GrindError('INITIATIVE_NOT_FOUND', `No initiative at initiatives/${normalized} (intent.md must declare grind.root: true)`, {
       identifier: normalized,
     });
+  }
+  let ancestor = path.dirname(dir);
+  while (ancestor !== initiativesDir) {
+    if (await isInitiativeRoot(ancestor)) throw new GrindError('ARTIFACT_INVALID', `Initiative ${normalized} is nested beneath ${ancestor}`);
+    ancestor = path.dirname(ancestor);
   }
   return { id: normalized, dir, archived: isArchivedId(normalized) };
 }
@@ -90,9 +96,9 @@ async function resolveFromFolder(workspace: Workspace, cwd: string): Promise<Ini
   if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return null;
   let current = cwd;
   while (current !== initiativesDir) {
-    if (await pathExists(path.join(current, INTENT_FILENAME))) {
+    if (await isInitiativeRoot(current)) {
       const id = toPosix(path.relative(initiativesDir, current));
-      return { id, dir: current, archived: isArchivedId(id) };
+      return resolveIdentifier(workspace, id);
     }
     current = path.dirname(current);
   }

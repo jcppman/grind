@@ -62,7 +62,7 @@ test('save includes selected additions, modifications, deletions; preserves unre
   await commitState(ws);
   await writeFile(path.join(dir, 'new.txt'), 'new');
   await rm(path.join(dir, 'old.txt'));
-  await writeFile(path.join(dir, 'intent.md'), '---\ntype: Initiative Intent\n---\n\n# updated\n');
+  await writeFile(path.join(dir, 'intent.md'), '---\ntype: Intent\ngrind:\n  root: true\n---\n\n# updated\n');
   await writeFile(path.join(ws.stateGitRoot, 'unrelated.txt'), 'preserve');
   await writeFile(path.join(ws.initiativesDir, 'two', 'extra.txt'), 'preserve too');
   const saved = await saveCommand(context, 'one', 'save one');
@@ -126,4 +126,14 @@ test('save rejects nested Git repositories before staging', async (t) => {
   await git(path.join(dir, 'nested'), 'init', '-q');
   await assert.rejects(saveCommand(context, 'one', 'invalid'), { code: 'ARTIFACT_INVALID' });
   assert.equal(await git(ws.stateGitRoot, 'diff', '--cached'), '');
+});
+
+test('create allows an unmarked scope intent and adds the root marker to its own intent', async (t) => {
+  const { ws, context } = await setup(t);
+  await mkdir(path.join(ws.root, 'scope'));
+  await writeInitiative(ws, 'scope', { intent: '---\ntype: Intent\n---\n' });
+  const created = await createCommand(context, 'work', 'scope');
+  const record = await readInitiative(created.dir);
+  assert.equal(record.intent?.type, 'Intent');
+  assert.deepEqual(record.intent?.frontmatter.data?.['grind'], { root: true });
 });

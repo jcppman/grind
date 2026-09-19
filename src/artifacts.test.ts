@@ -27,7 +27,7 @@ test('reads typed split documents and nested indexes, preserving content', async
     record.documents.map((d) => [d.relativePath, d.role, d.type]),
     [
       ['index.md', 'index', null],
-      ['intent.md', 'intent', 'Initiative Intent'],
+      ['intent.md', 'intent', 'Intent'],
       ['ledger.md', 'ledger', 'Initiative Ledger'],
       ['milestones/01/design.md', 'document', 'Visual Design'],
       ['milestones/01/index.md', 'index', null],
@@ -84,11 +84,24 @@ test('type mismatches and malformed frontmatter are surfaced without dropping do
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   const dir = await writeInitiative(ws, 'app/odd', {
-    intent: INTENT.replace('Initiative Intent', 'Specification'),
+    intent: INTENT.replace('Intent', 'Specification'),
     ledger: openLedger().replace('type: Initiative Ledger', 'type: [oops'),
   });
   const record = await readInitiative(dir);
   assert.ok(record.diagnostics.some((d) => d.code === 'TYPE_MISMATCH'));
   assert.ok(record.diagnostics.some((d) => d.code === 'FRONTMATTER_INVALID' && d.severity === 'error'));
   assert.equal(record.documents.length, 3);
+});
+
+test('milestone intents are valid documents but nested roots are rejected', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const dir = await writeInitiative(ws, 'work', { files: {
+    'milestones/01/intent.md': '---\ntype: Intent\n---\n',
+    'milestones/02/intent.md': '---\ntype: Intent\ngrind:\n  root: true\n---\n',
+  } });
+  const record = await readInitiative(dir);
+  assert.deepEqual(record.diagnostics.map((d) => [d.code, path.relative(dir, d.path ?? '')]), [
+    ['NESTED_ROOT', 'milestones/02/intent.md'],
+  ]);
 });

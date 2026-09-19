@@ -39,7 +39,7 @@ test('pending operation blocks mutation of its initiative', async (t) => {
   await commitState(ws);
   const workspace = await loadWorkspace({ cwd: ws.root });
   await writeOperation(workspace, newStartOperation('app/x', []));
-  await writeFile(path.join(dir, 'intent.md'), '---\ntype: Initiative Intent\n---\n\n# changed\n');
+  await writeFile(path.join(dir, 'intent.md'), '---\ntype: Intent\ngrind:\n  root: true\n---\n\n# changed\n');
 
   await assert.rejects(assertNoPendingOperation(workspace, 'app/x'), { code: 'OPERATION_PENDING' });
   await assert.rejects(saveCommand({ workspace, cwd: ws.root }, 'app/x', 'blocked'), { code: 'OPERATION_PENDING' });

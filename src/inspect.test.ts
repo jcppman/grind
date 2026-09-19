@@ -72,7 +72,7 @@ test('clean matching checkouts have no blockers; closed and legacy ledgers are s
   const closed = await writeInitiative(ws, 'app/closed', { ledger: closedLedger() });
   const closedInspection = await inspectInitiative(workspace, entry('app/closed', closed));
   assert.equal(closedInspection.state?.status, 'closed');
-  assert.deepEqual(closedInspection.artifacts.map((a) => a.type), [null, 'Initiative Intent', 'Initiative Ledger']);
+  assert.deepEqual(closedInspection.artifacts.map((a) => a.type), [null, 'Intent', 'Initiative Ledger']);
   assert.deepEqual(startBlockers(closedInspection), []);
 
   const legacy = await writeInitiative(ws, 'app/legacy', { ledger: '# Ledger\n\nStatus: open\n' });

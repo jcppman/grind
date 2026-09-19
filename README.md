@@ -27,6 +27,12 @@ or associated checkout, Grind resolves it automatically. Elsewhere, invoke
 `/grind:context` or `/grind:start` without an argument to choose from the initiatives
 in the current workspace.
 
+## Dashboard
+
+Run `grind dashboard` and open the printed local URL to see initiatives, their
+status, and repository checkouts. Copy directory commands with the initiative or
+repository buttons. Refresh rereads local state; Ctrl-C stops the server.
+
 ## Development
 
 Requires Node.js 24 or later. Tests and the source entry point run directly on

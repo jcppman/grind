@@ -4,12 +4,12 @@ import { listCommand, startCommand, statusCommand } from './commands.ts';
 import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
 import { formatList, formatStart, formatStatus } from './format.ts';
+import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
   init: 'a later milestone',
   doctor: 'a later milestone',
-  dashboard: 'a later milestone',
 };
 
 const USAGE = `Usage: grind <command> [options]
@@ -20,6 +20,7 @@ Commands:
   save [initiative]   validate and persist its prepared checkpoint
   close [initiative]  mark it delivered or abandoned
   archive [initiative] move eligible closed work to read-only history
+  dashboard           serve the local initiative dashboard
   list                list initiatives and their recorded state
   status [initiative] inspect initiative artifacts and recorded/observed state
 
@@ -93,10 +94,10 @@ export async function run(argv: readonly string[]): Promise<number> {
         { command: args.command, increment },
       );
     }
-    if (!['list', 'status', 'start', 'create', 'save', 'close', 'archive'].includes(args.command)) {
+    if (!['list', 'status', 'start', 'create', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
-    if (args.positional.length > (args.command === 'list' ? 0 : 1)) {
+    if (args.positional.length > (['list', 'dashboard'].includes(args.command) ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
     for (const [option, command] of [['scope', 'create'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
@@ -113,7 +114,17 @@ export async function run(argv: readonly string[]): Promise<number> {
     const workspace = await loadWorkspace({ cwd, ...(args.workspace === undefined ? {} : { workspace: args.workspace }) });
     const context = { workspace, cwd };
     const identifier = args.positional[0];
-    if (args.command === 'create') {
+    if (args.command === 'dashboard') {
+      const dashboard = await serveDashboard(workspace);
+      const stop = () => {
+        process.off('SIGINT', stop);
+        process.off('SIGTERM', stop);
+        void dashboard.close();
+      };
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
+      emit(json, { ok: true, data: { url: dashboard.url } }, `Dashboard: ${dashboard.url}\nPress Ctrl-C to stop.`);
+    } else if (args.command === 'create') {
       const result = await createCommand(context, identifier!, args.scope);
       emit(json, { ok: true, data: result }, `Created ${result.id} at ${result.dir}`);
     } else if (args.command === 'save') {

@@ -1,6 +1,7 @@
 import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { stringify } from 'yaml';
+import { isInitiativeRoot } from './discovery.ts';
 import { readInitiative } from './artifacts.ts';
 import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
@@ -67,7 +68,7 @@ export async function createCommand(context: CommandContext, name: string, scope
     await rejectSymlinks(workspace.initiativesDir, lexical);
     const dir = await resolveWithin(workspace.initiativesDir, id);
     for (const ancestor of pathsBelow(workspace.initiativesDir, path.dirname(dir))) {
-      if (await lstat(path.join(ancestor, 'intent.md')).catch(() => null)) {
+      if (await isInitiativeRoot(ancestor)) {
         throw new GrindError('INITIATIVE_EXISTS', `Cannot nest an initiative beneath ${ancestor}`);
       }
     }
@@ -91,7 +92,7 @@ export async function createCommand(context: CommandContext, name: string, scope
     };
     const files = {
       'index.md': '# Initiative\n\n- [Intent](intent.md): purpose and outcome.\n- [Ledger](ledger.md): current state and next action.\n',
-      'intent.md': `---\ntype: Initiative Intent\n---\n\n# ${name}\n\n## Purpose\n\nDescribe the problem and intended outcome.\n\n## Success criteria\n\nDescribe how completion will be verified.\n`,
+      'intent.md': `---\ntype: Intent\ngrind:\n  root: true\n---\n\n# ${name}\n\n## Purpose\n\nDescribe the problem and intended outcome.\n\n## Success criteria\n\nDescribe how completion will be verified.\n`,
       'ledger.md': `---\n${stringify(ledger)}---\n\n# Initiative Ledger\n\n## Working state\n\nInitiative created; intent needs elaboration.\n`,
     };
     try {

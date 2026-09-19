@@ -1,8 +1,8 @@
-# Install the milestone 2 build
+# Install Grind
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
 `status`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
-writer through shared Codex and Claude Code skills. Init and doctor belong to later
+writer through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
 milestones.
 
 ## Build and package
@@ -116,6 +116,47 @@ Start automatically excludes the root `.grind.md` sidecar when needed by appendi
 worktrees share this file. No global Git configuration or repository `.gitignore`
 change is needed. A tracked sidecar must be untracked explicitly. If another ignore
 rule overrides the local exclusion, start reports the conflict for resolution.
+
+## Dashboard
+
+Run `grind dashboard` from the workspace, or pass `--workspace <directory>`.
+Open the printed URL in a browser. The process serves on `127.0.0.1` with an
+available port; Ctrl-C stops it. `--json` emits the URL in the normal success
+envelope for tools. The dashboard does not automatically open a browser.
+
+The overview shows open, closed, and archived initiatives, current work, recorded
+branches, and observed checkout state. Use the status filters or search, and click
+Refresh to reread local files. Invalid records and unavailable checkouts remain
+visible with diagnostics.
+
+The initiative's copy icon copies a command for its directory. Each associated
+checkout has its own copy icon, including worktrees. Tooltips identify each action. Commands quote paths
+for POSIX shells such as zsh and bash. Copying does not run the command or switch a
+branch. Missing checkouts have disabled buttons; if clipboard access fails, the
+command appears as selectable text for manual copying.
+
+The server only reads local records and Git state. It uses a random URL for each
+run and does not accept mutations or serve arbitrary files. Keep it running while
+using the page; refreshing after shutdown requires restarting the command and
+opening its new URL.
+
+## Initiative root metadata
+
+An initiative's `intent.md` must declare:
+
+```yaml
+---
+type: Intent
+grind:
+  root: true
+---
+```
+
+`create` supplies this metadata. For existing records, change `type: Initiative Intent`
+to `type: Intent` and add `root: true` under `grind`, preserving other metadata and
+content. Migrate archived initiative intents too. Unmarked intents no longer establish
+initiative boundaries; optional milestone intents use `type: Intent` without the
+root marker. Nested roots are invalid. Read-only commands never migrate records.
 
 ## Recovery
 

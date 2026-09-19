@@ -112,7 +112,9 @@ ${repos}---
 }
 
 export const INTENT = `---
-type: Initiative Intent
+type: Intent
+grind:
+  root: true
 ---
 
 # Do the thing

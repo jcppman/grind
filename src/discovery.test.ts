@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { listInitiatives } from './discovery.ts';
 import { makeSymlink, makeTempWorkspace, writeInitiative } from './test-helpers.ts';
 
-test('leaf rule: intent.md marks an initiative; scope folders and nested indexes do not', async (t) => {
+test('root markers identify initiatives; scope folders and nested indexes do not', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   await writeInitiative(ws, 'givery/tcm-signin', {
@@ -46,4 +46,36 @@ test('missing initiatives directory lists nothing', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   assert.deepEqual(await listInitiatives(ws.initiativesDir), { entries: [], diagnostics: [] });
+});
+
+test('unmarked intents do not establish initiative boundaries', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'scope', { intent: '---\ntype: Intent\n---\n' });
+  await writeInitiative(ws, 'scope/child');
+  await writeInitiative(ws, 'false', { intent: '---\ntype: Intent\ngrind:\n  root: false\n---\n' });
+  const result = await listInitiatives(ws.initiativesDir);
+  assert.deepEqual(result.entries.map((entry) => entry.id), ['scope/child']);
+  assert.deepEqual(result.diagnostics, []);
+});
+
+test('malformed root markers are reported instead of becoming initiatives', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'bad', { intent: '---\ntype: Intent\ngrind:\n  root: "true"\n---\n' });
+  const result = await listInitiatives(ws.initiativesDir);
+  assert.deepEqual(result.entries, []);
+  assert.equal(result.diagnostics[0]?.code, 'ROOT_INVALID');
+});
+
+test('discovery never follows an intent symlink', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const real = await writeInitiative(ws, 'real');
+  const alias = path.join(ws.initiativesDir, 'alias');
+  await mkdir(alias);
+  await makeSymlink(path.join(real, 'intent.md'), path.join(alias, 'intent.md'));
+  const result = await listInitiatives(ws.initiativesDir);
+  assert.deepEqual(result.entries.map((entry) => entry.id), ['real']);
+  assert.ok(result.diagnostics.some((d) => d.path === path.join(alias, 'intent.md')));
 });

@@ -1,6 +1,7 @@
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { diagnostic, type Diagnostic } from './errors.ts';
+import { diagnostic, GrindError, type Diagnostic } from './errors.ts';
+import { isRecord, parseFrontmatter } from './frontmatter.ts';
 import { pathExists, toPosix } from './paths.ts';
 
 export const ARCHIVE_FOLDER = '_archive';
@@ -24,9 +25,8 @@ export interface InitiativeListing {
 }
 
 /**
- * Every initiative folder beneath `initiativesDir`. A folder is an initiative
- * when it contains `intent.md`; folders below it are documents, not initiatives.
- * Symbolic links are not allowed and are reported, not followed.
+ * Lists folders whose intent declares `grind.root: true`, excluding nested documents.
+ * Symbolic links are reported, not followed.
  */
 export async function listInitiatives(initiativesDir: string): Promise<InitiativeListing> {
   const listing: InitiativeListing = { entries: [], diagnostics: [] };
@@ -37,7 +37,13 @@ export async function listInitiatives(initiativesDir: string): Promise<Initiativ
 }
 
 async function walk(root: string, dir: string, listing: InitiativeListing): Promise<void> {
-  if (await pathExists(path.join(dir, INTENT_FILENAME))) {
+  let rootMarker = false;
+  try {
+    rootMarker = await isInitiativeRoot(dir);
+  } catch (error) {
+    listing.diagnostics.push(diagnostic('error', 'ROOT_INVALID', (error as Error).message, path.join(dir, INTENT_FILENAME)));
+  }
+  if (rootMarker) {
     const id = toPosix(path.relative(root, dir));
     listing.entries.push({ id, dir, archived: isArchivedId(id) });
     return;
@@ -53,4 +59,22 @@ async function walk(root: string, dir: string, listing: InitiativeListing): Prom
       await walk(root, child, listing);
     }
   }
+}
+
+/** Whether this folder explicitly declares an initiative boundary. */
+export async function isInitiativeRoot(dir: string): Promise<boolean> {
+  const file = path.join(dir, INTENT_FILENAME);
+  const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+    throw error;
+  });
+  if (info === null) return false;
+  if (!info.isFile()) throw new GrindError('ARTIFACT_INVALID', `Initiative intent must be a regular file: ${file}`);
+  const frontmatter = parseFrontmatter(await readFile(file, 'utf8'));
+  if (frontmatter.error) throw new GrindError('ARTIFACT_INVALID', `${file}: ${frontmatter.error}`);
+  const grind = frontmatter.data?.['grind'];
+  if (grind !== undefined && !isRecord(grind)) throw new GrindError('ARTIFACT_INVALID', `${file}: grind must be a mapping`);
+  const root = isRecord(grind) ? grind['root'] : undefined;
+  if (root !== undefined && typeof root !== 'boolean') throw new GrindError('ARTIFACT_INVALID', `${file}: grind.root must be a boolean`);
+  return root === true;
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { chmod, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -107,4 +107,41 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   assert.equal(archived.ok, true, JSON.stringify(archived));
   assert.equal(archived.data.archivedId, '_archive/beta');
   assert.match(await readFile(path.join(lifecycle.initiativesDir, '_archive', 'beta', 'ledger.md'), 'utf8'), /release\/v1/);
+});
+
+
+test('relocated dashboard starts, serves its assets and data, and stops on SIGTERM', async (t) => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'grind-dashboard-package-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const install = path.join(temp, 'installed');
+  await cp(path.resolve('build/grind'), install, { recursive: true });
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'dashboard');
+  const child = spawn(process.execPath, [path.join(install, 'scripts/grind.mjs'), 'dashboard', '--workspace', ws.root, '--json'], { cwd: temp });
+  t.after(() => { child.kill('SIGTERM'); });
+  let errors = '';
+  child.stderr.on('data', chunk => { errors += chunk; });
+  const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const url = await new Promise((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error('Dashboard startup timed out: ' + errors)), 10000);
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', () => { clearTimeout(timer); reject(new Error('Dashboard exited before startup: ' + errors)); });
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.includes('\n')) {
+        clearTimeout(timer);
+        const envelope = JSON.parse(output.split('\n')[0]);
+        if (!envelope.ok) reject(new Error(JSON.stringify(envelope)));
+        else resolve(envelope.data.url);
+      }
+    });
+  });
+  assert.match(await (await fetch(url)).text(), /Grind — Initiatives/);
+  assert.match(await (await fetch(url + 'app.js')).text(), /clipboard.writeText/);
+  assert.equal((await (await fetch(url + 'api')).json()).initiatives[0].id, 'dashboard');
+  child.kill('SIGTERM');
+  const result = await exited;
+  assert.equal(result.code, 0);
 });

@@ -58,13 +58,16 @@ references do not need an initiative branch or tracking entry.
 ## Initiative artifacts
 
 `index.md`, `intent.md`, and one `ledger.md` are required at the initiative root.
-`intent.md` remains the discovery marker. Specifications and plans may use any
+The root `intent.md` declares `type: Intent` and `grind.root: true`; that marker
+identifies the initiative boundary. Milestones may have their own optional
+`intent.md` with `type: Intent` and no root marker. Nested initiative roots are
+invalid. Specifications and plans may use any
 filename and split by milestone or another coherent decision scope. Nested indexes
 organize documents; they do not create nested initiatives.
 
 | Type | Question it answers |
 |---|---|
-| `Initiative Intent` | Why are we doing this, and what outcome do we want? |
+| `Intent` | Why are we doing this, and what outcome do we want? |
 | `Specification` | What behaviour and technical solution are proposed or agreed? |
 | `Implementation Plan` | In what order will we implement and verify it? |
 | `Initiative Ledger` | What is true now, and exactly where should work continue? |
@@ -109,8 +112,8 @@ initiative status, phase, current task, next action, and repository tracking;
 other documents must not duplicate those fields.
 
 Keep explanations and durable history in Markdown. Preserve unknown frontmatter
-keys and unrelated content during edits. Existing artifacts without frontmatter
-remain readable during migration; report missing metadata and migrate explicitly,
+keys and unrelated content during edits. Existing initiatives need an explicit root marker migration before discovery.
+Other artifacts without frontmatter remain readable during migration; report missing metadata and migrate explicitly,
 never during context loading. Malformed optional metadata is diagnostic; malformed
 required Grind state prevents a mutating operation. A save does not normalize
 metadata or imply verification.
@@ -149,7 +152,11 @@ Defines the enduring reason for the work:
 - constraints that acceptable solutions must satisfy
 - related tickets, when they are sources of business context
 
-Change it only when the purpose or scope changes. Describe the outcome without
+A milestone intent describes its contribution to the initiative, its scope, and
+success criteria without repeating the initiative purpose. Use one when that
+outcome needs its own explanation; it is not required for every milestone.
+
+Change an intent only when its purpose or scope changes. Describe the outcome without
 summarising the feature list or prescribing implementation choices. Technical
 design belongs in specifications; execution sequence and validation exercises belong
 in plans. Link to them when they exist.

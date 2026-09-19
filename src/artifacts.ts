@@ -1,12 +1,12 @@
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { diagnostic, type Diagnostic } from './errors.ts';
-import { getString, parseFrontmatter, type Frontmatter } from './frontmatter.ts';
+import { getString, isRecord, parseFrontmatter, type Frontmatter } from './frontmatter.ts';
 import { LEDGER_TYPE, validateLedger, type LedgerValidation } from './ledger.ts';
 import { pathExists, toPosix } from './paths.ts';
 import type { Workspace } from './workspace.ts';
 
-export const INTENT_TYPE = 'Initiative Intent';
+export const INTENT_TYPE = 'Intent';
 export const REQUIRED_ARTIFACTS = ['index.md', 'intent.md', 'ledger.md'] as const;
 
 export type ArtifactRole = 'index' | 'intent' | 'ledger' | 'document';
@@ -131,6 +131,16 @@ async function readDocument(
         diagnostic('error', 'MISSING_TYPE', 'Artifact frontmatter requires a nonempty string `type`', file),
       );
     }
+  }
+  const grind = frontmatter.data?.['grind'];
+  const root = isRecord(grind) ? grind['root'] : undefined;
+  if (role === 'intent' && root !== true) {
+    diagnostics.push(diagnostic('error', 'ROOT_REQUIRED', 'Initiative intent must declare grind.root: true', file));
+  } else if (role !== 'intent' && root === true) {
+    diagnostics.push(diagnostic('error', 'NESTED_ROOT', 'Only the initiative root intent may declare grind.root: true', file));
+  }
+  if (root !== undefined && typeof root !== 'boolean') {
+    diagnostics.push(diagnostic('error', 'ROOT_INVALID', 'grind.root must be a boolean', file));
   }
   const expected = role === 'intent' ? INTENT_TYPE : role === 'ledger' ? LEDGER_TYPE : null;
   if (expected !== null && type !== null && type !== expected) {

@@ -116,3 +116,18 @@ test('a checkout inside a nested workspace is not claimed by the outer one', asy
     return true;
   });
 });
+
+test('milestone intent resolves to its initiative and is not an explicit initiative', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const nested = await writeInitiative(ws, 'app/feature/milestones/01', { intent: '---\ntype: Intent\n---\n' });
+  const result = await resolveInitiative({ workspace, cwd: nested });
+  assert.equal(result.initiative.id, 'app/feature');
+  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/feature/milestones/01' }), { code: 'INITIATIVE_NOT_FOUND' });
+});
+
+test('a root nested inside another initiative cannot be selected', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const nested = await writeInitiative(ws, 'app/feature/nested');
+  await assert.rejects(resolveInitiative({ workspace, cwd: nested }), { code: 'ARTIFACT_INVALID' });
+  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/feature/nested' }), { code: 'ARTIFACT_INVALID' });
+});
