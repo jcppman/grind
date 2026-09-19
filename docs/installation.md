@@ -152,7 +152,8 @@ grind:
 ---
 ```
 
-`create` supplies this metadata. For existing records, change `type: Initiative Intent`
+`create` supplies this metadata. Grind 0.4.0 requires it, so records created by
+earlier versions need this migration. For existing records, change `type: Initiative Intent`
 to `type: Intent` and add `root: true` under `grind`, preserving other metadata and
 content. Migrate archived initiative intents too. Unmarked intents no longer establish
 initiative boundaries; optional milestone intents use `type: Intent` without the
