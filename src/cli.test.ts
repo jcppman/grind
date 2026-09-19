@@ -61,7 +61,7 @@ async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: st
   ].join('\n---\n');
 }
 
-test('list, status, and start work from different entry directories and leave state unchanged', async () => {
+test('list, status, and start work from different entry directories and start excludes the sidecar', async () => {
   const ws = await makeTempWorkspace();
   try {
     const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
@@ -82,6 +82,8 @@ test('list, status, and start work from different entry directories and leave st
     assert.match(fromFolder.stdout, /app\/x {2}\[open\]/);
     assert.match(fromFolder.stdout, /Resolved via folder/);
 
+    assert.equal(await snapshot(ws, app), before);
+
     const start = await execFileAsync(process.execPath, [CLI, 'start', 'app/x', '--json', '--workspace', ws.root], { cwd: ws.stateGitRoot, encoding: 'utf8' });
     assert.equal(JSON.parse(start.stdout).data.switched, false);
 
@@ -89,7 +91,8 @@ test('list, status, and start work from different entry directories and leave st
     assert.equal(unresolved.code, 1);
     assert.equal(JSON.parse(unresolved.stdout).error.code, 'INITIATIVE_UNRESOLVED');
 
-    assert.equal(await snapshot(ws, app), before);
+    assert.equal(await snapshot(ws, app), before.replace('?? .grind.md', ''));
+    assert.equal(await git(app, 'check-ignore', '.grind.md'), '.grind.md');
   } finally {
     await ws.cleanup();
   }

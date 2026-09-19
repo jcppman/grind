@@ -10,9 +10,9 @@ with `--workspace <directory>` if needed.
 
 Start performs the complete preflight before changing any checkout. It may fetch,
 park and restore notes, switch clean clones, repair pointers, resume a pending
-operation, and reopen closed work after checkout preparation succeeds. Report a
-blocker instead of committing, stashing, discarding, merging, pushing, deleting a
-branch, or stealing a lock.
+operation, configure a missing local sidecar exclusion, and reopen closed work after
+checkout preparation succeeds. Report a blocker instead of committing, stashing,
+discarding, merging, pushing, deleting a branch, or stealing a lock.
 
 Reinspect the checkout and surface relevant review notes, discrepancies, and the
 recorded next action. A bare start prepares the initiative; it does not authorize

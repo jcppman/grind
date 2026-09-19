@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -241,4 +241,93 @@ test('recovery stops when an external branch movement disagrees with the journal
   await assert.rejects(startCommand(setup.context, 'app/target'), { code: 'START_BLOCKED' });
   assert.equal(await git(setup.app, 'symbolic-ref', '--short', 'HEAD'), 'unexpected');
   assert.equal((await readPendingOperations(setup.workspace)).length, 1);
+});
+
+test('start installs a local exclusion during switching and preserves existing entries', async (t) => {
+  const setup = await setupSwitch(t);
+  const exclude = path.join(setup.app, '.git/info/exclude');
+  await writeFile(exclude, '# local rules\n/cache');
+
+  await startCommand(setup.context, 'app/target');
+
+  assert.equal(await readFile(exclude, 'utf8'), '# local rules\n/cache\n/.grind.md\n');
+  assert.equal(await git(setup.app, 'check-ignore', '.grind.md'), '.grind.md');
+  await startCommand(setup.context, 'app/target');
+  assert.equal(await readFile(exclude, 'utf8'), '# local rules\n/cache\n/.grind.md\n');
+});
+
+test('start installs the exclusion even when the pointer is already valid', async (t) => {
+  const setup = await setupSwitch(t);
+  const exclude = path.join(setup.app, '.git/info/exclude');
+  await rm(exclude);
+
+  await startCommand(setup.context, 'app/source');
+
+  assert.equal(await readFile(exclude, 'utf8'), '/.grind.md\n');
+  assert.equal(await git(setup.app, 'status', '--porcelain'), '');
+});
+
+test('start repairs a missing pointer in a linked worktree using the common exclusion file', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const app = await makeCheckout(ws, 'app');
+  const worktree = path.join(ws.root, 'worktree');
+  await git(app, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+  await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'worktree', branch: 'feature', checkout: 'worktree' }]) });
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const exclude = path.join(app, '.git/info/exclude');
+  await writeFile(exclude, '');
+
+  await startCommand({ workspace, cwd: ws.root }, 'work');
+
+  assert.equal(await readFile(exclude, 'utf8'), '/.grind.md\n');
+  assert.equal(await git(worktree, 'check-ignore', '.grind.md'), '.grind.md');
+  assert.equal(parseSidecar(await readFile(path.join(worktree, '.grind.md'), 'utf8'), '.grind.md').initiative, 'work');
+});
+
+test('start refuses a tracked sidecar even when its pointer is valid', async (t) => {
+  const setup = await setupSwitch(t);
+  await git(setup.app, 'add', '-f', '.grind.md');
+  await git(setup.app, 'commit', '-q', '-m', 'tracked sidecar');
+  const before = await readFile(path.join(setup.app, '.grind.md'), 'utf8');
+
+  await assert.rejects(startCommand(setup.context, 'app/source'), { code: 'START_BLOCKED' });
+
+  assert.equal(await readFile(path.join(setup.app, '.grind.md'), 'utf8'), before);
+});
+
+test('start reports an overriding ignore rule without rewriting it or the pointer', async (t) => {
+  const setup = await setupSwitch(t);
+  await writeFile(path.join(setup.app, '.git/info/exclude'), '');
+  await writeFile(path.join(setup.app, '.gitignore'), '!.grind.md\n');
+  const before = await readFile(path.join(setup.app, '.grind.md'), 'utf8');
+
+  await assert.rejects(startCommand(setup.context, 'app/source'), { code: 'START_BLOCKED' });
+
+  assert.equal(await readFile(path.join(setup.app, '.gitignore'), 'utf8'), '!.grind.md\n');
+  assert.equal(await readFile(path.join(setup.app, '.grind.md'), 'utf8'), before);
+});
+
+test('start preserves an effective existing exclusion', async (t) => {
+  const setup = await setupSwitch(t);
+  const exclude = path.join(setup.app, '.git/info/exclude');
+  const before = await readFile(exclude, 'utf8');
+
+  await startCommand(setup.context, 'app/source');
+
+  assert.equal(await readFile(exclude, 'utf8'), before);
+});
+
+test('start reports an inaccessible exclusion without changing notes or branches', async (t) => {
+  const setup = await setupSwitch(t);
+  const exclude = path.join(setup.app, '.git/info/exclude');
+  await rm(exclude);
+  await mkdir(exclude);
+  const before = await readFile(path.join(setup.app, '.grind.md'), 'utf8');
+
+  await assert.rejects(startCommand(setup.context, 'app/target'), { code: 'START_BLOCKED' });
+
+  assert.equal(await git(setup.app, 'symbolic-ref', '--short', 'HEAD'), 'main');
+  assert.equal(await readFile(path.join(setup.app, '.grind.md'), 'utf8'), before);
+  assert.deepEqual(await readPendingOperations(setup.workspace), []);
 });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { listCommand, startCommand, statusCommand } from './commands.ts';
 import { closedLedger, git, makeCheckout, makeSymlink, makeTempWorkspace, openLedger, writeInitiative, writeSidecar } from './test-helpers.ts';
@@ -64,6 +65,7 @@ test('start refuses closed, archived, unsafe mismatched, and missing checkouts w
   await writeInitiative(ws, 'app/missing', { ledger: openLedger([{ path: 'nowhere', branch: 'main' }]) });
   const app = await makeCheckout(ws, 'app', 'main');
   await git(app, 'branch', 'feature');
+  await writeFile(path.join(app, 'README.md'), 'unfinished work\n');
   const workspace = await loadWorkspace({ cwd: ws.root });
   const context = { workspace, cwd: ws.root };
   await assert.rejects(startCommand(context, 'app/closed'), { code: 'ARTIFACT_INVALID' });
@@ -74,5 +76,5 @@ test('start refuses closed, archived, unsafe mismatched, and missing checkouts w
   });
   await assert.rejects(startCommand(context, 'app/missing'), { code: 'START_BLOCKED' });
   assert.equal(await git(app, 'symbolic-ref', '--short', 'HEAD'), 'main');
-  assert.equal(await git(app, 'status', '--porcelain'), '');
+  assert.equal(await git(app, 'status', '--porcelain'), 'M README.md');
 });

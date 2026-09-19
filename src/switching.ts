@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { GrindError } from './errors.ts';
 import { git, gitChangedFiles, gitCurrentBranch } from './git.ts';
@@ -54,6 +54,29 @@ async function fetchAll(checkout: string): Promise<void> {
 
 async function sidecarIsExcluded(checkout: string): Promise<boolean> {
   return (await git(['check-ignore', '--quiet', '.grind.md'], checkout)).ok;
+}
+
+async function ensureSidecarExcluded(checkout: string): Promise<void> {
+  if ((await git(['ls-files', '--error-unmatch', '--', '.grind.md'], checkout)).ok) {
+    throw new GrindError('START_BLOCKED', `${checkout} tracks .grind.md; untrack it before starting`);
+  }
+  if (await sidecarIsExcluded(checkout)) return;
+  const exclude = path.resolve(checkout, (await checkedGit(checkout, 'rev-parse', '--git-path', 'info/exclude')).trim());
+  try {
+    const existing = await readFile(exclude, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    });
+    if (!existing.split(/\r?\n/).includes('/.grind.md')) {
+      await mkdir(path.dirname(exclude), { recursive: true });
+      await appendFile(exclude, `${existing !== '' && !existing.endsWith('\n') ? '\n' : ''}/.grind.md\n`);
+    }
+  } catch (error) {
+    throw new GrindError('START_BLOCKED', `Cannot configure ${exclude}: ${(error as Error).message}`);
+  }
+  if (!(await sidecarIsExcluded(checkout))) {
+    throw new GrindError('START_BLOCKED', `${checkout} still does not exclude .grind.md; check for overriding ignore rules`);
+  }
 }
 
 async function remoteTarget(checkout: string, branch: string): Promise<string> {
@@ -129,6 +152,7 @@ async function executeOperation(
   const switchedRepositories: string[] = [];
   const noteTransfers: SwitchExecutionResult['noteTransfers'] = [];
   const changedDependencies: string[] = [];
+  for (const checkout of current.checkouts) await ensureSidecarExcluded(checkout.checkout);
   for (let index = 0; index < current.checkouts.length; index += 1) {
     let checkout = current.checkouts[index] as OperationCheckout;
     let sourceLedger: string | null = null;
@@ -136,9 +160,6 @@ async function executeOperation(
       const source = await resolveIdentifier(workspace, checkout.sourceInitiative);
       sourceLedger = path.join(source.dir, 'ledger.md');
       ledgers.add(sourceLedger);
-    }
-    if (!(await sidecarIsExcluded(checkout.checkout))) {
-      throw new GrindError('START_BLOCKED', `${checkout.repository} does not exclude .grind.md; configure the repository or global excludes before switching`);
     }
     if (checkout.switchState === 'planned') {
       if (sourceLedger !== null) {
@@ -254,10 +275,8 @@ export async function repairStartPointers(workspace: Workspace, inspection: Init
     const refreshed = await inspectInitiative(workspace, { id: inspection.id, dir: inspection.dir, archived: inspection.archived });
     for (const repository of refreshed.repositories) {
       if (!repository.onRecordedBranch) throw new GrindError('START_BLOCKED', `${repository.recorded.path} changed before pointer repair`);
+      await ensureSidecarExcluded(repository.observed.path);
       if (repository.observed.sidecar?.verified) continue;
-      if (!(await sidecarIsExcluded(repository.observed.path))) {
-        throw new GrindError('START_BLOCKED', `${repository.recorded.path} does not exclude .grind.md; configure excludes before repairing its pointer`);
-      }
       const sidecarPath = path.join(repository.observed.path, '.grind.md');
       const raw = await readFile(sidecarPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return '';

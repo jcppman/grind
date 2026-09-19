@@ -111,6 +111,12 @@ established as initiative work, following [Creating an initiative](protocol.md#c
 An observed current branch alone does not establish ownership. All commands support
 `--json` and `--workspace`.
 
+Start automatically excludes the root `.grind.md` sidecar when needed by appending
+`/.grind.md` to Git's local `info/exclude`. Existing entries are preserved; linked
+worktrees share this file. No global Git configuration or repository `.gitignore`
+change is needed. A tracked sidecar must be untracked explicitly. If another ignore
+rule overrides the local exclusion, start reports the conflict for resolution.
+
 ## Recovery
 
 - `STATE_LOCKED`: inspect the reported lock's owner PID, hostname, and timestamp.

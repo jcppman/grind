@@ -24,7 +24,7 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   for (const skill of ['context', 'create', 'start', 'save', 'close']) {
     const text = await readFile(path.join(install, 'skills', skill, 'SKILL.md'), 'utf8');
     for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {
-      await readFile(path.resolve(install, 'skills', skill, target));
+      await readFile(path.resolve(install, 'skills', skill, target.split('#')[0]));
     }
   }
   const ws = await makeTempWorkspace();

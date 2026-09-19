@@ -340,6 +340,12 @@ does not earn a ledger update.
 
 `/grind:start [initiative]` reuses context loading and prepares the initiative.
 Preflight the tracked checkouts and use the CLI's supported switch/reopen mechanics.
+Start ensures `.grind.md` is ignored before switching or repairing a pointer. When
+needed, it appends `/.grind.md` to Git's local `info/exclude`, preserving existing
+content and using the common Git directory for linked worktrees. It leaves effective
+existing ignore rules alone and does not edit global configuration or `.gitignore`.
+A tracked sidecar, an exclusion write failure, or an overriding ignore rule blocks
+preparation.
 Stop if the transition cannot be performed safely or is unavailable. Reinspect
 state after a transition and surface relevant review notes, discrepancies, and the
 recorded next action. Then ask what the user wants to do and wait; the ledger's
