@@ -415,11 +415,20 @@ to preserve.
 
 When the outcome is delivered, or the work is deliberately dropped:
 
-1. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
+1. Review initiative assets for durable knowledge that is not obvious from the code
+   itself, such as rationale, external constraints, or operational caveats. Distill
+   useful material into documentation in the relevant repository, checking it against
+   the actual repository state. Decide placement, format, and structure at closeout from each
+   repository's documentation conventions; this protocol does not prescribe them.
+   Avoid copying assets wholesale, restating code, or preserving superseded proposals
+   as current guidance. If nothing qualifies, no documentation change is needed.
+   Deliver any documentation changes through the repository's normal workflow before
+   finalizing closure, respecting existing authorization for external actions.
+2. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
    which in the ledger.
-2. Prepare a valid checkpoint. Handle every pending review note or choose the explicit
+3. Prepare a valid checkpoint. Handle every pending review note or choose the explicit
    parked disposition so the exact note payload is retained in the ledger.
-3. Run `grind close` with delivered or abandoned outcome, result location, and note
+4. Run `grind close` with delivered or abandoned outcome, result location, and note
    disposition. The CLI records the prior execution checkpoint in lifecycle history
    and commits only the initiative state.
 

@@ -5,8 +5,9 @@ description: Close or archive a Grind initiative after verifying its outcome, ch
 
 Load the [context workflow](../context/SKILL.md), then follow Closing an initiative
 in the [shared operating protocol](../../docs/protocol.md). Confirm the outcome and
-result location from the work itself. Prepare a valid checkpoint and decide whether
-all review notes are handled or must be durably parked.
+result location from the work itself. Complete the protocol's asset review and any
+resulting repository documentation work before final closure checks. Prepare a valid
+checkpoint and decide whether all review notes are handled or must be durably parked.
 
 Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs close [initiative] --outcome <delivered|abandoned> --result <location-or-summary> --notes <handled|parked> --json`,
