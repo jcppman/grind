@@ -15,7 +15,7 @@ if (!marketplace.plugins.some((plugin) => plugin.name === 'grind' && plugin.sour
 }
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const folder of ['dist', 'docs', 'skills', '.codex-plugin', '.claude-plugin']) {
+for (const folder of ['dist', 'docs', 'skills', 'hooks', '.codex-plugin', '.claude-plugin']) {
   await cp(path.join(root, folder), path.join(output, folder), { recursive: true });
 }
 await writeFile(path.join(output, '.codex-plugin', 'plugin.json'), JSON.stringify({ ...codexManifest, version: pkg.version }, null, 2) + '\n');

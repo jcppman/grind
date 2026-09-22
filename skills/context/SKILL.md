@@ -3,19 +3,28 @@ name: context
 description: Load or refresh a Grind init (initiative) from its identifier, initiative folder, associated checkout, or a choice list when omitted. Use at session entry when Grind is configured or when the user requests init or initiative context; context alone is read-only.
 ---
 
-Read the Terminology and Context loading sections of the
-[shared operating protocol](../../docs/protocol.md).
-Resolve the plugin root from this SKILL.md's location. Invoke its matching CLI as
-`node <plugin-root>/scripts/grind.mjs status [initiative] --json`, adding
-`--workspace <directory>` when discovery cannot reach the workspace. Do not use a
-global Grind installation. Node.js 24+ and Git are required.
+Resolve the plugin root from this SKILL.md's location. Run
+`node <plugin-root>/scripts/grind.mjs context [initiative] --json`, adding
+`--workspace <directory>` when discovery cannot reach the workspace. Use the full
+scoped identifier. Do not use a global Grind installation. Node.js 24+ and Git
+are required.
 
-Read the returned index, intent, ledger, and the specific shared constraint sections
-identified by the index. Inspect repository state and pending notes, then give a
-concise orientation with discrepancies, the candidate next action, and unresolved
-decisions. Load detailed specifications, plans, and other protocol sections only
-when needed for the user's chosen topic; the ledger's next action alone does not
-trigger those reads. Refresh with the same command when explicitly requested.
+The result includes intent, ledger, required constraints, observed Git state,
+note locations, navigation, and entry rules. Do not reread these sources or the
+full protocol merely to load context. If `complete` is false, explain diagnostics
+and resolve missing required context before substantive work. Observations do not
+verify arbitrary claims in ledger prose.
+
+Give a concise orientation naming the selected init and workspace, discrepancies,
+candidate next action, and unresolved decisions. An automatic hook describes
+directory association only; an init explicitly chosen by the user takes precedence.
+When the hook already supplied complete context for the requested init, use it
+without another call unless a refresh is needed. A notice alone is not loaded
+context: run this command for the user's task when needed.
+
+Load detailed specifications, plans, and operation-specific guidance only when
+needed for the chosen task. The next action alone does not trigger those reads.
+Use **init** as the conversational short name for initiative.
 
 On automatic discovery, WORKSPACE_NOT_FOUND or INITIATIVE_UNRESOLVED with no stale
 pointer is quiet and leaves ordinary work alone. When the user explicitly invokes
@@ -32,4 +41,6 @@ the same choice flow alongside the error and workspace hint.
 Context alone never executes the next action, fetches, switches branches, reopens,
 repairs pointers, handles notes, or writes a checkpoint. Closed initiatives and
 mismatched checkouts remain readable. If the user also requests work, use this
-context for that work and follow the protocol's execution and checkpoint rules.
+context for that work; load the relevant specification and plan before changing
+behavior, inspect pending notes before implementation, and use the save skill at
+meaningful checkpoints.

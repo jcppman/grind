@@ -145,3 +145,82 @@ test('relocated dashboard starts, serves its assets and data, and stops on SIGTE
   const result = await exited;
   assert.equal(result.code, 0);
 });
+
+test('relocated context and SessionStart hook honor opt-in, overflow and read-only behavior', async t => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'grind-context-package-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const install = path.join(temp, "plugin's folder");
+  await cp(path.resolve('build/grind'), install, { recursive: true });
+  const ws = await makeTempWorkspace(); t.after(ws.cleanup);
+  const dir = await writeInitiative(ws, 'small');
+  const hookFile = path.join(install, 'hooks/session-start.mjs');
+  const manifest = JSON.parse(await readFile(path.join(install, 'hooks/hooks.json'), 'utf8'));
+  const hookCommand = manifest.hooks.SessionStart[0].hooks[0].command;
+  const invoke = (source, cwd = dir) => new Promise((resolve, reject) => {
+    const child = spawn('/bin/sh', ['-c', hookCommand], {
+      cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: install },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => code === 0 ? resolve(stdout) : reject(new Error(stderr)));
+    child.stdin.end(JSON.stringify({ cwd, source, hook_event_name: 'SessionStart', session_id: 'package-test' }));
+  });
+  const cli = path.join(install, 'scripts/grind.mjs');
+  const context = JSON.parse((await exec(process.execPath, [cli, 'context', '--json'], { cwd: dir })).stdout);
+  assert.equal(context.data.complete, true);
+  assert.equal(context.data.resolution.source, 'folder');
+  assert.equal(await invoke('startup'), '');
+  await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: true }));
+  const before = await git(ws.stateGitRoot, 'status', '--porcelain');
+  for (const source of ['startup', 'resume', 'compact', 'clear', 'fork']) {
+    const output = JSON.parse(await invoke(source)).hookSpecificOutput;
+    assert.equal(output.hookEventName, 'SessionStart');
+    assert.match(output.additionalContext, /# Init context: small/);
+    assert.match(output.additionalContext, /does not select an init/);
+  }
+  assert.equal(await git(ws.stateGitRoot, 'status', '--porcelain'), before);
+  const ledger = path.join(dir, 'ledger.md');
+  await writeFile(ledger, (await readFile(ledger, 'utf8')) + '\n' + 'Context payload '.repeat(2000));
+  const output = JSON.parse(await invoke('compact')).hookSpecificOutput.additionalContext;
+  assert.match(output, /open init "small"/);
+  assert.doesNotMatch(output, /Context payload|Current checkpoint|Purpose and constraints/);
+  assert.ok(Buffer.byteLength(output) <= 6000);
+  assert.match(output, /if needed/);
+  const command = output.match(/Run (.+) to load it if needed\./)[1];
+  const loaded = await exec('/bin/sh', ['-c', command], { cwd: temp });
+  assert.match(loaded.stdout, /Context payload/);
+  await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: false }));
+  assert.equal(await invoke('resume'), '');
+  assert.ok(await readFile(hookFile, 'utf8'));
+});
+
+test('hook decodes split UTF-8 input and enforces its byte limit', async t => {
+  const ws = await makeTempWorkspace(); t.after(ws.cleanup);
+  await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: true }));
+  const cwd = await writeInitiative(ws, '日本語');
+  const hook = path.resolve('build/grind/hooks/session-start.mjs');
+  const input = Buffer.from(JSON.stringify({ cwd, source: 'startup' }));
+  const splitAt = input.indexOf(Buffer.from('日')) + 1;
+  const run = async chunks => {
+    const preload = path.join(ws.root, 'stdin.mjs');
+    await writeFile(preload, `
+      import { Readable } from 'node:stream';
+      const chunks = ${JSON.stringify(chunks.map(chunk => chunk.toString('base64')))};
+      Object.defineProperty(process, 'stdin', {
+        value: Readable.from(chunks.map(chunk => Buffer.from(chunk, 'base64')))
+      });
+    `);
+    const { stdout } = await exec(process.execPath, ['--import', preload, hook], { cwd });
+    return JSON.parse(stdout).hookSpecificOutput.additionalContext;
+  };
+  const context = await run([input.subarray(0, splitAt), input.subarray(splitAt)]);
+  assert.match(context, /# Init context: 日本語/);
+  assert.doesNotMatch(context, /ENOENT|CONTEXT_HOOK_FAILED|\uFFFD/);
+  const tooLarge = Buffer.from(JSON.stringify({ cwd, padding: '日'.repeat(400000) }));
+  const rejected = await run([tooLarge]);
+  assert.match(rejected, /could not read SessionStart input/);
+  assert.doesNotMatch(rejected, /# Init context/);
+});

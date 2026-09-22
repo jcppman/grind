@@ -1,5 +1,6 @@
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { navigation } from './context-markdown.ts';
 import { diagnostic, type Diagnostic } from './errors.ts';
 import { getString, isRecord, parseFrontmatter, type Frontmatter } from './frontmatter.ts';
 import { LEDGER_TYPE, validateLedger, type LedgerValidation } from './ledger.ts';
@@ -163,22 +164,17 @@ function onlyOkfVersion(data: Record<string, unknown>): boolean {
   return keys.length === 0 || (keys.length === 1 && keys[0] === 'okf_version');
 }
 
-const MARKDOWN_LINK = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-
 /** Local links in an index must resolve so navigation never points at a missing document. */
 async function checkIndexLinks(doc: ArtifactDocument): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
-  for (const match of doc.frontmatter.body.matchAll(MARKDOWN_LINK)) {
-    const target = match[1] as string;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#')) continue;
-    const withoutFragment = target.split('#')[0] as string;
-    if (withoutFragment === '') continue;
-    const resolved = path.resolve(path.dirname(doc.path), decodeURI(withoutFragment));
-    if (!(await pathExists(resolved))) {
-      diagnostics.push(
-        diagnostic('error', 'BROKEN_LINK', `Index link "${target}" does not resolve`, doc.path),
-      );
+  try {
+    for (const link of navigation(doc.frontmatter.body, doc.path)) {
+      if (!link.external && !(await pathExists(link.path))) {
+        diagnostics.push(diagnostic('error', 'BROKEN_LINK', `Index link "${link.path}" does not resolve`, doc.path));
+      }
     }
+  } catch (error) {
+    diagnostics.push(diagnostic('error', 'BROKEN_LINK', (error as Error).message, doc.path));
   }
   return diagnostics;
 }
