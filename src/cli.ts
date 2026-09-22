@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { contextCommand, formatContext } from './context.ts';
 import { createCommand, saveCommand } from './writes.ts';
 import { listCommand, startCommand, statusCommand } from './commands.ts';
 import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
@@ -22,6 +23,7 @@ Commands:
   archive [initiative] move eligible closed work to read-only history
   dashboard           serve the local initiative dashboard
   list                list initiatives and their recorded state
+  context [initiative] load complete read-only initiative context
   status [initiative] inspect initiative artifacts and recorded/observed state
 
 Options:
@@ -94,7 +96,7 @@ export async function run(argv: readonly string[]): Promise<number> {
         { command: args.command, increment },
       );
     }
-    if (!['list', 'status', 'start', 'create', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
+    if (!['list', 'status', 'context', 'start', 'create', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
     if (args.positional.length > (['list', 'dashboard'].includes(args.command) ? 0 : 1)) {
@@ -139,6 +141,9 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'list') {
       const result = await listCommand(context);
       emit(json, { ok: true, data: result }, formatList(result));
+    } else if (args.command === 'context') {
+      const result = await contextCommand(context, identifier);
+      emit(json, { ok: true, data: result }, formatContext(result));
     } else if (args.command === 'status') {
       const result = await statusCommand(context, identifier);
       emit(json, { ok: true, data: result }, formatStatus(result));

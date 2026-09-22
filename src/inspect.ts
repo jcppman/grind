@@ -48,8 +48,9 @@ export interface InitiativeInspection {
 export async function inspectInitiative(
   workspace: Workspace,
   entry: InitiativeEntry,
+  suppliedRecord?: InitiativeRecord,
 ): Promise<InitiativeInspection> {
-  const record = await readInitiative(entry.dir, { workspace });
+  const record = suppliedRecord ?? await readInitiative(entry.dir, { workspace });
   const diagnostics = [...record.diagnostics];
   const artifacts = summarizeArtifacts(record);
   const state = record.ledgerState?.state ?? null;

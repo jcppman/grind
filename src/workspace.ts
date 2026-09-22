@@ -40,7 +40,7 @@ export async function findWorkspaceConfig(startDir: string): Promise<string | nu
 export async function loadWorkspace(options: LoadWorkspaceOptions): Promise<Workspace> {
   const configPath = await locateConfig(options);
   const root = await realpath(path.dirname(configPath));
-  const stateRepository = await readStateRepositorySetting(configPath);
+  const { stateRepository } = await readWorkspaceSettings(configPath);
   const stateDir = path.resolve(root, stateRepository);
   if (!(await isDirectory(stateDir))) {
     throw new GrindError(
@@ -90,7 +90,7 @@ async function locateConfig(options: LoadWorkspaceOptions): Promise<string> {
   return found;
 }
 
-async function readStateRepositorySetting(configPath: string): Promise<string> {
+export async function readWorkspaceSettings(configPath: string): Promise<{ stateRepository: string; contextOnSessionStart: boolean }> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(configPath, 'utf8'));
@@ -114,7 +114,11 @@ async function readStateRepositorySetting(configPath: string): Promise<string> {
       { configPath },
     );
   }
-  return stateRepository;
+  const enabled = parsed['contextOnSessionStart'];
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    throw new GrindError('WORKSPACE_CONFIG_INVALID', 'contextOnSessionStart must be a boolean', { configPath });
+  }
+  return { stateRepository, contextOnSessionStart: enabled ?? false };
 }
 
 /**

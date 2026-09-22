@@ -82,8 +82,13 @@ organize documents; they do not create nested initiatives.
 ### Index and document scope
 
 `index.md` links to authoritative documents and explains each one's scope. It
-identifies specific shared constraint sections needed on every context load and links to optional
-nested indexes. Keep it current when documents are added, moved, or removed. It
+identifies required local Markdown links in list items under the exact level-two
+heading `Read on every context load`. Link to a heading fragment for only that
+section and its subsections, or omit the fragment for the whole document. Intent
+and ledger are always included and need not be repeated. Other links are navigation.
+The context command diagnoses missing files, fragments, and unsupported required
+reads; it never infers mandatory reads from prose or follows links recursively.
+Keep it current when documents are added, moved, or removed. It
 contains navigation, not duplicated status or checkpoint information.
 
 A top-level specification owns shared contracts; milestone specifications reference
@@ -315,40 +320,37 @@ it does not automatically commit unfinished application code.
 
 ## Session-start protocol
 
-Load context automatically before responding to substantive work when the session
-begins inside an initiative folder or an associated checkout. Use the same shared
-workflow as `/grind:context [initiative]`. Explicit invocation also selects an
-initiative or refreshes context after external changes. Do not reload every turn.
+Use `/grind:context` when the user requests context or a task needs initiative
+context that is not already loaded. Optional plugin hooks run only when the nearest
+workspace sets `contextOnSessionStart: true`; host trust is a separate prerequisite.
+Automatic discovery describes directory association, not conversation selection.
+An explicit user selection takes precedence. Do not reload every turn.
 
 ### Context loading
 
-1. Resolve the workspace from the nearest `grind-workspace.json`, or an explicit
-   workspace path outside that boundary. Resolve the initiative from an explicit
-   identifier, its folder, or a verified checkout pointer. If the pointer disagrees
-   with Git, derive ownership from unarchived repository tracking records without rewriting
-   the pointer. Report ambiguity instead of selecting a guess.
-2. Read `index.md`, `intent.md`, and `ledger.md`, then the specific shared
-   constraint sections identified by the index. Load specifications, plans, and
-   supporting artifacts when the user's chosen topic requires them. A recorded
-   next action alone does not require loading its detailed documents. Read the
-   relevant protocol sections for the current operation, not the entire protocol
-   on every boot. Report missing required links or conflicting ownership.
-3. Inspect the tracked repositories, branches, diffs, and recent commits. Report
-   missing checkouts and mismatches as observed state; do not change them.
-4. Surface pending sidecar and parked review notes, the recorded next action, and
-   unresolved decisions. Distinguish notes belonging to the current checkout's
-   branch from the selected initiative when they differ.
-5. Report material discrepancies and use the verified context for the user's
-   accompanying request. A context-only invocation gives a concise orientation
-   and waits for direction; it does not execute the ledger's next action.
+Run the matching plugin CLI's `context [initiative] --json`, with `--workspace`
+when needed. It resolves the init, assembles intent and ledger without summarizing,
+extracts mandatory index sections, and reports observed repositories, HEAD commits,
+pending note locations, lifecycle operations, and diagnostics. `complete: false`
+requires resolving missing or malformed context before substantive work. Code and
+Git remain authoritative over recorded prose.
 
-Context loading is read-only: do not fetch, switch branches, reopen work, repair
-pointers, process or remove notes, reconcile files, archive initiatives, or save a
-checkpoint. A closed initiative can be read without reopening. With no initiative,
-automatic discovery leaves ordinary work alone. For an explicit context request,
-try folder or checkout discovery first; if none resolves, list available initiatives
-and let the user choose without requiring the full identifier. Reading files alone
-does not earn a ledger update.
+Report the selected init, discrepancies, candidate next action, and unresolved
+decisions. Load detailed specs and plans for the chosen topic, not merely because
+the ledger mentions them. Explicit selection does not change checkout association.
+Context alone does not fetch, switch, reopen, repair pointers, process notes,
+save a checkpoint, or execute the next action. Closed inits remain readable.
+
+A hook supplies complete context when it fits its output budget; otherwise it
+supplies only the init's actual status and a command to load context if needed.
+It writes no temporary context or session-tracking files. A notice is not loaded
+context. Hooks do not override the user's selected init on resume or compaction.
+The host retains conversation selection; Grind maintains no separate session state.
+
+Absent automatic discovery is quiet unless there is stale-pointer evidence.
+Ambiguity and malformed state are surfaced rather than guessed. Explicit invocation
+without a resolvable init lists candidates and lets the user choose; when exactly
+one candidate exists the skill may select it. No records are migrated during reads.
 
 ### Prepare an initiative
 

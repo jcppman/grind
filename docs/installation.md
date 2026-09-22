@@ -1,7 +1,7 @@
 # Install Grind
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
+`status`, `context`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
 writer through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
 milestones.
 
@@ -45,11 +45,10 @@ codex plugin add grind@personal
 Use the marketplace's actual name if it differs. Start a fresh Codex session after
 installation; existing sessions do not acquire the newly installed skills.
 
-For automatic context loading, append the thin paragraph in
-[codex-adapter.md](codex-adapter.md) to the workspace's `AGENTS.md`, preserving its
-existing instructions. This adapter routes to the installed shared context skill;
-it does not contain an independent workflow. Without the adapter, explicitly ask
-for Grind context or use the installed context skill. Hooks are not required.
+Use the [workspace opt-in](#automatic-context-loading) for automatic loading.
+Review and trust the bundled hook through the host's hook controls when required;
+installing a plugin does not bypass host trust. Explicit Grind context remains
+available with hooks disabled.
 
 Skill helpers run `node <installed-plugin-root>/scripts/grind.mjs ...`; locate the
 root relative to the installed SKILL.md, never by assuming a global CLI or the
@@ -72,15 +71,11 @@ The marketplace source is `./`, so Claude Code loads the plugin from the selecte
 directory. Keep that directory in place while the marketplace is registered. Start
 a fresh Claude Code session after installation.
 
-For automatic context loading, append the thin paragraph in
-[claude-code-adapter.md](claude-code-adapter.md) to the workspace's `CLAUDE.md`,
-preserving its existing instructions. The adapter routes to the installed shared
-context skill and does not define separate state or workflow. Without the adapter,
+Use the [workspace opt-in](#automatic-context-loading) for automatic loading, or
 invoke `/grind:context [initiative]` explicitly. `/grind:start [initiative]` prepares
-the initiative through the same compiled CLI and records used by Codex, then asks
-what you want to do. It executes work only when you also request a task.
-Both commands accept no initiative argument: they discover from the current folder
-when possible and otherwise offer the workspace's available initiatives for selection.
+the initiative and then asks what you want to do unless you also requested work.
+Both skills discover from the current folder when no identifier is supplied and
+offer available inits for selection when discovery cannot choose one.
 
 ## Workspace setup
 
@@ -99,6 +94,7 @@ initiative state out of the implementation repository.
 ```sh
 grind create outcome --scope app
 grind status app/outcome
+grind context app/outcome
 grind start app/outcome
 grind save app/outcome --message 'outcome: clarify intent'
 grind close app/outcome --outcome delivered --result 'release/v1' --notes handled
@@ -116,6 +112,44 @@ Start automatically excludes the root `.grind.md` sidecar when needed by appendi
 worktrees share this file. No global Git configuration or repository `.gitignore`
 change is needed. A tracked sidecar must be untracked explicitly. If another ignore
 rule overrides the local exclusion, start reports the conflict for resolution.
+
+## Automatic context loading
+
+The plugin bundles a `SessionStart` hook for Codex and Claude Code. Opt in for a
+workspace by adding the boolean setting to its existing `grind-workspace.json`:
+
+```json
+{
+  "stateRepository": "./private-state",
+  "contextOnSessionStart": true
+}
+```
+
+Preserve your actual stateRepository and other settings. Omitted or false disables
+loading; non-boolean values are errors. The hook checks this flag before inspecting
+inits or repositories. The host must also allow/trust the plugin hook. Setting the
+flag does not grant that trust. No global settings are edited by Grind.
+
+Start a new host session after installing an updated plugin. With the hook enabled,
+small contexts are injected in full; output exceeding 6,000 UTF-8 bytes becomes
+only an association notice with an explicit command to load context if needed.
+No partial documents, temporary output files, or per-session selection records are
+created. An explicit init selected in the conversation takes precedence over the
+checkout's association. Disabled hooks do not affect `grind context` or the skill.
+
+Remove any older automatic-entry paragraph copied from the adapter docs if you
+want this setting to be the sole automatic-loading control. Those instructions
+can independently cause an agent to invoke the skill even when the hook is disabled.
+Do not register a second copy of the bundled hook in user settings.
+
+`grind context [full/scoped-id]` prints full Markdown; `--json` provides a versioned
+payload with `complete`, source bodies/metadata, required excerpts, recorded state,
+observations, note locations, diagnostics, and navigation. A false `complete` means
+required context is missing or invalid. The operation stays read-only even on error.
+Declare mandatory constraints under `## Read on every context load` in the root
+index using Markdown list links; other documents stay on demand. Required targets
+must be Markdown within the workspace or state directory. Relative links resolve
+from their source document, and fragments use GitHub-style heading slugs.
 
 ## Dashboard
 

@@ -14,7 +14,8 @@
     "skills",
     ".codex-plugin",
     ".claude-plugin",
-    "scripts/grind.mjs"
+    "scripts/grind.mjs",
+    "hooks"
   ],
   "engines": {
     "node": ">=24"
@@ -27,6 +28,9 @@
     "test:package": "npm run package:plugin && node --test scripts/package.test.mjs"
   },
   "dependencies": {
+    "entities": "^8.1.0",
+    "github-slugger": "^2.0.0",
+    "marked": "^18.0.14",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

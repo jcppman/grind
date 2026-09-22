@@ -5,6 +5,7 @@ import { isInitiativeRoot, isArchivedId, listInitiatives, type InitiativeEntry }
 import { diagnostic, GrindError, type Diagnostic } from './errors.ts';
 import { gitCurrentBranch, gitToplevel } from './git.ts';
 import { isContainedRelativePath, normalizeRepositoryPath, resolveWithin, toPosix } from './paths.ts';
+import type { RepositoryEntry } from './ledger.ts';
 import { readSidecar, type Sidecar } from './sidecar.ts';
 import { findNestedWorkspaceConfig, type Workspace } from './workspace.ts';
 
@@ -179,7 +180,7 @@ async function verifyPointer(
   const state = record.ledgerState?.state ?? null;
   if (state === null) return { entry: null, reason: 'its ledger state is unreadable' };
   const tracked = state.repositories.some(
-    (r) => normalizeRepositoryPath(r.path) === checkout.repositoryPath && r.branch === checkout.branch,
+    (r) => tracksPath(r, checkout.repositoryPath) && r.branch === checkout.branch,
   );
   return tracked
     ? { entry, reason: '' }
@@ -198,9 +199,14 @@ export async function branchOwners(
     if (entry.archived) continue;
     const record = await readInitiative(entry.dir, { workspace });
     const repositories = record.ledgerState?.state?.repositories ?? [];
-    if (repositories.some((r) => normalizeRepositoryPath(r.path) === repositoryPath && r.branch === branch)) {
+    if (repositories.some((r) => tracksPath(r, repositoryPath) && r.branch === branch)) {
       owners.push(entry);
     }
   }
   return owners;
+}
+
+function tracksPath(repository: RepositoryEntry, repositoryPath: string): boolean {
+  return normalizeRepositoryPath(repository.path) === repositoryPath ||
+    (repository.checkout !== 'clone' && normalizeRepositoryPath(repository.checkout) === repositoryPath);
 }

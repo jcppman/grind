@@ -24,7 +24,12 @@ compiled CLI and shared context/create/start/save/close skills run in Codex and
 Claude Code from the same relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
-setup, terminal use, and the automatic-context adapter.
+setup, terminal use, and opt-in session hooks.
+
+`grind context [initiative]` assembles read-only context in one call. Enable
+`contextOnSessionStart: true` in the workspace configuration for automatic hook
+loading; it is disabled by default. Oversized contexts produce only an association
+notice and a command to load the full context if needed.
 
 The initiative argument is optional for context and start. From an initiative folder
 or associated checkout, Grind resolves it automatically. Elsewhere, invoke
