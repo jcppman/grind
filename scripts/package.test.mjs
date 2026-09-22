@@ -196,3 +196,31 @@ test('relocated context and SessionStart hook honor opt-in, overflow and read-on
   assert.equal(await invoke('resume'), '');
   assert.ok(await readFile(hookFile, 'utf8'));
 });
+
+test('hook decodes split UTF-8 input and enforces its byte limit', async t => {
+  const ws = await makeTempWorkspace(); t.after(ws.cleanup);
+  await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: true }));
+  const cwd = await writeInitiative(ws, '日本語');
+  const hook = path.resolve('build/grind/hooks/session-start.mjs');
+  const input = Buffer.from(JSON.stringify({ cwd, source: 'startup' }));
+  const splitAt = input.indexOf(Buffer.from('日')) + 1;
+  const run = async chunks => {
+    const preload = path.join(ws.root, 'stdin.mjs');
+    await writeFile(preload, `
+      import { Readable } from 'node:stream';
+      const chunks = ${JSON.stringify(chunks.map(chunk => chunk.toString('base64')))};
+      Object.defineProperty(process, 'stdin', {
+        value: Readable.from(chunks.map(chunk => Buffer.from(chunk, 'base64')))
+      });
+    `);
+    const { stdout } = await exec(process.execPath, ['--import', preload, hook], { cwd });
+    return JSON.parse(stdout).hookSpecificOutput.additionalContext;
+  };
+  const context = await run([input.subarray(0, splitAt), input.subarray(splitAt)]);
+  assert.match(context, /# Init context: 日本語/);
+  assert.doesNotMatch(context, /ENOENT|CONTEXT_HOOK_FAILED|\uFFFD/);
+  const tooLarge = Buffer.from(JSON.stringify({ cwd, padding: '日'.repeat(400000) }));
+  const rejected = await run([tooLarge]);
+  assert.match(rejected, /could not read SessionStart input/);
+  assert.doesNotMatch(rejected, /# Init context/);
+});

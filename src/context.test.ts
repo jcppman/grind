@@ -117,3 +117,17 @@ test('context discovers an init from its tracked linked worktree', async t => {
   assert.equal(result.complete, true);
   assert.equal(result.resolution.source, 'sidecar');
 });
+
+test('nested rendered headings consume duplicate slugs without selecting the wrong constraint', async t => {
+  const ws = await makeTempWorkspace(); t.after(ws.cleanup);
+  const body = '> ## Safety\n> Quoted rule.\n\n## Safety\nActual rule.\n\n- ### Safety\n  List rule.\n\n## Safety\nFinal rule.\n';
+  await writeInitiative(ws, 'work', {
+    index: '## Read on every context load\n- [Actual](rules.md#safety-1)\n- [Final](rules.md#safety-3)\n',
+    files: { 'rules.md': '---\ntype: Specification\n---\n' + body },
+  });
+  const result = await contextCommand({ workspace: await loadWorkspace({ cwd: ws.root }), cwd: ws.root }, 'work');
+  assert.equal(result.complete, true, JSON.stringify(result.diagnostics));
+  assert.equal(result.constraints[0]?.body, '## Safety\nActual rule.\n\n- ### Safety\n  List rule.\n\n');
+  assert.equal(result.constraints[1]?.body, '## Safety\nFinal rule.\n');
+  assert.throws(() => markdownSection(body, 'safety'), /fragment/);
+});

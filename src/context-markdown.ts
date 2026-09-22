@@ -22,13 +22,18 @@ function headings(body: string): Heading[] {
     if (body[i] === '\r' && body[i + 1] === '\n') i++;
   }
   offsets.push(body.length);
+  const tokens = marked.lexer(normalized);
   const slugger = new GithubSlugger();
+  const slugs = new Map<Token, string>();
+  marked.walkTokens(tokens, token => {
+    if (token.type === 'heading') slugs.set(token, slugger.slug(inlineText(token.tokens ?? [])));
+  });
   const result: Heading[] = [];
   let offset = 0;
-  for (const token of marked.lexer(normalized)) {
+  for (const token of tokens) {
     if (token.type === 'heading') {
       const text = inlineText(token.tokens ?? []);
-      result.push({ slug: slugger.slug(text), text, depth: token.depth, start: offsets[offset]!, end: body.length });
+      result.push({ slug: slugs.get(token)!, text, depth: token.depth, start: offsets[offset]!, end: body.length });
     }
     offset += token.raw.length;
   }
