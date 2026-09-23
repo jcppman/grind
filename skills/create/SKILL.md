@@ -6,8 +6,13 @@ description: Create a Grind init (initiative) for a coherent development outcome
 Read the [shared operating protocol](../../docs/protocol.md), especially Creating
 an initiative. Clarify material uncertainty about intent before writing it; defer
 unresolved design and execution choices as open questions rather than assumed
-requirements. Choose a name and the narrowest workspace-relative folder containing
-its repositories. Omit scope when no repository has been chosen.
+requirements. Follow the protocol's placement rule: unless the user explicitly
+chooses another location, pass the target repository's workspace-relative folder
+as `--scope` for single-repository work, even when the working directory is a
+parent folder. Verify the repository path; do not substitute a repository name
+prefix in the initiative name. For multiple target repositories, pass their
+narrowest common containing folder. Omit scope only when no target repository is
+known; an empty `grind.repositories` does not mean the target is unknown.
 
 Resolve the plugin root from this SKILL.md. Run
 `node <plugin-root>/scripts/grind.mjs create <name> [--scope <folder>] --json`,

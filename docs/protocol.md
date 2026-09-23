@@ -47,6 +47,21 @@ already answered. Do not turn plausible assumptions into agreed requirements.
 Design and execution choices that can wait belong as open questions in the ledger,
 with clarification or investigation as the next action when needed.
 
+Choose placement from the repositories the intended work targets, independently
+of the agent's current working directory. Unless the user explicitly specifies a
+different location, work targeting one repository uses that repository's
+workspace-relative folder as `--scope`. For multiple target repositories, use
+their narrowest common containing folder. Repositories consulted only as references
+do not widen the scope. Omit `--scope` when no target repository is known.
+
+Resolve and verify the target repository's folder before running create; a known
+target determines placement even when it has no assigned initiative branch or
+`grind.repositories` entry yet. For example, with a workspace containing
+`audio/rytho`, work solely on Rytho uses `create <outcome> --scope audio/rytho`
+even when the working directory is `audio`. This creates
+`initiatives/audio/rytho/<outcome>/` in the state repository. A `rytho-` name
+prefix is not a substitute for the repository scope.
+
 `grind.repositories` records checkouts and exact branches assigned to initiative
 work, not every repository consulted. A checkout's current branch is evidence of
 its state, not evidence that the branch belongs to this initiative. During creation,
