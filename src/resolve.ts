@@ -158,7 +158,7 @@ async function resolveFromCheckout(workspace: Workspace, cwd: string): Promise<R
       stalePointer,
     });
   }
-  throw new GrindError('INITIATIVE_UNRESOLVED', `No unarchived initiative tracks ${checkout.repositoryPath} on branch ${checkout.branch}`, {
+  throw new GrindError('INITIATIVE_UNRESOLVED', `No open initiative tracks ${checkout.repositoryPath} on branch ${checkout.branch}`, {
     checkout: checkoutRoot,
     branch: checkout.branch,
     stalePointer,
@@ -187,7 +187,7 @@ async function verifyPointer(
     : { entry: null, reason: `its ledger does not track ${checkout.repositoryPath} on branch ${checkout.branch}` };
 }
 
-/** Unarchived initiatives whose ledgers track this repository on this branch. */
+/** Open, unarchived initiatives tracking this repository and branch. */
 export async function branchOwners(
   workspace: Workspace,
   repositoryPath: string,
@@ -198,7 +198,8 @@ export async function branchOwners(
   for (const entry of listing.entries) {
     if (entry.archived) continue;
     const record = await readInitiative(entry.dir, { workspace });
-    const repositories = record.ledgerState?.state?.repositories ?? [];
+    if (record.ledgerState?.state?.status !== 'open') continue;
+    const repositories = record.ledgerState.state.repositories;
     if (repositories.some((r) => tracksPath(r, repositoryPath) && r.branch === branch)) {
       owners.push(entry);
     }

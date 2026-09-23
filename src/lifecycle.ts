@@ -129,12 +129,8 @@ async function inspectCheckout(
   if (operation !== null) blockers.push(`${recorded.path} has an in-progress Git operation (${operation})`);
 
   const targetOwners = await branchOwners(workspace, recorded.path, recorded.branch);
-  if (targetOwners.length !== 1 || targetOwners[0]?.id !== target) {
-    blockers.push(
-      targetOwners.length === 0
-        ? `${recorded.path} branch ${recorded.branch} is not owned by ${target}`
-        : `${recorded.path} branch ${recorded.branch} has conflicting owners: ${targetOwners.map((owner) => owner.id).join(', ')}`,
-    );
+  if (targetOwners.some((owner) => owner.id !== target)) {
+    blockers.push(`${recorded.path} branch ${recorded.branch} has conflicting owners: ${targetOwners.map((owner) => owner.id).join(', ')}`);
   }
 
   if (recorded.checkout !== 'clone') {

@@ -398,6 +398,8 @@ decisions. Load detailed specs and plans for the chosen topic, not merely becaus
 the ledger mentions them. Explicit selection does not change checkout association.
 Context alone does not fetch, switch, reopen, repair pointers, process notes,
 save a checkpoint, or execute the next action. Closed inits remain readable.
+Their repository tracking is historical and does not block an open init using
+the same branch. Reopening requires that no open init owns the tracked branches.
 
 A hook supplies complete context when it fits its output budget; otherwise it
 supplies only the init's actual status and a command to load context if needed.

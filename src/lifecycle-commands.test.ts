@@ -7,7 +7,7 @@ import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { parseFrontmatter } from './frontmatter.ts';
 import { validateLedger } from './ledger.ts';
 import { readPendingOperations } from './operations.ts';
-import { commitState, git, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
+import { commitState, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
 
 test('close persists history and start reopens the saved execution checkpoint', async (t) => {
@@ -134,4 +134,32 @@ test('start resumes a reopen whose state commit failed', async (t) => {
   const result = await startCommand(context, 'work');
   assert.equal(result.inspection.state?.status, 'open');
   assert.deepEqual(await readPendingOperations(workspace), []);
+});
+
+test('start replaces a closed init pointer and reopening cannot displace an open owner', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const app = await makeCheckout(ws, 'app', 'feature');
+  const oldDir = await writeInitiative(ws, 'app/old', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  await commitState(ws);
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const context = { workspace, cwd: ws.root };
+  await closeCommand(context, 'app/old', { outcome: 'delivered', result: 'v1', notes: 'handled' });
+  await writeSidecar(app, 'app/old');
+  const oldLedger = await readFile(path.join(oldDir, 'ledger.md'), 'utf8');
+  const activeDir = await writeInitiative(ws, 'app/current', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  await commitState(ws);
+
+  const started = await startCommand(context, 'app/current');
+  assert.deepEqual(started.plan.blockers, []);
+  assert.match(await readFile(path.join(app, '.grind.md'), 'utf8'), /initiative: app\/current/);
+  await assert.rejects(startCommand(context, 'app/old'), { code: 'START_BLOCKED' });
+  assert.equal(await readFile(path.join(oldDir, 'ledger.md'), 'utf8'), oldLedger);
+  assert.match(await readFile(path.join(app, '.grind.md'), 'utf8'), /initiative: app\/current/);
+
+  await rm(activeDir, { recursive: true });
+  await commitState(ws);
+  const reopened = await startCommand(context, 'app/old');
+  assert.equal(reopened.inspection.state?.status, 'open');
+  assert.match(await readFile(path.join(app, '.grind.md'), 'utf8'), /initiative: app\/old/);
 });

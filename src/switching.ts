@@ -273,6 +273,10 @@ export async function repairStartPointers(workspace: Workspace, inspection: Init
   const repositories = inspection.repositories.filter((repository) => repository.observed.repository);
   await withLifecycleLocks(workspace, repositories.map((repository) => repository.observed.path), `pointers-${process.pid}`, async () => {
     const refreshed = await inspectInitiative(workspace, { id: inspection.id, dir: inspection.dir, archived: inspection.archived });
+    const plan = await planStart(workspace, refreshed);
+    if (plan.blockers.length > 0) {
+      throw new GrindError('START_BLOCKED', `${inspection.id} cannot repair pointers`, { blockers: plan.blockers });
+    }
     for (const repository of refreshed.repositories) {
       if (!repository.onRecordedBranch) throw new GrindError('START_BLOCKED', `${repository.recorded.path} changed before pointer repair`);
       await ensureSidecarExcluded(repository.observed.path);

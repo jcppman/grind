@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { resolveInitiative } from './resolve.ts';
-import { git, makeCheckout, makeSymlink, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, type TempWorkspace } from './test-helpers.ts';
+import { closedLedger, git, makeCheckout, makeSymlink, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, type TempWorkspace } from './test-helpers.ts';
 import { loadWorkspace, type Workspace } from './workspace.ts';
 
 async function setup(t: { after: (fn: () => Promise<void>) => void }): Promise<{ ws: TempWorkspace; workspace: Workspace }> {
@@ -130,4 +130,22 @@ test('a root nested inside another initiative cannot be selected', async (t) => 
   const nested = await writeInitiative(ws, 'app/feature/nested');
   await assert.rejects(resolveInitiative({ workspace, cwd: nested }), { code: 'ARTIFACT_INVALID' });
   await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/feature/nested' }), { code: 'ARTIFACT_INVALID' });
+});
+
+test('closed tracking does not compete with an open branch owner', async (t) => {
+  const { ws, workspace } = await setup(t);
+  await writeInitiative(ws, 'app/closed', { ledger: closedLedger([{ path: 'app', branch: 'feature' }]) });
+  const checkout = await makeCheckout(ws, 'app', 'feature');
+  const result = await resolveInitiative({ workspace, cwd: checkout });
+  assert.equal(result.initiative.id, 'app/feature');
+  assert.equal((await resolveInitiative({ workspace, cwd: checkout, identifier: 'app/closed' })).initiative.id, 'app/closed');
+});
+
+test('closed tracking alone does not implicitly claim a branch', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'app/closed', { ledger: closedLedger([{ path: 'app', branch: 'feature' }]) });
+  const checkout = await makeCheckout(ws, 'app', 'feature');
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  await assert.rejects(resolveInitiative({ workspace, cwd: checkout }), { code: 'INITIATIVE_UNRESOLVED' });
 });
