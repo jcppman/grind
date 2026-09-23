@@ -22,7 +22,8 @@ ownership, create branches, or commit. Elaborate intent from the user's actual
 request and keep the ledger resumable. Track only established initiative branches;
 otherwise leave `grind.repositories` empty and name candidate repositories in the
 working state. Defer new branches and worktrees until execution needs them.
-Add specifications or plans only as needed.
+Use Choosing what to preserve in the protocol before adding specifications or
+plans; small decisions can remain in the ledger.
 Use the [save workflow](../save/SKILL.md) for the resulting checkpoint.
 
 On a collision or incomplete creation, inspect the reported destination and preserve
