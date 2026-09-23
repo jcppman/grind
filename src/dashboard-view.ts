@@ -68,6 +68,8 @@ footer{margin-top:25px;display:flex;justify-content:space-between;font-size:11px
 .card[open]>.initiative-summary{border-bottom:1px solid #eef0ea}
 .initiative-summary:focus-visible{outline:3px solid #84a98c;outline-offset:-3px}
 .initiative-label{min-width:0;flex:1}
+.name-copy{border:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;overflow-wrap:anywhere}
+.name-copy:hover{text-decoration:underline;text-underline-offset:3px}
 .initiative-name{display:block;font-weight:650;font-size:14px;overflow-wrap:anywhere}
 .summary-task{display:block;font-size:13px;color:#617367;margin-top:5px;overflow-wrap:anywhere}
 .badges{flex-wrap:wrap}
@@ -88,7 +90,7 @@ footer{gap:14px}
 </style></head><body><header><div class="brand">grind<span>Workspace</span></div><div class="local">Local · read only</div></header>
 <main><div class="intro"><div><h1>Initiatives</h1><div id="workspace" class="muted">Loading workspace…</div></div><button id="refresh" class="refresh">↻ Refresh</button></div>
 <div class="toolbar"><div class="filters" aria-label="Filter initiatives"><button class="filter" data-filter="all" aria-pressed="true">All</button><button class="filter" data-filter="open" aria-pressed="false">Open</button><button class="filter" data-filter="closed" aria-pressed="false">Closed</button><button class="filter" data-filter="archived" aria-pressed="false">Archived</button></div><input id="search" type="search" aria-label="Search initiatives" placeholder="Search initiatives…"></div>
-<p id="notice" role="status" aria-live="polite"></p><div id="fallback" hidden><label for="command">Clipboard unavailable. Copy this command manually.</label><textarea id="command" readonly></textarea></div><div id="error" role="alert"></div><div id="listing" aria-live="polite"></div><footer><span>Records stay in your workspace.</span><span id="updated"></span></footer></main><script nonce="${nonce}" src="app.js"></script></body></html>`;
+<p id="notice" role="status" aria-live="polite"></p><div id="fallback" hidden><label for="command">Clipboard unavailable. Copy this text manually.</label><textarea id="command" readonly></textarea></div><div id="error" role="alert"></div><div id="listing" aria-live="polite"></div><footer><span>Records stay in your workspace.</span><span id="updated"></span></footer></main><script nonce="${nonce}" src="app.js"></script></body></html>`;
 }
 
 export const dashboardTreeScript = String.raw`
@@ -148,21 +150,35 @@ function copyButton(command, label) {
   icon.append(outline);
   button.append(icon);
   button.disabled = command === null;
-  button.addEventListener('click', async () => {
-    $('fallback').hidden = true;
-    $('notice').textContent = '';
-    try {
-      await navigator.clipboard.writeText(command);
-      $('notice').textContent = 'Copied: ' + command;
-    } catch {
-      $('command').value = command;
-      $('fallback').hidden = false;
-      $('command').focus();
-      $('command').select();
-    }
+  button.addEventListener('click', () => copyText(command));
+  return button;
+}
+async function copyText(text) {
+  $('fallback').hidden = true;
+  $('notice').textContent = '';
+  try {
+    await navigator.clipboard.writeText(text);
+    $('notice').textContent = 'Copied: ' + text;
+  } catch {
+    $('command').value = text;
+    $('fallback').hidden = false;
+    $('command').focus();
+    $('command').select();
+  }
+}
+function nameButton(id, text) {
+  const button = element('button', 'name-copy', text);
+  button.type = 'button';
+  button.title = 'Copy init name: ' + id;
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    copyText(id);
   });
   return button;
 }
+
 function render() {
   const query = $('search').value.trim();
   const entries = matchingInitiatives(data.initiatives, filter, query);
@@ -204,7 +220,9 @@ function render() {
     });
     const row = element('summary', 'initiative-summary');
     const label = element('span', 'initiative-label');
-    label.append(element('span', 'initiative-name', initiative.id.split('/').pop()));
+    const name = nameButton(initiative.id, initiative.id.split('/').pop());
+    name.classList.add('initiative-name');
+    label.append(name);
     if (initiative.task) label.append(element('span', 'summary-task', initiative.task));
     row.append(label);
     const rowBadges = element('span', 'badges');
@@ -218,7 +236,9 @@ function render() {
     const badges = element('div', 'badges');
     badges.append(element('span', 'badge ' + (initiative.status || 'unavailable'), initiative.status || 'Status unavailable'));
     if (initiative.archived) badges.append(element('span', 'badge archived', 'Archived'));
-    summary.append(badges, element('h2', '', initiative.id));
+    const title = element('h2', '');
+    title.append(nameButton(initiative.id, initiative.id));
+    summary.append(badges, title);
     if (initiative.task) summary.append(element('p', 'task', initiative.task));
     if (initiative.next) summary.append(element('p', 'next', 'Next · ' + initiative.next));
     if (initiative.result) summary.append(element('p', 'next', initiative.result));
