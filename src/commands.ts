@@ -9,6 +9,7 @@ import type { Workspace } from './workspace.ts';
 import { pendingOperationSummaries, readPendingOperations, type PendingOperationSummary } from './operations.ts';
 import { beginStartSwitch, repairStartPointers, resumeStartSwitch } from './switching.ts';
 import { assertReopenable, inspectArchiveEligibility, reopenPreparedInitiative, type ArchiveEligibility } from './lifecycle-commands.ts';
+import { isContainedRelativePath, toPosix } from './paths.ts';
 
 export interface CommandContext {
   workspace: Workspace;
@@ -32,14 +33,22 @@ export interface ListResult {
   diagnostics: Diagnostic[];
 }
 
+export interface ListOptions {
+  scope?: string;
+  status?: LedgerState['status'];
+}
+
 /** Unarchived initiatives with their recorded resume information; malformed ones stay listed. */
-export async function listCommand(context: CommandContext): Promise<ListResult> {
+export async function listCommand(context: CommandContext, options: ListOptions = {}): Promise<ListResult> {
   const listing = await listInitiatives(context.workspace.initiativesDir);
+  const scope = options.scope === undefined ? null : normalizeListScope(options.scope);
   const initiatives: ListEntry[] = [];
   for (const entry of listing.entries) {
     if (entry.archived) continue;
+    if (scope !== null && entry.id !== scope && !entry.id.startsWith(`${scope}/`)) continue;
     const record = await readInitiative(entry.dir, { workspace: context.workspace });
     const state = record.ledgerState?.state ?? null;
+    if (options.status !== undefined && state?.status !== options.status) continue;
     initiatives.push({
       id: entry.id,
       dir: entry.dir,
@@ -53,6 +62,14 @@ export async function listCommand(context: CommandContext): Promise<ListResult> 
     });
   }
   return { initiatives, diagnostics: listing.diagnostics };
+}
+
+function normalizeListScope(scope: string): string {
+  const normalized = toPosix(scope).replace(/\/+$/, '');
+  if (!isContainedRelativePath(normalized)) {
+    throw new GrindError('PATH_ESCAPE', `Scope "${scope}" must be a path relative to initiatives/`, { scope });
+  }
+  return normalized;
 }
 
 export interface StatusResult {

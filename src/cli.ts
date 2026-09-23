@@ -22,13 +22,15 @@ Commands:
   close [initiative]  mark it delivered or abandoned
   archive [initiative] move eligible closed work to read-only history
   dashboard           serve the local initiative dashboard
-  list                list initiatives and their recorded state
+  list [scope]        list initiatives and their recorded state
   context [initiative] load complete read-only initiative context
   status [initiative] inspect initiative artifacts and recorded/observed state
 
 Options:
   --workspace <dir>   directory containing grind-workspace.json
   --scope <folder>    workspace-relative scope for create
+  --open              list only open initiatives
+  --closed            list only closed initiatives
   --message <text>    checkpoint commit message for save
   --outcome <value>   delivered or abandoned for close
   --result <text>     result location or summary for close
@@ -47,6 +49,8 @@ export interface ParsedArgs {
   positional: string[];
   json: boolean;
   help: boolean;
+  open: boolean;
+  closed: boolean;
   workspace?: string;
   scope?: string;
   message?: string;
@@ -57,11 +61,13 @@ export interface ParsedArgs {
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: null, positional: [], json: false, help: false };
+  const parsed: ParsedArgs = { command: null, positional: [], json: false, help: false, open: false, closed: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
     if (arg === '--json') parsed.json = true;
     else if (arg === '--help' || arg === '-h') parsed.help = true;
+    else if (arg === '--open') parsed.open = true;
+    else if (arg === '--closed') parsed.closed = true;
     else if (arg === '--workspace') {
       const value = argv[i + 1];
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
@@ -99,12 +105,14 @@ export async function run(argv: readonly string[]): Promise<number> {
     if (!['list', 'status', 'context', 'start', 'create', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
-    if (args.positional.length > (['list', 'dashboard'].includes(args.command) ? 0 : 1)) {
+    if (args.positional.length > (args.command === 'dashboard' ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
     for (const [option, command] of [['scope', 'create'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
       if (args[option] !== undefined && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
+    if ((args.open || args.closed) && args.command !== 'list') throw new GrindError('USAGE', '--open and --closed are only supported by list');
+    if (args.open && args.closed) throw new GrindError('USAGE', '--open and --closed cannot be combined');
     if (args.command === 'create' && args.positional.length !== 1) throw new GrindError('USAGE', 'create requires an argument');
     if (args.command === 'save' && !args.message?.trim()) throw new GrindError('USAGE', 'save requires --message');
     if (args.command === 'close') {
@@ -139,7 +147,10 @@ export async function run(argv: readonly string[]): Promise<number> {
       const result = await archiveCommand(context, identifier);
       emit(json, { ok: true, data: result }, `Archived ${result.id} as ${result.archivedId}`);
     } else if (args.command === 'list') {
-      const result = await listCommand(context);
+      const result = await listCommand(context, {
+        ...(identifier === undefined ? {} : { scope: identifier }),
+        ...(args.open ? { status: 'open' as const } : args.closed ? { status: 'closed' as const } : {}),
+      });
       emit(json, { ok: true, data: result }, formatList(result));
     } else if (args.command === 'context') {
       const result = await contextCommand(context, identifier);

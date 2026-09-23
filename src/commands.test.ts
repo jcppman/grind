@@ -28,6 +28,32 @@ test('list keeps malformed entries and reports listing problems', async (t) => {
   assert.deepEqual(result.diagnostics.map((d) => d.code), ['SYMLINK_NOT_ALLOWED']);
 });
 
+test('list filters by parent or exact scope and ledger status', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(() => ws.cleanup());
+  await writeInitiative(ws, 'audio/rytho/open', { ledger: openLedger() });
+  await writeInitiative(ws, 'audio/rytho/closed', { ledger: closedLedger() });
+  await writeInitiative(ws, 'audio/other', { ledger: openLedger() });
+  await writeInitiative(ws, 'video/rytho', { ledger: closedLedger() });
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const context = { workspace, cwd: ws.root };
+
+  assert.deepEqual((await listCommand(context, { scope: 'audio' })).initiatives.map((i) => i.id), [
+    'audio/other',
+    'audio/rytho/closed',
+    'audio/rytho/open',
+  ]);
+  assert.deepEqual((await listCommand(context, { scope: 'audio/rytho', status: 'open' })).initiatives.map((i) => i.id), [
+    'audio/rytho/open',
+  ]);
+  assert.deepEqual((await listCommand(context, { scope: 'audio/other', status: 'open' })).initiatives.map((i) => i.id), [
+    'audio/other',
+  ]);
+  assert.deepEqual((await listCommand(context, { scope: 'audio', status: 'closed' })).initiatives.map((i) => i.id), [
+    'audio/rytho/closed',
+  ]);
+});
+
 test('status resolves from a checkout and merges resolution diagnostics', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());

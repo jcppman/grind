@@ -24,10 +24,23 @@ test('parseArgs separates command, positionals, and options', () => {
     positional: ['app/x'],
     json: true,
     help: false,
+    open: false,
+    closed: false,
     workspace: '/w',
   });
   assert.throws(() => parseArgs(['--workspace']), { code: 'USAGE' });
   assert.throws(() => parseArgs(['--bogus']), { code: 'USAGE' });
+});
+
+test('parseArgs accepts list scope and status filters', () => {
+  assert.deepEqual(parseArgs(['list', 'audio/rytho', '--closed']), {
+    command: 'list',
+    positional: ['audio/rytho'],
+    json: false,
+    help: false,
+    open: false,
+    closed: true,
+  });
 });
 
 test('deferred commands report UNSUPPORTED_OPERATION through the JSON envelope', async () => {
@@ -49,8 +62,33 @@ test('unknown commands are usage errors and help exits zero', async () => {
   assert.match(help.stdout, /Usage: grind/);
 });
 
+test('list accepts a scope with an open or closed filter', async () => {
+  const ws = await makeTempWorkspace();
+  try {
+    await writeInitiative(ws, 'audio/rytho/open', { ledger: openLedger() });
+    await writeInitiative(ws, 'audio/rytho/closed', { ledger: closedLedger() });
+    await writeInitiative(ws, 'audio/other/open', { ledger: openLedger() });
+
+    const closed = await runCli('list', 'audio', '--closed', '--json', '--workspace', ws.root);
+    assert.equal(closed.code, 0);
+    assert.deepEqual(JSON.parse(closed.stdout).data.initiatives.map((i: { id: string }) => i.id), ['audio/rytho/closed']);
+
+    const open = await runCli('list', 'audio/rytho', '--open', '--json', '--workspace', ws.root);
+    assert.equal(open.code, 0);
+    assert.deepEqual(JSON.parse(open.stdout).data.initiatives.map((i: { id: string }) => i.id), ['audio/rytho/open']);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('list rejects conflicting status filters', async () => {
+  const result = await runCli('list', '--open', '--closed', '--json');
+  assert.equal(result.code, 2);
+  assert.equal(JSON.parse(result.stdout).error.code, 'USAGE');
+});
+
 import { readFile } from 'node:fs/promises';
-import { makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, git } from './test-helpers.ts';
+import { closedLedger, makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, git } from './test-helpers.ts';
 
 async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: string): Promise<string> {
   return [
