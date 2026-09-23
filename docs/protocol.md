@@ -94,6 +94,20 @@ organize documents; they do not create nested initiatives.
 | `Implementation Plan` | In what order will we implement and verify it? |
 | `Initiative Ledger` | What is true now, and exactly where should work continue? |
 
+### Choosing what to preserve
+
+Preserve decisions with brief rationale, essential contracts and acceptance
+conditions, and consequential unresolved questions. Small decisions belong in the
+ledger until a coherent contract needs its own specification. Move that content
+to its authoritative home and link from the ledger instead of keeping both copies.
+Routine implementation detail stays in code and commits; link to existing repository
+documentation for enduring contracts rather than duplicating it.
+
+Form a working plan from current code when execution begins. Persist sequencing
+only when it carries knowledge needed across sessions, such as migration order,
+rollout constraints, or dependencies between repositories. Document length or task
+size alone does not justify an additional artifact.
+
 ### Index and document scope
 
 `index.md` links to authoritative documents and explains each one's scope. It
@@ -156,8 +170,12 @@ A substantive user instruction such as “implement this,” “let's do it,” 
 “continue” authorizes work consistent with the current specification, plan, ledger,
 and conversation. A bare `/grind:start` authorizes preparation only; ask what the
 user wants to do before undertaking substantive work. Do not require or record
-separate document sign-off metadata. When the
-direction is ambiguous or implementation reveals a material change, discuss it with
+separate document sign-off metadata. Where authority affects interpretation,
+distinguish user decisions, implementation choices within delegated scope, and
+unresolved proposals in ordinary prose. Accepting an outcome or one design choice
+does not imply user approval of every detail the agent later writes. Surface
+material consequences in discussion; routine reversible choices remain delegated.
+When the direction is ambiguous or implementation reveals a material change, discuss it with
 the user before proceeding and update the governing documents and ledger afterward.
 
 Keep implementation authorization separate from later external actions. Review,
@@ -185,10 +203,16 @@ outcome needs its own explanation; it is not required for every milestone.
 
 Change an intent only when its purpose or scope changes. Describe the outcome without
 summarising the feature list or prescribing implementation choices. Technical
-design belongs in specifications; execution sequence and validation exercises belong
-in plans. Link to them when they exist.
+design decisions and execution details belong in the ledger or warranted
+specifications and plans, following Choosing what to preserve. Link to them when
+they exist.
 
 ### Specifications
+
+Create a specification when a coherent contract needs an independent reference,
+such as an API, lifecycle behaviour, or rules shared across components. Agreement
+on a small decision alone does not require one. Preserve precise semantics and
+acceptance conditions when another implementation or future session relies on them.
 
 Defines the agreed solution, including both intended system behaviour and the
 meaningful technical design needed to implement and review it:
@@ -215,7 +239,9 @@ contracts, or design.
 
 ### Plans
 
-Defines the execution strategy:
+Create a persistent plan when losing the sequence or dependencies could cause a
+meaningful execution mistake across sessions. A short working plan for the current
+session does not need a document. Keep only the durable execution strategy:
 
 - phases, milestones, and dependencies
 - repositories and major areas involved
@@ -242,9 +268,11 @@ with its commit or artifact reference and limitations. Preserve historical ratio
 only when it still affects future decisions; Git retains earlier checkpoints.
 Do not create a separate history file by default.
 
-Current rules belong in their authoritative specification, plan, or protocol;
-link to them instead of maintaining another copy in the ledger. Record the next
-concrete task or unresolved decision in `next_action`, not routine workflow such as
+Keep small decisions with brief rationale and essential acceptance conditions in
+the ledger while they have no separate authoritative home. Retain them when
+rewriting working state, or move them into a warranted specification. Link to rules
+already owned by a specification, plan, protocol, or repository document instead
+of maintaining another copy. Record the next concrete task or unresolved decision in `next_action`, not routine workflow such as
 asking the user what to do. It is a candidate task, not execution authorization.
 Preserve pending parked notes, lifecycle records needed for recovery, and unknown
 metadata when trimming prose.
@@ -269,6 +297,21 @@ use `/grind:start` to prepare the initiative and choose what to do next. No per-
 document is written.
 
 
+### Reference documents
+
+Use `type: Reference` for a dated report, retrospective, or inherited handover
+preserved as evidence. Identify its date, provenance, and material limitations.
+Reference is a supporting type with workflow instructions, not CLI or filesystem
+write protection. Do not silently revise the snapshot to match current reality.
+Record corrections or superseding findings in a separate linked note or successor
+report, and make the relationship clear in the index.
+
+Load references only when relevant to the task; do not add them to mandatory context
+merely because they exist. Their recommendations are neither current requirements
+nor execution authorization. Put adopted decisions in the ledger or other current
+authoritative home, linking back to the evidence. An evolving investigation may
+remain `Research`; do not automatically reclassify existing artifacts.
+
 ## Proportionate execution
 
 Use the lightest process appropriate to the size, uncertainty, and risk of the
@@ -286,15 +329,15 @@ Clarify intent and constraints and compare viable approaches before costly
 implementation when the direction could materially change. Proceed when the user's
 instruction selects or accepts a direction.
 Update `intent.md` only if the chosen direction changes the intended outcome or
-scope. Record agreed behaviour and technical design in a specification, creating it
-at that point if it does not yet exist.
+scope. Preserve decisions and essential acceptance conditions using Choosing what
+to preserve; create a specification only when a contract warrants its own reference.
 
 ### Large or cross-repository work
 
-Use the full artifact set, divide execution along independently verifiable
-boundaries, and use parallel agents only for genuinely independent work that
-has been declared unattended and given a worktree. Review specification
-compliance and code quality, then perform end-to-end verification.
+Choose artifacts by their durable value under Choosing what to preserve. Divide
+execution along independently verifiable boundaries, and use parallel agents only
+for genuinely independent work that has been declared unattended and given a
+worktree. Review applicable contracts and code quality, then perform end-to-end verification.
 
 ### Testing and debugging
 
@@ -408,10 +451,10 @@ turn. The aim is a useful checkpoint, not an activity log.
 
 Update the relevant plan when execution strategy changes. Update its specification when the
 agreed behaviour or technical solution changes. Update `intent.md` only when
-purpose or scope changes. Create a specification as soon as behaviour, contracts, or
-technical design need to be agreed and preserved; create a plan as soon as
-execution requires meaningful sequencing. Do not stage either kind of content
-inside `intent.md`.
+purpose or scope changes. Apply Choosing what to preserve before creating another
+artifact; agreement or a working sequence alone does not require a document. Keep
+technical decisions and execution detail out of `intent.md`. Reference snapshots
+remain unchanged; link corrections or successors as described above.
 
 ## Session-end protocol
 

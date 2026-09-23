@@ -22,9 +22,10 @@ When the hook already supplied complete context for the requested init, use it
 without another call unless a refresh is needed. A notice alone is not loaded
 context: run this command for the user's task when needed.
 
-Load detailed specifications, plans, and operation-specific guidance only when
-needed for the chosen task. The next action alone does not trigger those reads.
-Use **init** as the conversational short name for initiative.
+Load detailed specifications, plans, references, and operation-specific guidance
+only when needed for the chosen task. The next action alone does not trigger those reads.
+Treat Reference documents as dated evidence, not current requirements or execution
+authorization. Use **init** as the conversational short name for initiative.
 
 On automatic discovery, WORKSPACE_NOT_FOUND or INITIATIVE_UNRESOLVED with no stale
 pointer is quiet and leaves ordinary work alone. When the user explicitly invokes
@@ -41,6 +42,6 @@ the same choice flow alongside the error and workspace hint.
 Context alone never executes the next action, fetches, switches branches, reopens,
 repairs pointers, handles notes, or writes a checkpoint. Closed initiatives and
 mismatched checkouts remain readable. If the user also requests work, use this
-context for that work; load the relevant specification and plan before changing
-behavior, inspect pending notes before implementation, and use the save skill at
+context for that work; load any existing relevant specification and plan before
+changing behavior, inspect pending notes before implementation, and use the save skill at
 meaningful checkpoints.
