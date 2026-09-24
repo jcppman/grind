@@ -3,10 +3,14 @@ name: save
 description: Prepare and persist a resumable Grind init (initiative) checkpoint after meaningful work or on explicit request. Use for initiative records, not automatic commits of application code.
 ---
 
-Read Choosing what to preserve, the ledger, During-work update, and Session-end
-sections of the [shared operating protocol](../../docs/protocol.md). Inspect current repository state and
+Read Choosing what to preserve, Verification records and external workflows, the ledger,
+During-work update, and Session-end sections of the [shared operating protocol](../../docs/protocol.md). Inspect current repository state and
 validation evidence. Rewrite current state, remove superseded observations and
 duplicate history, and retain relevant verification references and open questions.
+Reconcile frontmatter, working state, and verification as one checkpoint; identify
+which revision each retained result covers. Check relevant external facts when they
+change, and label unavailable verification. Apply the protocol's evidence retention
+rules even when another workflow supplies the checkpoint requirements.
 Preserve parked notes and lifecycle recovery records. Record a concrete candidate
 next task, not routine workflow instructions;
 update other artifacts only when their corresponding facts changed. Preserve
