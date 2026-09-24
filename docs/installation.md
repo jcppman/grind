@@ -5,9 +5,20 @@ Node.js 24 or later and Git are required. This build provides `create`, `list`,
 writer through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
 milestones.
 
-## Build and package
+## Distribution
 
-From the source checkout:
+Every push to `main` runs the tests, packages the plugin, and force-pushes the
+package to the `plugin` branch of `jcppman/grind`. That branch holds the compiled
+CLI, shared protocol and skills, hooks, platform manifests, and runtime
+dependencies, so hosts install it without a build step. Both hosts install from
+it as a Git marketplace named `grind`.
+
+The base version in `package.json` and both plugin manifests must match; bump it
+by hand when skills, commands, or record formats change. Publishing appends the
+commit, as in `0.4.0+abc1234`, because hosts only refresh a cached install when
+the version string changes.
+
+To build and check the package locally:
 
 ```sh
 npm ci
@@ -16,12 +27,8 @@ npm run typecheck
 npm run test:package
 ```
 
-`build/grind` is a relocatable Codex and Claude Code plugin containing the matching
-compiled CLI, shared protocol and skills, platform manifests, and runtime
-dependencies. Copy the whole folder; copying only skills or dist is insufficient.
-No compiler or global Grind command is needed at runtime. The package smoke test
-copies it outside the checkout and executes real creation, persistence, and
-read-only inspections.
+`build/grind` is relocatable: the package smoke test copies it outside the
+checkout and executes real creation, persistence, and read-only inspections.
 
 For terminal use, `npm pack` creates the npm artifact; install that artifact with
 `npm install --global <tarball>`. Plugin installation alone does not add `grind`
@@ -29,21 +36,19 @@ to PATH. Both entry points use the same compiled CLI.
 
 During development, `npm run build && npm link` links both `grind` and
 `agent-note` from the checkout. Rebuild after source changes because the linked
-commands execute the compiled files in `dist/`.
+commands execute the compiled files in `dist/`. To try unmerged plugin changes in
+Claude Code, run `npm run package:plugin` and start a session with
+`claude --plugin-dir build/grind`.
 
 ## Codex installation
 
-Use a local Codex marketplace entry pointing at the packaged plugin. For a personal
-marketplace, place the package at `~/plugins/grind` and register it in
-`~/.agents/plugins/marketplace.json` using Codex's plugin-creator scaffold workflow.
-Preserve other marketplace entries. Then run:
-
 ```sh
-codex plugin add grind@personal
+codex plugin marketplace add jcppman/grind --ref plugin
+codex plugin add grind@grind
 ```
 
-Use the marketplace's actual name if it differs. Start a fresh Codex session after
-installation; existing sessions do not acquire the newly installed skills.
+Start a fresh Codex session after installation; existing sessions do not acquire
+the newly installed skills.
 
 Use the [workspace opt-in](#automatic-context-loading) for automatic loading.
 Review and trust the bundled hook through the host's hook controls when required;
@@ -52,30 +57,31 @@ available with hooks disabled.
 
 Skill helpers run `node <installed-plugin-root>/scripts/grind.mjs ...`; locate the
 root relative to the installed SKILL.md, never by assuming a global CLI or the
-source checkout. To update a local installation, rebuild and replace the packaged
-folder, use plugin-creator's cachebuster helper, and reinstall from the same
-marketplace. The base CLI and plugin versions remain aligned.
+source checkout.
 
 ## Claude Code installation
 
-Validate and add the repository or packaged directory as a local marketplace,
-then install Grind from that marketplace:
-
 ```sh
-claude plugin validate build/grind --strict
-claude plugin marketplace add "$PWD/build/grind" --scope user
-claude plugin install grind@grind-local --scope user
+claude plugin marketplace add jcppman/grind@plugin
+claude plugin install grind@grind --scope user
 ```
 
-The marketplace source is `./`, so Claude Code loads the plugin from the selected
-directory. Keep that directory in place while the marketplace is registered. Start
-a fresh Claude Code session after installation.
+Claude Code leaves auto-update off for third-party marketplaces. Enable it once in
+`/plugin` → Marketplaces → `grind` → Enable auto-update; new builds then install in
+the background after a session starts and load on the next launch or
+`/reload-plugins`. Start a fresh Claude Code session after installation.
 
 Use the [workspace opt-in](#automatic-context-loading) for automatic loading, or
 invoke `/grind:context [initiative]` explicitly. `/grind:start [initiative]` prepares
 the initiative and then asks what you want to do unless you also requested work.
 Both skills discover from the current folder when no identifier is supplied and
 offer available inits for selection when discovery cannot choose one.
+
+## Updating
+
+`npm run update-plugin` refreshes the `grind` marketplace and reinstalls the plugin
+in both hosts. Set `CODEX=<path>` when the `codex` on PATH has no `plugin` command.
+Start a fresh session afterwards.
 
 ## Workspace setup
 

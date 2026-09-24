@@ -1,0 +1,42 @@
+name: Publish plugin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-plugin
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Configure Git identity for tests
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build and test the plugin package
+        run: GRIND_BUILD="${GITHUB_SHA::7}" npm run test:package
+      - name: Publish the plugin branch
+        working-directory: build/grind
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./.claude-plugin/plugin.json').version")
+          git init -q -b plugin
+          git add -A
+          git commit -qm "Publish grind $version from $GITHUB_SHA"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" plugin
