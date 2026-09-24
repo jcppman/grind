@@ -147,8 +147,10 @@ not determine the role of a specification or plan.
 Use standard OKF fields for document metadata: optional `title`, `description`,
 `tags`, `sources`, `generated`, and `verified`. Specifications and plans carry no
 `status` field. Other supporting documents may use `status`.
-Grind workflow fields belong under `grind`. Move structured facts into frontmatter
-rather than retaining a second authoritative copy in the body. The ledger owns
+Reserve new fields under `grind` for this protocol; external workflows must not invent
+completion or delivery fields there. Preserve existing unknown fields during ordinary
+edits; correct or migrate them explicitly when their ownership and meaning are known.
+Move structured facts into frontmatter rather than retaining a second authoritative copy in the body. The ledger owns
 initiative status, phase, current task, next action, and repository tracking;
 other documents must not duplicate those fields.
 
@@ -185,6 +187,35 @@ instructions and the applicable repository workflow; do not infer one from anoth
 `verified` records checking claims against evidence. Generation describes meaningful
 content production, not every save. A verification event does not automatically
 cover later content. Do not invent verification evidence.
+
+### Verification records and external workflows
+
+Keep a concise verification summary in the ledger: the tested commit or artifact,
+checks performed, results, and material limitations. Link stable CI runs or other
+evidence when useful. Retain raw logs, screenshots, or binaries only when they carry
+information needed for a future decision that is costly to reproduce; record why
+and identify the revision and environment they describe. A temporary output path
+is not a durable reference. Routine successful command output does not need copying
+into the state repository.
+
+After changes, distinguish current verification from results on older revisions.
+Replace obsolete claims; retain older evidence only when still useful, explicitly
+scoped to its revision. Do not imply that an old full-suite run covers a newer head
+because a targeted check passed. State what remains unverified.
+
+External plans, goal oracles, and review loops follow these preservation rules for
+initiative artifacts. Their completion checks must not require copied evidence
+bundles or extra specification content. Product checks establish delivery; a
+checkpoint gate checks that the relevant records are committed and reference the
+verified revision. Matching a revision in prose proves neither the summary's
+accuracy nor product completion; the save workflow reconciles its meaning.
+
+Run-specific commands and authorization boundaries belong in the execution plan.
+Before deleting it, preserve only decisions, still-applicable user constraints,
+and unfinished work needed for resumption in the ledger or their authoritative
+home. Specifications retain product contracts, not goal instructions or dated
+execution status. Remove temporary-helper references and misplaced execution text
+when reconciling a completed run.
 
 ### `intent.md`
 
@@ -267,6 +298,17 @@ details, and obsolete validation results. Keep the latest relevant verification
 with its commit or artifact reference and limitations. Preserve historical rationale
 only when it still affects future decisions; Git retains earlier checkpoints.
 Do not create a separate history file by default.
+
+Reconcile the whole checkpoint, including frontmatter and verification, against
+observed state before saving. Remove competing “current” claims and commit-by-commit
+narratives. Check relevant PR head, draft/merge state, and derived descriptions when
+work changes them; if remote verification is unavailable, label the last observation
+and uncertainty. Context loading remains read-only and does not require network
+access. `current_task` names work to do, not a completed-work status sentence.
+
+When a review is interrupted, retain a compact handoff: reviewed head/base,
+unresolved findings with links, and next action. Record the outcome when it ends.
+Polling history and scheduler state stay with the review workflow.
 
 Keep small decisions with brief rationale and essential acceptance conditions in
 the ledger while they have no separate authoritative home. Retain them when
