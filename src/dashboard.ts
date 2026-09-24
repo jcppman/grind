@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { listInitiatives } from './discovery.ts';
@@ -47,7 +49,23 @@ export async function dashboardData(workspace: Workspace) {
   return { workspace: workspace.root, refreshedAt: new Date().toISOString(), initiatives, diagnostics: listing.diagnostics };
 }
 
-export async function serveDashboard(workspace: Workspace) {
+type Editor = 'vscode' | 'webstorm';
+type OpenEditor = (editor: Editor, directory: string) => Promise<void>;
+
+const exec = promisify(execFile);
+const openEditor: OpenEditor = async (editor, directory) => {
+  try {
+    if (process.platform === 'darwin') {
+      await exec('/usr/bin/open', ['-a', editor === 'vscode' ? 'Visual Studio Code' : 'WebStorm', directory]);
+    } else {
+      await exec(editor === 'vscode' ? 'code' : 'webstorm', [directory], { timeout: 10000 });
+    }
+  } catch {
+    throw new Error(`Could not open ${editor === 'vscode' ? 'VS Code' : 'WebStorm'}. Check that the editor is installed${process.platform === 'darwin' ? '.' : ' and its command-line launcher is on PATH.'}`);
+  }
+};
+
+export async function serveDashboard(workspace: Workspace, launch: OpenEditor = openEditor) {
   const prefix = `/${randomBytes(24).toString('hex')}/`;
   const nonce = randomBytes(18).toString('base64');
   const server = createServer(async (request, response) => {
@@ -58,6 +76,41 @@ export async function serveDashboard(workspace: Workspace) {
     const address = server.address();
     if (!address || typeof address === 'string' || request.headers.host !== `127.0.0.1:${address.port}` || request.headers['sec-fetch-site'] === 'cross-site') {
       response.writeHead(403).end('Forbidden');
+      return;
+    }
+    if (request.method === 'POST' && request.url === `${prefix}open`) {
+      if (request.headers.origin !== `http://127.0.0.1:${address.port}` || request.headers['content-type'] !== 'application/json') {
+        response.writeHead(403).end('Forbidden');
+        return;
+      }
+      try {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of request) {
+          size += chunk.length;
+          if (size > 8192) {
+            response.writeHead(413).end('Request too large');
+            return;
+          }
+          chunks.push(chunk);
+        }
+        let input;
+        try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { input = null; }
+        if (!input || typeof input.id !== 'string' || !['vscode', 'webstorm'].includes(input.editor)) {
+          response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Choose a valid init and editor.' }));
+          return;
+        }
+        const listing = await listInitiatives(workspace.initiativesDir);
+        const entry = listing.entries.find(entry => entry.id === input.id);
+        if (!entry) {
+          response.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Init folder is no longer available. Refresh and try again.' }));
+          return;
+        }
+        await launch(input.editor, entry.dir);
+        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ opened: true }));
+      } catch (error) {
+        response.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }));
+      }
       return;
     }
     if (request.method !== 'GET') {

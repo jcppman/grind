@@ -86,3 +86,36 @@ test('local server refreshes data and rejects unrelated paths, origins, and writ
   assert.equal(foreignHostStatus, 403);
   assert.equal((await fetch(dashboard.url + 'api', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
 });
+
+test('editor requests resolve init folders and reject untrusted requests and unknown targets', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const directory = await writeInitiative(ws, "nested/it's an init");
+  const archived = await writeInitiative(ws, '_archive/old', { ledger: closedLedger() });
+  const calls: unknown[] = [];
+  const dashboard = await serveDashboard(await loadWorkspace({ cwd: ws.root }), async (editor, folder) => {
+    calls.push([editor, folder]);
+    if (editor === 'webstorm') throw new Error('Editor unavailable');
+  });
+  t.after(dashboard.close);
+  const headers = { Origin: new URL(dashboard.url).origin, 'Content-Type': 'application/json' };
+  const send = (body: unknown, requestHeaders = headers) => fetch(dashboard.url + 'open', {
+    method: 'POST', headers: requestHeaders, body: JSON.stringify(body),
+  });
+  assert.equal((await send({ id: "nested/it's an init", editor: 'vscode' })).status, 200);
+  assert.deepEqual(calls, [['vscode', directory]]);
+  assert.equal((await send({ id: '_archive/old', editor: 'vscode' })).status, 200);
+  assert.deepEqual(calls[1], ['vscode', archived]);
+  for (const id of ['../outside', directory, 'missing']) {
+    assert.equal((await send({ id, editor: 'vscode' })).status, 404);
+  }
+  for (const body of [null, {}, { id: '_archive/old', editor: 'sh' }]) {
+    assert.equal((await send(body)).status, 400);
+  }
+  assert.equal((await send({ id: '_archive/old', editor: 'vscode' }, { ...headers, Origin: 'https://example.com' })).status, 403);
+  assert.equal((await send({ id: '_archive/old', editor: 'vscode' }, { ...headers, Origin: '' })).status, 403);
+  assert.equal(calls.length, 2);
+  const failure = await send({ id: '_archive/old', editor: 'webstorm' });
+  assert.equal(failure.status, 500);
+  assert.deepEqual(await failure.json(), { error: 'Editor unavailable' });
+});

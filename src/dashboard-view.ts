@@ -5,9 +5,11 @@ export function dashboardHtml(nonce: string): string {
 :root{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#24352e;background:#f4f5f1;font-synthesis:none}
 *{box-sizing:border-box}
 body{margin:0}
-button,input{font:inherit}
+button,input,select{font:inherit}
+.editor-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+select,.open-editor{background:#fff;border:1px solid #cbd3c9;padding:9px 12px;border-radius:7px;color:#24352e}
 button{cursor:pointer}
-button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #84a98c;outline-offset:3px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #84a98c;outline-offset:3px}
 button:disabled{cursor:default;opacity:.45}
 header{background:#183b2d;color:#fff;padding:26px max(5vw,24px);display:flex;align-items:center;justify-content:space-between}
 .brand{font-size:23px;font-weight:750;letter-spacing:-1px}
@@ -87,9 +89,10 @@ h1{font-size:30px}
 footer{gap:14px}
 }
 
-</style></head><body><header><div class="brand">grind<span>Workspace</span></div><div class="local">Local · read only</div></header>
+</style></head><body><header><div class="brand">grind<span>Workspace</span></div><div class="local">Local workspace</div></header>
 <main><div class="intro"><div><h1>Initiatives</h1><div id="workspace" class="muted">Loading workspace…</div></div><button id="refresh" class="refresh">↻ Refresh</button></div>
 <div class="toolbar"><div class="filters" aria-label="Filter initiatives"><button class="filter" data-filter="all" aria-pressed="true">All</button><button class="filter" data-filter="open" aria-pressed="false">Open</button><button class="filter" data-filter="closed" aria-pressed="false">Closed</button><button class="filter" data-filter="archived" aria-pressed="false">Archived</button></div><input id="search" type="search" aria-label="Search initiatives" placeholder="Search initiatives…"></div>
+<div class="editor-controls"><label for="editor">Editor</label><select id="editor"><option value="vscode">VS Code</option><option value="webstorm">WebStorm</option></select></div>
 <p id="notice" role="status" aria-live="polite"></p><div id="fallback" hidden><label for="command">Clipboard unavailable. Copy this text manually.</label><textarea id="command" readonly></textarea></div><div id="error" role="alert"></div><div id="listing" aria-live="polite"></div><footer><span>Records stay in your workspace.</span><span id="updated"></span></footer></main><script nonce="${nonce}" src="app.js"></script></body></html>`;
 }
 
@@ -179,6 +182,34 @@ function nameButton(id, text) {
   return button;
 }
 
+function openButton(initiative) {
+  const button = element('button', 'open-editor', 'Open in editor');
+  button.type = 'button';
+  button.title = 'Open init folder: ' + initiative.directory;
+  button.setAttribute('aria-label', 'Open init folder for ' + initiative.id);
+  button.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    button.disabled = true;
+    $('error').textContent = '';
+    $('notice').textContent = '';
+    const editor = $('editor').value;
+    try {
+      const response = await fetch('open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: initiative.id, editor }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not open init folder');
+      $('notice').textContent = 'Opened ' + initiative.id + ' in ' + (editor === 'vscode' ? 'VS Code' : 'WebStorm');
+    } catch (error) {
+      $('error').textContent = error.message;
+    } finally { button.disabled = false; }
+  });
+  return button;
+}
+
 function render() {
   const query = $('search').value.trim();
   const entries = matchingInitiatives(data.initiatives, filter, query);
@@ -229,7 +260,7 @@ function render() {
     rowBadges.append(element('span', 'badge ' + (initiative.status || 'unavailable'), initiative.status || 'Status unavailable'));
     if (initiative.archived) rowBadges.append(element('span', 'badge archived', 'Archived'));
     if (initiative.diagnostics.length) rowBadges.append(element('span', 'badge unavailable', 'Needs attention'));
-    row.append(rowBadges);
+    row.append(rowBadges, openButton(initiative));
     card.append(row);
     const head = element('div', 'cardhead');
     const summary = element('div', '');
@@ -288,6 +319,13 @@ async function refresh() {
     if (!data) $('workspace').textContent = 'Workspace unavailable';
   } finally { $('refresh').disabled = false; }
 }
+try {
+  const editor = localStorage.getItem('grind.editor');
+  if (editor === 'vscode' || editor === 'webstorm') $('editor').value = editor;
+} catch {}
+$('editor').addEventListener('change', () => {
+  try { localStorage.setItem('grind.editor', $('editor').value); } catch {}
+});
 $('refresh').addEventListener('click', refresh);
 $('search').addEventListener('input', () => { if (data) render(); });
 for (const button of document.querySelectorAll('[data-filter]')) button.addEventListener('click', () => {

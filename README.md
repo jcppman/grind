@@ -40,7 +40,10 @@ in the current workspace.
 
 Run `grind dashboard` and open the printed local URL to see initiatives, their
 status, and repository checkouts. Initiatives follow their scope folders in
-collapsible groups. Expand an initiative row for details and directory copy buttons.
+collapsible groups. Choose VS Code or WebStorm in the Editor dropdown, then click
+Open in editor on an initiative to open its init folder. On macOS the editor must
+be installed; on other platforms its command-line launcher must be on PATH.
+Expand an initiative row for details and directory copy buttons.
 Search reveals matching initiatives inside collapsed groups; clearing it restores
 the previous group view. Status filters update the group counts. Refresh rereads
 local state and keeps expansion choices until the page is reloaded; Ctrl-C stops
