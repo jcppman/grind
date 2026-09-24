@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "grind-local",
-  "description": "Local development marketplace for Grind.",
+  "name": "grind",
+  "description": "Marketplace for Grind.",
   "owner": {
     "name": "Chriest Yu"
   },

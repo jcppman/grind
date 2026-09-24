@@ -60,5 +60,6 @@ npm test          # node --test over src/**/*.test.ts
 npm run typecheck
 npm run build     # emits dist/, including the grind bin entry
 npm run test:package # builds and exercises the relocatable plugin
+npm run update-plugin # reinstalls the published plugin in Claude Code and Codex
 node dist/cli.js --help
 ```
