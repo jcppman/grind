@@ -1,0 +1,18 @@
+{
+  "name": "grind",
+  "version": "0.4.0+0a741d1",
+  "description": "Resume development initiatives from private, versioned records.",
+  "author": {
+    "name": "Chriest Yu"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Grind",
+    "shortDescription": "Create, resume, close, and archive initiatives.",
+    "longDescription": "Grind keeps initiative intent and checkpoints in a private state repository and checks them against live Git state.",
+    "developerName": "Chriest Yu",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Load the current Grind initiative context."
+  }
+}

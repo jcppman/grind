@@ -1,0 +1,573 @@
+# Grind operating protocol
+
+This document owns the instructions for an agent carrying out initiative work.
+The CLI implements deterministic mechanics; skills apply judgment using this
+protocol. Follow the available command's documented capabilities and stop when a
+required operation is unavailable. Initiative-specific limitations and temporary
+manual procedures belong in that initiative's ledger and plan.
+
+## Terminology
+
+Use **init** (plural **inits**) as the short name for an initiative in conversation.
+Accept both names for the same workflows, including “create an init for…” and
+“save this init.” Documentation may use the full term. Command names, stored paths,
+JSON fields, and artifact types retain their existing names.
+
+## What counts as an initiative
+
+An initiative is a coherent body of work with one intended outcome, potentially
+spanning multiple repositories, tickets, pull requests, tasks, and agent
+sessions. It is larger than a single task, but it need not be a large
+organisational program.
+
+Typical initiatives include a cross-repository feature, a substantial
+migration, a coordinated release, or a multi-session investigation and
+implementation. A typo, dependency bump, question, or small localised change
+does not need an initiative folder.
+
+```text
+initiative: overall outcome
+├── milestone or phase: meaningful stage
+├── ticket: trackable unit of responsibility
+├── task: concrete implementation work
+└── commit or pull request: delivery and review unit
+```
+
+An initiative starts the moment an idea is worth writing down. `grind create`
+creates `index.md`, `intent.md`, and `ledger.md`; specifications, plans, and
+supporting artifacts appear as the work earns them.
+
+### Creating an initiative
+
+Creation captures intent; it does not authorize implementation or checkout changes.
+Before writing the intent, ask focused clarification questions when uncertainty
+about the desired outcome, scope, success criteria, or constraints would materially
+change what is recorded. Use the current conversation to avoid asking questions
+already answered. Do not turn plausible assumptions into agreed requirements.
+Design and execution choices that can wait belong as open questions in the ledger,
+with clarification or investigation as the next action when needed.
+
+Choose placement from the repositories the intended work targets, independently
+of the agent's current working directory. Unless the user explicitly specifies a
+different location, work targeting one repository uses that repository's
+workspace-relative folder as `--scope`. For multiple target repositories, use
+their narrowest common containing folder. Repositories consulted only as references
+do not widen the scope. Omit `--scope` when no target repository is known.
+
+Resolve and verify the target repository's folder before running create; a known
+target determines placement even when it has no assigned initiative branch or
+`grind.repositories` entry yet. For example, with a workspace containing
+`audio/rytho`, work solely on Rytho uses `create <outcome> --scope audio/rytho`
+even when the working directory is `audio`. This creates
+`initiatives/audio/rytho/<outcome>/` in the state repository. A `rytho-` name
+prefix is not a substitute for the repository scope.
+
+`grind.repositories` records checkouts and exact branches assigned to initiative
+work, not every repository consulted. A checkout's current branch is evidence of
+its state, not evidence that the branch belongs to this initiative. During creation,
+record an existing branch only when its association with the initiative is
+established by the user or verified initiative work. Otherwise leave
+`grind.repositories` empty and describe candidate repositories in the ledger's
+working state. Do not invent branch names to fill the required field or put
+placeholder branches in tracking records.
+
+Choose and create new branches or worktrees when execution needs them, following
+the repository's branching rules, then record the verified checkout and branch.
+Creation alone does not create or switch branches. Repositories used only as
+references do not need an initiative branch or tracking entry.
+
+
+## Initiative artifacts
+
+`index.md`, `intent.md`, and one `ledger.md` are required at the initiative root.
+The root `intent.md` declares `type: Intent` and `grind.root: true`; that marker
+identifies the initiative boundary. Milestones may have their own optional
+`intent.md` with `type: Intent` and no root marker. Nested initiative roots are
+invalid. Specifications and plans may use any
+filename and split by milestone or another coherent decision scope. Nested indexes
+organize documents; they do not create nested initiatives.
+
+| Type | Question it answers |
+|---|---|
+| `Intent` | Why are we doing this, and what outcome do we want? |
+| `Specification` | What behaviour and technical solution are proposed or agreed? |
+| `Implementation Plan` | In what order will we implement and verify it? |
+| `Initiative Ledger` | What is true now, and exactly where should work continue? |
+
+### Choosing what to preserve
+
+Preserve decisions with brief rationale, essential contracts and acceptance
+conditions, and consequential unresolved questions. Small decisions belong in the
+ledger until a coherent contract needs its own specification. Move that content
+to its authoritative home and link from the ledger instead of keeping both copies.
+Routine implementation detail stays in code and commits; link to existing repository
+documentation for enduring contracts rather than duplicating it.
+
+Form a working plan from current code when execution begins. Persist sequencing
+only when it carries knowledge needed across sessions, such as migration order,
+rollout constraints, or dependencies between repositories. Document length or task
+size alone does not justify an additional artifact.
+
+### Index and document scope
+
+`index.md` links to authoritative documents and explains each one's scope. It
+identifies required local Markdown links in list items under the exact level-two
+heading `Read on every context load`. Link to a heading fragment for only that
+section and its subsections, or omit the fragment for the whole document. Intent
+and ledger are always included and need not be repeated. Other links are navigation.
+The context command diagnoses missing files, fragments, and unsupported required
+reads; it never infers mandatory reads from prose or follows links recursively.
+Keep it current when documents are added, moved, or removed. It
+contains navigation, not duplicated status or checkpoint information.
+
+A top-level specification owns shared contracts; milestone specifications reference
+them and own their local contracts. A top-level plan owns milestone sequencing and
+dependencies; milestone plans own execution detail. Each rule has one authoritative
+home. Split documents when separate decision scopes or reading needs justify it,
+not to prepopulate a roadmap. Link visual designs, research, schemas, and other
+supporting artifacts, explaining whether they are authoritative or exploratory.
+
+### Paths in artifacts
+
+Describe filesystem locations in artifact content relative to the workspace root,
+using `.` for the root itself. For example, write `grind` and
+`yyu-dev/grind-state`, not machine-specific absolute paths or home-directory paths.
+This keeps records portable across checkouts and machines. Markdown link targets
+remain relative to the containing document so they resolve normally. Structured
+fields retain their explicitly defined bases; do not change their interpretation.
+
+### Frontmatter and interoperability
+
+Every non-index Markdown artifact has YAML frontmatter with a nonempty `type`.
+Use the four canonical types above for core roles. Supporting documents may use
+other descriptive types, such as `Visual Design` or `Research`; readers tolerate
+unknown types. Non-Markdown assets are linked resources. Filenames and paths do
+not determine the role of a specification or plan.
+
+Use standard OKF fields for document metadata: optional `title`, `description`,
+`tags`, `sources`, `generated`, and `verified`. Specifications and plans carry no
+`status` field. Other supporting documents may use `status`.
+Reserve new fields under `grind` for this protocol; external workflows must not invent
+completion or delivery fields there. Preserve existing unknown fields during ordinary
+edits; correct or migrate them explicitly when their ownership and meaning are known.
+Move structured facts into frontmatter rather than retaining a second authoritative copy in the body. The ledger owns
+initiative status, phase, current task, next action, and repository tracking;
+other documents must not duplicate those fields.
+
+Keep explanations and durable history in Markdown. Preserve unknown frontmatter
+keys and unrelated content during edits. Existing initiatives need an explicit root marker migration before discovery.
+Other artifacts without frontmatter remain readable during migration; report missing metadata and migrate explicitly,
+never during context loading. Malformed optional metadata is diagnostic; malformed
+required Grind state prevents a mutating operation. A save does not normalize
+metadata or imply verification.
+
+Indexes contain navigation without frontmatter, except that a bundle-root index
+may declare `okf_version`. This protocol does not yet declare the entire state tree
+an OKF bundle: its boundary and auxiliary Markdown must be defined before claiming
+full bundle compatibility.
+
+### Execution authorization and verification
+
+A substantive user instruction such as “implement this,” “let's do it,” or
+“continue” authorizes work consistent with the current specification, plan, ledger,
+and conversation. A bare `/grind:start` authorizes preparation only; ask what the
+user wants to do before undertaking substantive work. Do not require or record
+separate document sign-off metadata. Where authority affects interpretation,
+distinguish user decisions, implementation choices within delegated scope, and
+unresolved proposals in ordinary prose. Accepting an outcome or one design choice
+does not imply user approval of every detail the agent later writes. Surface
+material consequences in discussion; routine reversible choices remain delegated.
+When the direction is ambiguous or implementation reveals a material change, discuss it with
+the user before proceeding and update the governing documents and ledger afterward.
+
+Keep implementation authorization separate from later external actions. Review,
+push, publication, deployment, and other consequential actions follow the user's
+instructions and the applicable repository workflow; do not infer one from another.
+
+`verified` records checking claims against evidence. Generation describes meaningful
+content production, not every save. A verification event does not automatically
+cover later content. Do not invent verification evidence.
+
+### Verification records and external workflows
+
+Keep a concise verification summary in the ledger: the tested commit or artifact,
+checks performed, results, and material limitations. Link stable CI runs or other
+evidence when useful. Retain raw logs, screenshots, or binaries only when they carry
+information needed for a future decision that is costly to reproduce; record why
+and identify the revision and environment they describe. A temporary output path
+is not a durable reference. Routine successful command output does not need copying
+into the state repository.
+
+After changes, distinguish current verification from results on older revisions.
+Replace obsolete claims; retain older evidence only when still useful, explicitly
+scoped to its revision. Do not imply that an old full-suite run covers a newer head
+because a targeted check passed. State what remains unverified.
+
+External plans, goal oracles, and review loops follow these preservation rules for
+initiative artifacts. Their completion checks must not require copied evidence
+bundles or extra specification content. Product checks establish delivery; a
+checkpoint gate checks that the relevant records are committed and reference the
+verified revision. Matching a revision in prose proves neither the summary's
+accuracy nor product completion; the save workflow reconciles its meaning.
+
+Run-specific commands and authorization boundaries belong in the execution plan.
+Before deleting it, preserve only decisions, still-applicable user constraints,
+and unfinished work needed for resumption in the ledger or their authoritative
+home. Specifications retain product contracts, not goal instructions or dated
+execution status. Remove temporary-helper references and misplaced execution text
+when reconciling a completed run.
+
+### `intent.md`
+
+Defines the enduring reason for the work:
+
+- problem and desired outcome
+- scope and non-goals
+- users or systems affected
+- outcome-level success criteria
+- constraints that acceptable solutions must satisfy
+- related tickets, when they are sources of business context
+
+A milestone intent describes its contribution to the initiative, its scope, and
+success criteria without repeating the initiative purpose. Use one when that
+outcome needs its own explanation; it is not required for every milestone.
+
+Change an intent only when its purpose or scope changes. Describe the outcome without
+summarising the feature list or prescribing implementation choices. Technical
+design decisions and execution details belong in the ledger or warranted
+specifications and plans, following Choosing what to preserve. Link to them when
+they exist.
+
+### Specifications
+
+Create a specification when a coherent contract needs an independent reference,
+such as an API, lifecycle behaviour, or rules shared across components. Agreement
+on a small decision alone does not require one. Preserve precise semantics and
+acceptance conditions when another implementation or future session relies on them.
+
+Defines the agreed solution, including both intended system behaviour and the
+meaningful technical design needed to implement and review it:
+
+- requirements and user-visible behaviour
+- existing system context and boundaries
+- proposed architecture, responsibilities, and data flow
+- APIs, schemas, state transitions, and integration contracts
+- significant technical choices, constraints, and tradeoffs
+- edge cases and acceptance criteria
+
+Update it when the agreed behaviour or technical solution changes, not merely
+when routine implementation details shift.
+
+A specification answers, "What solution have we agreed to build?" Reference
+existing authoritative contracts and operating instructions rather than keeping
+competing copies. Proposed changes must be distinguished from agreed behavior.
+
+It may prescribe internal boundaries or technical choices when they are important to
+that agreement, but it does not prescribe function bodies, routine component
+structure, incidental control flow, or arbitrary library choices. Use examples,
+short signatures, schemas, or pseudocode only when they clarify behaviour,
+contracts, or design.
+
+### Plans
+
+Create a persistent plan when losing the sequence or dependencies could cause a
+meaningful execution mistake across sessions. A short working plan for the current
+session does not need a document. Keep only the durable execution strategy:
+
+- phases, milestones, and dependencies
+- repositories and major areas involved
+- validation strategy
+- sequencing and rollout considerations
+- ticket-to-milestone or ticket-to-repository mapping, when useful
+
+Update it when the implementation strategy materially changes.
+
+A plan identifies outcomes, affected repositories and likely areas,
+constraints, dependencies, risks, edge cases, and verification. It does not
+redefine the solution or contain complete implementation code. Put contracts,
+schemas, and design details in specifications; the plan may link to them and name the
+paths, commands, or checkpoints needed for execution. If code is already known
+well enough to be written verbatim, implement and test it instead of placing it
+in the plan.
+
+### `ledger.md`
+
+Keep the ledger focused on resumption. At each checkpoint, rewrite working state
+to describe what is true now. Remove superseded observations, repeated completion
+details, and obsolete validation results. Keep the latest relevant verification
+with its commit or artifact reference and limitations. Preserve historical rationale
+only when it still affects future decisions; Git retains earlier checkpoints.
+Do not create a separate history file by default.
+
+Reconcile the whole checkpoint, including frontmatter and verification, against
+observed state before saving. Remove competing “current” claims and commit-by-commit
+narratives. Check relevant PR head, draft/merge state, and derived descriptions when
+work changes them; if remote verification is unavailable, label the last observation
+and uncertainty. Context loading remains read-only and does not require network
+access. `current_task` names work to do, not a completed-work status sentence.
+
+When a review is interrupted, retain a compact handoff: reviewed head/base,
+unresolved findings with links, and next action. Record the outcome when it ends.
+Polling history and scheduler state stay with the review workflow.
+
+Keep small decisions with brief rationale and essential acceptance conditions in
+the ledger while they have no separate authoritative home. Retain them when
+rewriting working state, or move them into a warranted specification. Link to rules
+already owned by a specification, plan, protocol, or repository document instead
+of maintaining another copy. Record the next concrete task or unresolved decision in `next_action`, not routine workflow such as
+asking the user what to do. It is a candidate task, not execution authorization.
+Preserve pending parked notes, lifecycle records needed for recovery, and unknown
+metadata when trimming prose.
+
+Provides resumable external working memory:
+
+- what is true now
+- what happened and why
+- what remains
+- exactly where the next session should begin
+
+The ledger exists because conversation context is temporary and
+vendor-specific. A conversation summary may help one conversation continue,
+but it is internal: it may omit operational details, remains tied to that
+session, and cannot hand work to a different agent or a future one. The ledger
+is inspectable, editable, portable, and versioned.
+
+The ledger is also the handoff. Because the protocol is the same for every
+session, context can be loaded with `/grind:context` or automatically from an
+initiative folder or associated checkout. Accompany it with the current request;
+use `/grind:start` to prepare the initiative and choose what to do next. No per-session handoff
+document is written.
+
+
+### Reference documents
+
+Use `type: Reference` for a dated report, retrospective, or inherited handover
+preserved as evidence. Identify its date, provenance, and material limitations.
+Reference is a supporting type with workflow instructions, not CLI or filesystem
+write protection. Do not silently revise the snapshot to match current reality.
+Record corrections or superseding findings in a separate linked note or successor
+report, and make the relationship clear in the index.
+
+Load references only when relevant to the task; do not add them to mandatory context
+merely because they exist. Their recommendations are neither current requirements
+nor execution authorization. Put adopted decisions in the ledger or other current
+authoritative home, linking back to the evidence. An evolving investigation may
+remain `Research`; do not automatically reclassify existing artifacts.
+
+## Proportionate execution
+
+Use the lightest process appropriate to the size, uncertainty, and risk of the
+work.
+
+### Small, localised work
+
+State the design briefly, implement in the current session, test meaningful
+logic, and perform one final review. Maintain initiative artifacts only when
+the change belongs to an existing initiative.
+
+### Ambiguous or consequential work
+
+Clarify intent and constraints and compare viable approaches before costly
+implementation when the direction could materially change. Proceed when the user's
+instruction selects or accepts a direction.
+Update `intent.md` only if the chosen direction changes the intended outcome or
+scope. Preserve decisions and essential acceptance conditions using Choosing what
+to preserve; create a specification only when a contract warrants its own reference.
+
+### Large or cross-repository work
+
+Choose artifacts by their durable value under Choosing what to preserve. Divide
+execution along independently verifiable boundaries, and use parallel agents only
+for genuinely independent work that has been declared unattended and given a
+worktree. Review applicable contracts and code quality, then perform end-to-end verification.
+
+### Testing and debugging
+
+Prefer red-green-refactor for branching, transformations, state transitions,
+validation, boundary cases, and bug reproductions. Do not add elaborate tests
+for trivial wiring or framework behaviour. During debugging, reproduce or
+gather sufficient evidence, trace the cause, test the hypothesis, and only then
+implement the fix.
+
+
+## Reading review notes
+
+Notes are the user's review of the working tree, written while the agent was
+not looking. The agent reads them when the user says so, and checks every
+clone and worktree in `grind.repositories` for pending notes during context loading.
+Loading context surfaces notes without processing them. Handle them when the
+user asks or before resuming execution, respecting the user's current instruction.
+
+Processing the notes in a sidecar:
+
+1. Read them all before changing anything.
+2. For each note, confirm that the anchor line still falls inside the
+   referenced range; if it has moved, find it by content and use the current
+   position.
+3. Treat a comment as an instruction and a question as a question: answer it
+   in the chat instead of changing code.
+4. Work through the notes from the bottom up, so line numbers above stay valid
+   while notes are still being handled.
+5. Delete each note once it is handled. Leave a note in place when handling it
+   needs a decision from the user, and say so in the chat.
+6. Report in the chat, per note, what was done.
+
+A note that changes a decision or reveals something is recorded in the ledger,
+as any decision or discovery would be. The sidecar itself is never a record
+and is never committed. An ordinary save commits prepared initiative artifacts;
+it does not automatically commit unfinished application code.
+
+
+## Session-start protocol
+
+Use `/grind:context` when the user requests context or a task needs initiative
+context that is not already loaded. Optional plugin hooks run only when the nearest
+workspace sets `contextOnSessionStart: true`; host trust is a separate prerequisite.
+Automatic discovery describes directory association, not conversation selection.
+An explicit user selection takes precedence. Do not reload every turn.
+
+### Context loading
+
+Run the matching plugin CLI's `context [initiative] --json`, with `--workspace`
+when needed. It resolves the init, assembles intent and ledger without summarizing,
+extracts mandatory index sections, and reports observed repositories, HEAD commits,
+pending note locations, lifecycle operations, and diagnostics. `complete: false`
+requires resolving missing or malformed context before substantive work. Code and
+Git remain authoritative over recorded prose.
+
+Report the selected init, discrepancies, candidate next action, and unresolved
+decisions. Load detailed specs and plans for the chosen topic, not merely because
+the ledger mentions them. Explicit selection does not change checkout association.
+Context alone does not fetch, switch, reopen, repair pointers, process notes,
+save a checkpoint, or execute the next action. Closed inits remain readable.
+Their repository tracking is historical and does not block an open init using
+the same branch. Reopening requires that no open init owns the tracked branches.
+
+A hook supplies complete context when it fits its output budget; otherwise it
+supplies only the init's actual status and a command to load context if needed.
+It writes no temporary context or session-tracking files. A notice is not loaded
+context. Hooks do not override the user's selected init on resume or compaction.
+The host retains conversation selection; Grind maintains no separate session state.
+
+Absent automatic discovery is quiet unless there is stale-pointer evidence.
+Ambiguity and malformed state are surfaced rather than guessed. Explicit invocation
+without a resolvable init lists candidates and lets the user choose; when exactly
+one candidate exists the skill may select it. No records are migrated during reads.
+
+### Prepare an initiative
+
+`/grind:start [initiative]` reuses context loading and prepares the initiative.
+Preflight the tracked checkouts and use the CLI's supported switch/reopen mechanics.
+Start ensures `.grind.md` is ignored before switching or repairing a pointer. When
+needed, it appends `/.grind.md` to Git's local `info/exclude`, preserving existing
+content and using the common Git directory for linked worktrees. It leaves effective
+existing ignore rules alone and does not edit global configuration or `.gitignore`.
+A tracked sidecar, an exclusion write failure, or an overriding ignore rule blocks
+preparation.
+Stop if the transition cannot be performed safely or is unavailable. Reinspect
+state after a transition and surface relevant review notes, discrepancies, and the
+recorded next action. Then ask what the user wants to do and wait; the ledger's
+next action is context, not an instruction to execute. Do not process review notes
+or begin substantive work on a bare start. The user may want to discuss the work.
+
+When start accompanies a substantive task, proceed with that task without asking
+what to do again. Follow the user's requested scope and the normal review-note,
+execution, and checkpoint rules. Preparation may still perform the CLI's required
+note parking/restoration and lifecycle persistence.
+
+A substantive request accompanying context loading authorizes that requested work,
+not automatic execution of a different recorded task or unrelated checkout changes.
+Apply the normal work and checkpoint protocols to work actually performed.
+
+## During-work update policy
+
+Update the ledger when a meaningful milestone occurs, including:
+
+- a planned phase or substantial task is completed
+- a significant technical decision is made
+- investigation reveals a fact that changes or constrains the work
+- repository reality contradicts the plan or specification
+- a blocker, dependency, or important open question appears or is resolved
+- branch, worktree, test, migration, deployment, or rollout state changes materially
+
+Do not update it for routine commands, minor edits, or every conversational
+turn. The aim is a useful checkpoint, not an activity log.
+
+Update the relevant plan when execution strategy changes. Update its specification when the
+agreed behaviour or technical solution changes. Update `intent.md` only when
+purpose or scope changes. Apply Choosing what to preserve before creating another
+artifact; agreement or a working sequence alone does not require a document. Keep
+technical decisions and execution detail out of `intent.md`. Reference snapshots
+remain unchanged; link corrections or successors as described above.
+
+## Session-end protocol
+
+Before yielding control after meaningful work:
+
+1. Inspect repository and Git state again.
+2. Run proportionate validation or record what remains unverified.
+3. Rewrite ledger working state and update frontmatter with the current state
+   and concrete next action. Remove stale observations and duplicated history;
+   retain relevant evidence and unresolved questions. Update indexes if navigation
+   changed.
+4. Put durable decisions in their authoritative documents. Retain a brief rationale
+   or evidence reference in the ledger only when it helps future work.
+5. Correct affected plans, specifications, or `intent.md` if their corresponding truths
+   changed.
+6. Commit the initiative folder in the state repository, naming the initiative
+   and the milestone in the message.
+7. Ensure a fresh agent with no conversation history can resume from the files
+   alone.
+
+No ledger update or commit is needed when the session produced nothing useful
+to preserve.
+
+## Closing an initiative
+
+When the outcome is delivered, or the work is deliberately dropped:
+
+1. Review initiative assets for durable knowledge that is not obvious from the code
+   itself, such as rationale, external constraints, or operational caveats. Distill
+   useful material into documentation in the relevant repository, checking it against
+   the actual repository state. Decide placement, format, and structure at closeout from each
+   repository's documentation conventions; this protocol does not prescribe them.
+   Avoid copying assets wholesale, restating code, or preserving superseded proposals
+   as current guidance. If nothing qualifies, no documentation change is needed.
+   Deliver any documentation changes through the repository's normal workflow before
+   finalizing closure, respecting existing authorization for external actions.
+2. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
+   which in the ledger.
+3. Prepare a valid checkpoint. Handle every pending review note or choose the explicit
+   parked disposition so the exact note payload is retained in the ledger.
+4. Run `grind close` with delivered or abandoned outcome, result location, and note
+   disposition. The CLI records the prior execution checkpoint in lifecycle history
+   and commits only the initiative state.
+
+The folder stays where it is. A closed initiative can bounce back through QA
+feedback or a production regression. Running `grind start` on an unarchived
+closed initiative sets `grind.status: open`, moves the prior `grind.closed` and
+result into durable ledger history, restores execution fields, and then follows
+the normal start protocol.
+
+## Archiving
+
+An initiative closed for more than 60 days is archived with `grind archive`: moved
+to `initiatives/_archive/<scope>/<name>/`, keeping its scope path, and committed.
+Pending operations, unresolved notes, missing repositories, unverifiable worktree
+state, destination collisions, and any owned branch checked out in a linked worktree
+block archival.
+
+Session-start inspection lists closed initiatives past the 60-day mark as ready
+to archive. Context loading only reports them. Perform eligible moves during an
+execution workflow, not merely because a session opened or context was requested.
+
+An archived initiative is read-only history. Work that resumes on the same
+subject is a new initiative whose `intent.md` links to the archived one, not a
+move back out of `_archive/`.
+
+
+## Operating rule
+
+The files provide continuity; the code provides truth. Every agent begins by
+validating the recorded checkpoint and ends by leaving a better one, committed,
+when meaningful work occurred.

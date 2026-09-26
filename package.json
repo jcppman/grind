@@ -1,0 +1,29 @@
+{
+  "name": "grind",
+  "version": "0.4.0+0a741d1",
+  "private": true,
+  "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
+  "type": "module",
+  "bin": {
+    "grind": "./dist/cli.js",
+    "agent-note": "./dist/agent-note.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "skills",
+    ".codex-plugin",
+    ".claude-plugin",
+    "scripts/grind.mjs",
+    "hooks"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "entities": "^8.1.0",
+    "github-slugger": "^2.0.0",
+    "marked": "^18.0.14",
+    "yaml": "^2.9.1"
+  }
+}
