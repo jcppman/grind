@@ -7,7 +7,10 @@ import { inspectInitiative } from './inspect.ts';
 import type { Workspace } from './workspace.ts';
 import { dashboardHtml, dashboardScript } from './dashboard-view.ts';
 
-export function directoryCommand(directory: string): string {
+export function directoryCommand(directory: string, platform: NodeJS.Platform = process.platform): string {
+  // PowerShell is the default Windows terminal shell; -LiteralPath stops it
+  // treating [ and ] as wildcards.
+  if (platform === 'win32') return `Set-Location -LiteralPath '${directory.replaceAll("'", "''")}'`;
   return `cd '${directory.replaceAll("'", "'\\''")}'`;
 }
 
@@ -57,6 +60,15 @@ const openEditor: OpenEditor = async (editor, directory) => {
   try {
     if (process.platform === 'darwin') {
       await exec('/usr/bin/open', ['-a', editor === 'vscode' ? 'Visual Studio Code' : 'WebStorm', directory]);
+    } else if (process.platform === 'win32') {
+      // Both launchers are .cmd scripts, which only cmd.exe can run. Inside
+      // quotes cmd still expands %VAR%, so refuse paths it cannot pass intact.
+      if (/["%]/.test(directory)) throw new Error('unquotable path');
+      const launcher = editor === 'vscode' ? 'code' : 'webstorm';
+      await exec(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${launcher} "${directory}""`], {
+        timeout: 10000,
+        windowsVerbatimArguments: true,
+      });
     } else {
       await exec(editor === 'vscode' ? 'code' : 'webstorm', [directory], { timeout: 10000 });
     }

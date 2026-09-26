@@ -179,9 +179,8 @@ function emit(json: boolean, envelope: unknown, human: string | null): void {
   else if (human !== null) process.stdout.write(`${human}\n`);
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  (process.argv[1].endsWith('/cli.ts') || process.argv[1].endsWith('/cli.js') || process.argv[1].endsWith('/grind'));
+// Windows passes argv[1] with backslashes.
+const invokedDirectly = /[\\/](cli\.[jt]s|grind)$/.test(process.argv[1] ?? '');
 if (invokedDirectly) {
   process.exitCode = await run(process.argv.slice(2));
 }

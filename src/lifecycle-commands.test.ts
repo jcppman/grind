@@ -62,7 +62,7 @@ test('archive blocks the 60-day boundary and checked-out owned branches, then pr
 
   const archived = await archiveCommand(context, 'app/old');
   assert.equal(archived.archivedId, '_archive/app/old');
-  assert.match(archived.dir, /_archive\/app\/old$/);
+  assert.match(archived.dir, /_archive[\\/]app[\\/]old$/);
   assert.equal(await git(ws.stateGitRoot, 'log', '-1', '--pretty=%s'), 'Archive app/old');
 });
 

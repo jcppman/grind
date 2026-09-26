@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { readInitiative } from './artifacts.ts';
+import { toPosix } from './paths.ts';
 import { INTENT, makeSymlink, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
 
@@ -101,7 +102,7 @@ test('milestone intents are valid documents but nested roots are rejected', asyn
     'milestones/02/intent.md': '---\ntype: Intent\ngrind:\n  root: true\n---\n',
   } });
   const record = await readInitiative(dir);
-  assert.deepEqual(record.diagnostics.map((d) => [d.code, path.relative(dir, d.path ?? '')]), [
+  assert.deepEqual(record.diagnostics.map((d) => [d.code, toPosix(path.relative(dir, d.path ?? ''))]), [
     ['NESTED_ROOT', 'milestones/02/intent.md'],
   ]);
 });

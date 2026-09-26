@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { chmod, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { commitState, git, makeTempWorkspace, writeInitiative, closedLedger, makeCheckout, openLedger, writeSidecar } from '../src/test-helpers.ts';
 
 const exec = promisify(execFile);
+// Claude Code runs hook commands with Git Bash on Windows.
+const posixShell = process.platform === 'win32'
+  ? path.resolve(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), '../../../bin/bash.exe')
+  : '/bin/sh';
 
 test('relocated plugin runs all commands with bundled dependencies and no global CLI', async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'grind-package-'));
@@ -143,7 +148,9 @@ test('relocated dashboard starts, serves its assets and data, and stops on SIGTE
   assert.equal((await (await fetch(url + 'api')).json()).initiatives[0].id, 'dashboard');
   child.kill('SIGTERM');
   const result = await exited;
-  assert.equal(result.code, 0);
+  // Windows has no SIGTERM handler; kill() terminates the process outright.
+  if (process.platform === 'win32') assert.equal(result.signal, 'SIGTERM');
+  else assert.equal(result.code, 0);
 });
 
 test('relocated context and SessionStart hook honor opt-in, overflow and read-only behavior', async t => {
@@ -157,7 +164,7 @@ test('relocated context and SessionStart hook honor opt-in, overflow and read-on
   const manifest = JSON.parse(await readFile(path.join(install, 'hooks/hooks.json'), 'utf8'));
   const hookCommand = manifest.hooks.SessionStart[0].hooks[0].command;
   const invoke = (source, cwd = dir) => new Promise((resolve, reject) => {
-    const child = spawn('/bin/sh', ['-c', hookCommand], {
+    const child = spawn(posixShell, ['-c', hookCommand], {
       cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: install },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -190,7 +197,7 @@ test('relocated context and SessionStart hook honor opt-in, overflow and read-on
   assert.ok(Buffer.byteLength(output) <= 6000);
   assert.match(output, /if needed/);
   const command = output.match(/Run (.+) to load it if needed\./)[1];
-  const loaded = await exec('/bin/sh', ['-c', command], { cwd: temp });
+  const loaded = await exec(posixShell, ['-c', command], { cwd: temp });
   assert.match(loaded.stdout, /Context payload/);
   await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: false }));
   assert.equal(await invoke('resume'), '');
@@ -213,7 +220,7 @@ test('hook decodes split UTF-8 input and enforces its byte limit', async t => {
         value: Readable.from(chunks.map(chunk => Buffer.from(chunk, 'base64')))
       });
     `);
-    const { stdout } = await exec(process.execPath, ['--import', preload, hook], { cwd });
+    const { stdout } = await exec(process.execPath, ['--import', pathToFileURL(preload).href, hook], { cwd });
     return JSON.parse(stdout).hookSpecificOutput.additionalContext;
   };
   const context = await run([input.subarray(0, splitAt), input.subarray(splitAt)]);

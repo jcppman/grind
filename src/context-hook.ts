@@ -14,7 +14,10 @@ function quote(value: string): string {
 }
 
 function command(pluginRoot: string, workspace?: string, id?: string): string {
-  return ['node', path.join(pluginRoot, 'scripts', 'grind.mjs'), 'context', ...(id ? [id] : []), ...(workspace ? ['--workspace', workspace] : [])].map(quote).join(' ');
+  // A bare `node` keeps the command runnable from PowerShell too, where a
+  // quoted first word is a string expression rather than a command.
+  const args = [path.join(pluginRoot, 'scripts', 'grind.mjs'), 'context', ...(id ? [id] : []), ...(workspace ? ['--workspace', workspace] : [])];
+  return ['node', ...args.map(quote)].join(' ');
 }
 
 function boundedNotice(notice: string, budget = HOOK_CONTEXT_BYTES): string {

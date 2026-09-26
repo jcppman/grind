@@ -14,11 +14,17 @@ const exec = promisify(execFile);
 test('directory commands preserve literal shell characters', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
-  for (const name of ["a space", "it's here", '$(touch INJECTED)`touch INJECTED`;$HOME', 'line\nbreak']) {
+  const windows = process.platform === 'win32';
+  // Windows forbids control characters in names, and PowerShell treats [ ] as wildcards.
+  const names = ["a space", "it's here", '$(touch INJECTED)`touch INJECTED`;$HOME', windows ? 'wild[card]' : 'line\nbreak'];
+  for (const name of names) {
     const directory = path.join(ws.root, name);
     await mkdir(directory);
-    const result = await exec('/bin/sh', ['-c', `${directoryCommand(directory)} && pwd -P`]);
-    assert.equal(result.stdout, directory + '\n');
+    const result = windows
+      ? await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+        Buffer.from(`${directoryCommand(directory)}; (Get-Location).ProviderPath`, 'utf16le').toString('base64')])
+      : await exec('/bin/sh', ['-c', `${directoryCommand(directory)} && pwd -P`]);
+    assert.equal(result.stdout.replace(/\r\n$/, '\n'), directory + '\n');
   }
 });
 
