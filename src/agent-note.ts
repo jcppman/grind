@@ -72,5 +72,6 @@ export async function runAgentNote(argv: readonly string[]): Promise<number> {
   }
 }
 
-const invokedDirectly = process.argv[1]?.endsWith('/agent-note.ts') || process.argv[1]?.endsWith('/agent-note.js') || process.argv[1]?.endsWith('/agent-note');
+// Windows passes argv[1] with backslashes.
+const invokedDirectly = /[\\/]agent-note(\.[jt]s)?$/.test(process.argv[1] ?? '');
 if (invokedDirectly) process.exitCode = await runAgentNote(process.argv.slice(2));

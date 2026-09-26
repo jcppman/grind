@@ -171,7 +171,7 @@ visible with diagnostics.
 
 The initiative's copy icon copies a command for its directory. Each associated
 checkout has its own copy icon, including worktrees. Tooltips identify each action. Commands quote paths
-for POSIX shells such as zsh and bash. Copying does not run the command or switch a
+for POSIX shells such as zsh and bash, or for PowerShell on Windows. Copying does not run the command or switch a
 branch. Missing checkouts have disabled buttons; if clipboard access fails, the
 command appears as selectable text for manual copying.
 

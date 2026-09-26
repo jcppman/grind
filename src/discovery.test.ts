@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { listInitiatives } from './discovery.ts';
+import { toPosix } from './paths.ts';
 import { makeSymlink, makeTempWorkspace, writeInitiative } from './test-helpers.ts';
 
 test('root markers identify initiatives; scope folders and nested indexes do not', async (t) => {
@@ -37,7 +38,7 @@ test('symbolic links are reported and not followed', async (t) => {
   const { entries, diagnostics } = await listInitiatives(ws.initiativesDir);
   assert.deepEqual(entries.map((e) => e.id), ['app/real']);
   assert.deepEqual(
-    diagnostics.map((d) => [d.code, path.relative(ws.initiativesDir, d.path ?? '')]).sort(),
+    diagnostics.map((d) => [d.code, toPosix(path.relative(ws.initiativesDir, d.path ?? ''))]).sort(),
     [['SYMLINK_NOT_ALLOWED', 'app/alias'], ['SYMLINK_NOT_ALLOWED', 'escape']],
   );
 });

@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --test 'src/**/*.test.ts'",
+    "test": "node --test \"src/**/*.test.ts\"",
     "package:plugin": "npm run build && node scripts/package-plugin.mjs",
     "test:package": "npm run package:plugin && node --test scripts/package.test.mjs",
     "update-plugin": "node scripts/update-plugin.mjs"
