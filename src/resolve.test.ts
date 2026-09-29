@@ -34,7 +34,7 @@ test('identifiers that traverse or escape are rejected', async (t) => {
   await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/alias' }), { code: 'PATH_ESCAPE' });
 });
 
-test('enclosing folder resolves from nested milestone directories', async (t) => {
+test('enclosing folder resolves from nested document directories', async (t) => {
   const { ws, workspace } = await setup(t);
   const nested = path.join(ws.initiativesDir, 'app', 'feature', 'milestones', '01');
   await mkdir(nested, { recursive: true });
@@ -117,7 +117,7 @@ test('a checkout inside a nested workspace is not claimed by the outer one', asy
   });
 });
 
-test('milestone intent resolves to its initiative and is not an explicit initiative', async (t) => {
+test('supporting intent resolves to its initiative and is not an explicit initiative', async (t) => {
   const { ws, workspace } = await setup(t);
   const nested = await writeInitiative(ws, 'app/feature/milestones/01', { intent: '---\ntype: Intent\n---\n' });
   const result = await resolveInitiative({ workspace, cwd: nested });

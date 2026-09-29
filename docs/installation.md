@@ -3,7 +3,7 @@
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
 `status`, `context`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
 writer through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
-milestones.
+releases.
 
 ## Distribution
 
@@ -196,7 +196,7 @@ grind:
 earlier versions need this migration. For existing records, change `type: Initiative Intent`
 to `type: Intent` and add `root: true` under `grind`, preserving other metadata and
 content. Migrate archived initiative intents too. Unmarked intents no longer establish
-initiative boundaries; optional milestone intents use `type: Intent` without the
+initiative boundaries; optional supporting intents use `type: Intent` without the
 root marker. Nested roots are invalid. Read-only commands never migrate records.
 
 ## Recovery

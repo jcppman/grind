@@ -10,7 +10,9 @@ scoped identifier. Do not use a global Grind installation. Node.js 24+ and Git
 are required.
 
 The result includes intent, ledger, required constraints, observed Git state,
-note locations, navigation, and entry rules. Do not reread these sources or the
+note locations, navigation, resolved roadmaps, and entry rules. Roadmaps provide
+planning context, not execution authorization; the root intent’s `grind.roadmap`
+identifies the initiative association. Do not reread these sources or the
 full protocol merely to load context. If `complete` is false, explain diagnostics
 and resolve missing required context before substantive work. Observations do not
 verify arbitrary claims in ledger prose.

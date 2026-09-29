@@ -110,6 +110,8 @@ export async function contextCommand(context: CommandContext, identifier?: strin
     resolution: { source: resolution.source, stalePointer: resolution.stalePointer },
     state: inspection.state,
     complete: Boolean(intent && ledger && record.index && inspection.state) && !hasErrors(diagnostics),
+    roadmap: inspection.roadmap,
+    roadmaps: record.roadmaps,
     intent, constraints, ledger, repositories, invokingCheckout, pendingOperations,
     diagnostics, navigation: links, entryRules: ENTRY_RULES,
   };
@@ -127,6 +129,7 @@ export function formatContext(result: ContextResult): string {
     `# Init context: ${result.id}`,
     `Folder: ${result.dir}\nWorkspace: ${result.workspace}\nStatus: ${result.state?.status ?? 'malformed'}${result.archived ? ' (archived)' : ''}\nResolved via: ${result.resolution.source}\nCaptured: ${result.generatedAt}\nComplete: ${result.complete ? 'yes' : 'NO — resolve diagnostics before substantive work'}`,
     '## Purpose and constraints', renderSource(result.intent), ...result.constraints.map(renderSource),
+    '## Roadmaps (planning context)', ...result.roadmaps.map(doc => renderSource({ ...doc, fragment: null })),
     '## Current checkpoint', renderSource(result.ledger),
     '## Observed state',
     ...result.repositories.map(repo => JSON.stringify(repo, null, 2)),

@@ -63,3 +63,9 @@ npm run test:package # builds and exercises the relocatable plugin
 npm run update-plugin # reinstalls the published plugin in Claude Code and Codex
 node dist/cli.js --help
 ```
+
+Optional `type: Roadmap` documents describe broader vision and cross-init priorities.
+Give each roadmap a unique `grind.id` within the state directory and reference it
+with `grind.roadmap` on an init’s intent or another document. `roadmap.md` beside a
+project index is the conventional location; IDs continue to resolve after moves.
+See [Roadmaps](docs/protocol.md#roadmaps) for the metadata and discovery contract.

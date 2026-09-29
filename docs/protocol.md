@@ -27,7 +27,6 @@ does not need an initiative folder.
 
 ```text
 initiative: overall outcome
-├── milestone or phase: meaningful stage
 ├── ticket: trackable unit of responsibility
 ├── task: concrete implementation work
 └── commit or pull request: delivery and review unit
@@ -81,15 +80,14 @@ references do not need an initiative branch or tracking entry.
 
 `index.md`, `intent.md`, and one `ledger.md` are required at the initiative root.
 The root `intent.md` declares `type: Intent` and `grind.root: true`; that marker
-identifies the initiative boundary. Milestones may have their own optional
-`intent.md` with `type: Intent` and no root marker. Nested initiative roots are
-invalid. Specifications and plans may use any
-filename and split by milestone or another coherent decision scope. Nested indexes
+identifies the initiative boundary. Nested initiative roots are invalid.
+Specifications and plans may use any filename and split by coherent decision scope. Nested indexes
 organize documents; they do not create nested initiatives.
 
 | Type | Question it answers |
 |---|---|
 | `Intent` | Why are we doing this, and what outcome do we want? |
+| `Roadmap` | What broader direction and priorities connect this work? |
 | `Specification` | What behaviour and technical solution are proposed or agreed? |
 | `Implementation Plan` | In what order will we implement and verify it? |
 | `Initiative Ledger` | What is true now, and exactly where should work continue? |
@@ -120,9 +118,9 @@ reads; it never infers mandatory reads from prose or follows links recursively.
 Keep it current when documents are added, moved, or removed. It
 contains navigation, not duplicated status or checkpoint information.
 
-A top-level specification owns shared contracts; milestone specifications reference
-them and own their local contracts. A top-level plan owns milestone sequencing and
-dependencies; milestone plans own execution detail. Each rule has one authoritative
+Shared specifications own shared contracts; narrower specifications reference
+them and own their local contracts. Plans can split by decision scope, with
+sequencing and dependencies defined in one place. Each rule has one authoritative
 home. Split documents when separate decision scopes or reading needs justify it,
 not to prepopulate a roadmap. Link visual designs, research, schemas, and other
 supporting artifacts, explaining whether they are authoritative or exploratory.
@@ -139,7 +137,7 @@ fields retain their explicitly defined bases; do not change their interpretation
 ### Frontmatter and interoperability
 
 Every non-index Markdown artifact has YAML frontmatter with a nonempty `type`.
-Use the four canonical types above for core roles. Supporting documents may use
+Use the canonical types above for core roles. Supporting documents may use
 other descriptive types, such as `Visual Design` or `Research`; readers tolerate
 unknown types. Non-Markdown assets are linked resources. Filenames and paths do
 not determine the role of a specification or plan.
@@ -161,8 +159,8 @@ never during context loading. Malformed optional metadata is diagnostic; malform
 required Grind state prevents a mutating operation. A save does not normalize
 metadata or imply verification.
 
-Indexes contain navigation without frontmatter, except that a bundle-root index
-may declare `okf_version`. This protocol does not yet declare the entire state tree
+Indexes contain navigation and may declare `grind.roadmap`; a bundle-root index
+may also declare `okf_version`. This protocol does not yet declare the entire state tree
 an OKF bundle: its boundary and auxiliary Markdown must be defined before claiming
 full bundle compatibility.
 
@@ -228,15 +226,59 @@ Defines the enduring reason for the work:
 - constraints that acceptable solutions must satisfy
 - related tickets, when they are sources of business context
 
-A milestone intent describes its contribution to the initiative, its scope, and
-success criteria without repeating the initiative purpose. Use one when that
-outcome needs its own explanation; it is not required for every milestone.
-
 Change an intent only when its purpose or scope changes. Describe the outcome without
 summarising the feature list or prescribing implementation choices. Technical
 design decisions and execution details belong in the ledger or warranted
 specifications and plans, following Choosing what to preserve. Link to them when
 they exist.
+
+### Roadmaps
+
+A roadmap describes vision, desired outcomes, priorities, dependencies between
+initiatives, possible future work, and open decisions. Create one when broader
+planning needs a durable home. It is optional and may live anywhere in the configured
+state directory; `roadmap.md` beside a project `index.md` is the usual location.
+A roadmap does not create an initiative or require its own ledger.
+
+```yaml
+type: Roadmap
+grind:
+  id: rytho
+```
+
+Roadmap IDs are case-sensitive, nonempty strings without surrounding whitespace,
+unique across the entire state directory, including archived documents. Identity
+comes from `type: Roadmap` and `grind.id`, not the filename or folder. Moving a
+roadmap within the state directory preserves its identity. Grind scans Markdown
+files without following symlinks or entering `.git`; no registry is maintained.
+
+Any document can declare one association:
+
+```yaml
+grind:
+  roadmap: rytho
+```
+
+On an initiative's root `intent.md`, this declares the initiative's roadmap.
+Other files declare only their own association; there is no folder inheritance.
+Indexes may carry `grind.roadmap` alongside optional `okf_version` metadata.
+Use ordinary Markdown links for human navigation. Missing or ambiguous references
+and invalid IDs are diagnosed rather than resolved by proximity or filename.
+
+`list` and `status` expose the initiative association as an ID and resolved path.
+`context` also includes the roadmaps referenced by the initiative's documents,
+with each body included once. Roadmaps provide planning context, not execution
+authorization or automatically required constraints. References are not followed
+recursively. The user's request still determines the task.
+
+Keep each initiative's purpose and completion criteria in its intent, execution
+strategy in warranted plans, and current state and concrete next action in its
+ledger. A roadmap may suggest what to prioritize next without duplicating those
+records. Future ideas need not become initiatives immediately.
+
+Milestones may be ordinary headings in roadmaps or plans. They have no special
+artifact, folder, metadata, or lifecycle in Grind. Existing folders remain valid
+ordinary document organization and do not need a migration.
 
 ### Specifications
 
@@ -278,7 +320,7 @@ session does not need a document. Keep only the durable execution strategy:
 - repositories and major areas involved
 - validation strategy
 - sequencing and rollout considerations
-- ticket-to-milestone or ticket-to-repository mapping, when useful
+- ticket-to-outcome or ticket-to-repository mapping, when useful
 
 Update it when the implementation strategy materially changes.
 

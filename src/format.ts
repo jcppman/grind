@@ -104,6 +104,7 @@ export function formatList(result: ListResult, options: FormatOptions = {}): str
   lines.push(useColor(options) ? `${ANSI.bold}${summary}${ANSI.reset}` : summary);
   for (const item of result.initiatives) {
     lines.push('', initiativeHeading(item.id, item.status ?? 'malformed', options));
+    if (item.roadmap) lines.push(...field('Roadmap', item.roadmap.id, width));
     if (item.current_task) lines.push(...field('Task', item.current_task, width));
     if (item.next_action) lines.push(...field('Next', item.next_action, width));
     if (item.result) lines.push(...field('Result', item.result, width));
@@ -123,6 +124,7 @@ function formatInspection(inspection: InitiativeInspection, width: number, optio
   const status = state?.status ?? (inspection.legacy ? 'legacy' : 'malformed');
   lines.push(`${initiativeHeading(inspection.id, status, options)}${inspection.archived ? ' archived' : ''}`);
   lines.push(...field('Folder', inspection.dir, width));
+  if (inspection.roadmap) lines.push(...field('Roadmap', `${inspection.roadmap.id} (${inspection.roadmap.path})`, width));
   if (state) {
     if (state.status === 'open') {
       lines.push(...field('Phase', state.phase ?? '?', width));

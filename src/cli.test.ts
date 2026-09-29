@@ -49,7 +49,7 @@ test('deferred commands report UNSUPPORTED_OPERATION through the JSON envelope',
   const envelope = JSON.parse(result.stdout);
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'UNSUPPORTED_OPERATION');
-  assert.match(envelope.error.message, /later milestone/);
+  assert.match(envelope.error.message, /future release/);
   assert.match(result.stderr, /not implemented/);
 });
 

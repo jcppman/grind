@@ -45,7 +45,7 @@ export async function loadWorkspace(options: LoadWorkspaceOptions): Promise<Work
   if (!(await isDirectory(stateDir))) {
     throw new GrindError(
       'STATE_REPOSITORY_INVALID',
-      `State directory ${stateDir} does not exist; milestone 1 requires an existing directory`,
+      `State directory ${stateDir} does not exist; configure an existing directory`,
       { stateDir },
     );
   }

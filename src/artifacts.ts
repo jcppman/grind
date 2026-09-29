@@ -1,5 +1,6 @@
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { readRoadmaps, resolveRoadmap, type RoadmapCatalog, type RoadmapDocument } from './roadmaps.ts';
 import { navigation } from './context-markdown.ts';
 import { diagnostic, type Diagnostic } from './errors.ts';
 import { getString, isRecord, parseFrontmatter, type Frontmatter } from './frontmatter.ts';
@@ -29,12 +30,15 @@ export interface InitiativeRecord {
   intent: ArtifactDocument | null;
   ledger: ArtifactDocument | null;
   ledgerState: LedgerValidation | null;
+  roadmap: RoadmapDocument | null;
+  roadmaps: RoadmapDocument[];
   diagnostics: Diagnostic[];
 }
 
 export interface ReadInitiativeOptions {
   /** Enables checks that need workspace geometry, such as worktrees inside the state directory. */
   workspace?: Workspace;
+  roadmapCatalog?: RoadmapCatalog;
 }
 
 /** Reads every Markdown artifact of an initiative without modifying anything. */
@@ -67,8 +71,21 @@ export async function readInitiative(
   for (const doc of documents) {
     if (doc.role === 'index') diagnostics.push(...(await checkIndexLinks(doc)));
   }
+  const catalog = options.roadmapCatalog ?? (options.workspace ? await readRoadmaps(options.workspace.stateDir) : null);
+  const roadmaps: RoadmapDocument[] = [];
+  let roadmap: RoadmapDocument | null = null;
+  if (catalog) {
+    diagnostics.push(...catalog.diagnostics.filter(item => documents.some(doc => doc.path === item.path)));
+    for (const doc of documents) {
+      const resolved = resolveRoadmap(doc.frontmatter, doc.path, catalog, diagnostics);
+      if (doc.role === 'intent') roadmap = resolved;
+      if (resolved && !roadmaps.some(existing => existing.id === resolved.id)) roadmaps.push(resolved);
+    }
+  }
   return {
     dir,
+    roadmap,
+    roadmaps,
     documents,
     index: byRelative('index.md'),
     intent: byRelative('intent.md'),
@@ -117,9 +134,9 @@ async function readDocument(
     diagnostics.push(diagnostic('error', 'FRONTMATTER_INVALID', frontmatter.error, file));
   }
   if (role === 'index') {
-    if (frontmatter.hasFrontmatter && frontmatter.data && !onlyOkfVersion(frontmatter.data)) {
+    if (frontmatter.hasFrontmatter && frontmatter.data && !validIndexMetadata(frontmatter.data)) {
       diagnostics.push(
-        diagnostic('warning', 'INDEX_FRONTMATTER', 'Indexes carry no frontmatter beyond `okf_version`', file),
+        diagnostic('warning', 'INDEX_FRONTMATTER', 'Indexes allow only `okf_version` and `grind.roadmap` frontmatter', file),
       );
     }
   } else if (role !== 'ledger' || frontmatter.hasFrontmatter) {
@@ -159,9 +176,9 @@ function roleOf(relativePath: string): ArtifactRole {
   return 'document';
 }
 
-function onlyOkfVersion(data: Record<string, unknown>): boolean {
-  const keys = Object.keys(data);
-  return keys.length === 0 || (keys.length === 1 && keys[0] === 'okf_version');
+function validIndexMetadata(data: Record<string, unknown>): boolean {
+  return Object.keys(data).every(key => key === 'okf_version' ||
+    (key === 'grind' && isRecord(data[key]) && Object.keys(data[key]).every(field => field === 'roadmap')));
 }
 
 /** Local links in an index must resolve so navigation never points at a missing document. */

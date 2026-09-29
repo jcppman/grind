@@ -6,6 +6,7 @@ test('list separates initiatives and wraps long actions with a hanging indent', 
   const output = formatList({
     initiatives: [
       {
+        roadmap: null,
         id: 'app/one',
         dir: '/workspace/state/initiatives/app/one',
         status: 'open',
@@ -17,6 +18,7 @@ test('list separates initiatives and wraps long actions with a hanging indent', 
         diagnostics: [],
       },
       {
+        roadmap: null,
         id: 'app/two',
         dir: '/workspace/state/initiatives/app/two',
         status: 'open',
@@ -49,6 +51,7 @@ app/two  [open]
 test('human formatting can add restrained status color without affecting plain output', () => {
   const result = {
     initiatives: [{
+      roadmap: null,
       id: 'app/one',
       dir: '/workspace/state/initiatives/app/one',
       status: 'open' as const,
@@ -72,6 +75,7 @@ test('status reports artifact roles', () => {
     pendingOperations: [],
     archiveEligibility: { eligible: false, closedDays: null, blockers: ['initiative is not closed'] },
     inspection: {
+      roadmap: null,
       id: 'app/outcome',
       dir: '/workspace/state/initiatives/app/outcome',
       archived: false,

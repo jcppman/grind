@@ -94,7 +94,7 @@ test('type mismatches and malformed frontmatter are surfaced without dropping do
   assert.equal(record.documents.length, 3);
 });
 
-test('milestone intents are valid documents but nested roots are rejected', async (t) => {
+test('supporting intents are valid documents but nested roots are rejected', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
   const dir = await writeInitiative(ws, 'work', { files: {

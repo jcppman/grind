@@ -18,7 +18,7 @@ Reference snapshots and follow the protocol’s Reference documents section for
 corrections or successors. Keep artifact content paths workspace-relative. Reading context alone earns no checkpoint.
 
 Resolve the plugin root from this SKILL.md and run
-`node <plugin-root>/scripts/grind.mjs save [initiative] --message <milestone> --json`,
+`node <plugin-root>/scripts/grind.mjs save [initiative] --message <checkpoint> --json`,
 with `--workspace <directory>` if needed. Report the returned commit or no-op.
 Do not stage unrelated work, reset an index, push, or retry failed commits blindly.
 A failed commit preserves staged changes: inspect and resolve that state before

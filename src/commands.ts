@@ -1,3 +1,4 @@
+import { readRoadmaps, type RoadmapDocument } from './roadmaps.ts';
 import { readInitiative } from './artifacts.ts';
 import { listInitiatives } from './discovery.ts';
 import { GrindError, type Diagnostic } from './errors.ts';
@@ -17,6 +18,7 @@ export interface CommandContext {
 }
 
 export interface ListEntry {
+  roadmap: Pick<RoadmapDocument, 'id' | 'path'> | null;
   id: string;
   dir: string;
   status: LedgerState['status'] | null;
@@ -43,13 +45,15 @@ export async function listCommand(context: CommandContext, options: ListOptions 
   const listing = await listInitiatives(context.workspace.initiativesDir);
   const scope = options.scope === undefined ? null : normalizeListScope(options.scope);
   const initiatives: ListEntry[] = [];
+  const roadmapCatalog = await readRoadmaps(context.workspace.stateDir);
   for (const entry of listing.entries) {
     if (entry.archived) continue;
     if (scope !== null && entry.id !== scope && !entry.id.startsWith(`${scope}/`)) continue;
-    const record = await readInitiative(entry.dir, { workspace: context.workspace });
+    const record = await readInitiative(entry.dir, { workspace: context.workspace, roadmapCatalog });
     const state = record.ledgerState?.state ?? null;
     if (options.status !== undefined && state?.status !== options.status) continue;
     initiatives.push({
+      roadmap: record.roadmap ? { id: record.roadmap.id, path: record.roadmap.path } : null,
       id: entry.id,
       dir: entry.dir,
       status: state?.status ?? null,
@@ -61,7 +65,7 @@ export async function listCommand(context: CommandContext, options: ListOptions 
       diagnostics: record.diagnostics,
     });
   }
-  return { initiatives, diagnostics: listing.diagnostics };
+  return { initiatives, diagnostics: [...listing.diagnostics, ...roadmapCatalog.diagnostics] };
 }
 
 function normalizeListScope(scope: string): string {

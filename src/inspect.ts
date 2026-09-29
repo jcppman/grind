@@ -40,6 +40,7 @@ export interface InitiativeInspection {
   state: LedgerState | null;
   legacy: boolean;
   artifacts: ArtifactSummary[];
+  roadmap: { id: string; path: string } | null;
   repositories: RepositoryInspection[];
   diagnostics: Diagnostic[];
 }
@@ -65,6 +66,7 @@ export async function inspectInitiative(
     state,
     legacy: record.ledgerState?.legacy ?? false,
     artifacts,
+    roadmap: record.roadmap ? { id: record.roadmap.id, path: record.roadmap.path } : null,
     repositories,
     diagnostics,
   };

@@ -9,8 +9,8 @@ import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
-  init: 'a later milestone',
-  doctor: 'a later milestone',
+  init: 'a future release',
+  doctor: 'a future release',
 };
 
 const USAGE = `Usage: grind <command> [options]
