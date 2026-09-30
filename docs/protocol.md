@@ -273,12 +273,25 @@ recursively. The user's request still determines the task.
 
 Keep each initiative's purpose and completion criteria in its intent, execution
 strategy in warranted plans, and current state and concrete next action in its
-ledger. A roadmap may suggest what to prioritize next without duplicating those
-records. Future ideas need not become initiatives immediately.
+ledger. Keep the roadmap at the level of product direction, outcome-level stages,
+priorities, and dependencies between initiatives. Detailed research approaches,
+prompts, acceptance criteria, technical choices, and concrete next actions belong
+in the relevant initiative. When a roadmap discussion introduces such detail,
+update that initiative and retain only the strategic implication and a link in
+the roadmap. Reuse an existing initiative that owns the outcome; create a missing
+one when the user asks to track it. Future ideas need not become initiatives
+immediately.
 
 Milestones may be ordinary headings in roadmaps or plans. They have no special
 artifact, folder, metadata, or lifecycle in Grind. Existing folders remain valid
 ordinary document organization and do not need a migration.
+
+For a product roadmap, give most substantial initiatives a visible place under
+outcome-based milestones; distant ideas and trivial work may remain unassigned.
+List contributing initiatives with ordinary links and distinguish required from
+optional or conditional contributions. Qualify partial contributions so milestone
+readiness does not imply completion of an initiative's entire scope. Keep membership
+in the roadmap; do not invent a `grind.milestone` field or duplicate status there.
 
 ### Specifications
 

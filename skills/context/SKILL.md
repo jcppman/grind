@@ -17,6 +17,11 @@ full protocol merely to load context. If `complete` is false, explain diagnostic
 and resolve missing required context before substantive work. Observations do not
 verify arbitrary claims in ledger prose.
 
+When the user requests roadmap authoring or reorganization, read the Roadmaps
+section of the [shared protocol](../../docs/protocol.md). Keep product direction
+and cross-initiative priorities in the roadmap; route detailed decisions and
+next actions to the initiative that owns the outcome.
+
 Give a concise orientation naming the selected init and workspace, discrepancies,
 candidate next action, and unresolved decisions. An automatic hook describes
 directory association only; an init explicitly chosen by the user takes precedence.

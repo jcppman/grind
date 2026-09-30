@@ -26,7 +26,7 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   assert.equal(pkg.version, codexManifest.version);
   assert.equal(pkg.version, claudeManifest.version);
   assert.ok(marketplace.plugins.some((plugin) => plugin.name === 'grind' && plugin.source === './'));
-  for (const skill of ['context', 'create', 'start', 'save', 'close']) {
+  for (const skill of ['context', 'create', 'start', 'save', 'close', 'housekeeping']) {
     const text = await readFile(path.join(install, 'skills', skill, 'SKILL.md'), 'utf8');
     for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {
       await readFile(path.resolve(install, 'skills', skill, target.split('#')[0]));

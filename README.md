@@ -9,7 +9,7 @@ init,” or “save this init.” Both names select the same workflows. For an e
 command, use `/grind:create xxx`.
 
 Read [the operating protocol](docs/protocol.md) for the workflow. Grind will ship
-shared context, create, start, save, and close skills with Codex and Claude Code plugin
+shared context, create, start, save, close, and housekeeping skills with Codex and Claude Code plugin
 manifests. The CLI will own deterministic filesystem and Git mechanics.
 
 Initiative artifacts belong in the workspace's configured private state repository,
@@ -20,7 +20,7 @@ upward to the nearest enclosing workspace boundary.
 
 Milestone 2 provides recoverable branch switching and note transfer, closure and
 reopening, retention archival, `agent-note`, and scoped checkpoint saves. The matching
-compiled CLI and shared context/create/start/save/close skills run in Codex and
+compiled CLI and shared context/create/start/save/close/housekeeping skills run in Codex and
 Claude Code from the same relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
@@ -69,3 +69,8 @@ Give each roadmap a unique `grind.id` within the state directory and reference i
 with `grind.roadmap` on an init’s intent or another document. `roadmap.md` beside a
 project index is the conventional location; IDs continue to resolve after moves.
 See [Roadmaps](docs/protocol.md#roadmaps) for the metadata and discovery contract.
+
+Use `/grind:housekeeping` for a project or roadmap to reconcile milestone
+contributions, init scope, stale checkpoints, and completed work. The skill checks
+delivery evidence and raises unresolved conflicts in intent or priorities with
+the user. Ask for an audit only when you want findings without record changes.
