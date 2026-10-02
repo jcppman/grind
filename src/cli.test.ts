@@ -81,6 +81,24 @@ test('list accepts a scope with an open or closed filter', async () => {
   }
 });
 
+test('list accepts --filter and other commands reject it', async () => {
+  const ws = await makeTempWorkspace();
+  try {
+    await writeInitiative(ws, 'audio/rytho', { ledger: openLedger() });
+    await writeInitiative(ws, 'video/clip', { ledger: closedLedger() });
+
+    const filtered = await runCli('list', '--filter', 'shipped', '--json', '--workspace', ws.root);
+    assert.equal(filtered.code, 0);
+    assert.deepEqual(JSON.parse(filtered.stdout).data.initiatives.map((i: { id: string }) => i.id), ['video/clip']);
+
+    const rejected = await runCli('status', '--filter', 'x', '--json', '--workspace', ws.root);
+    assert.equal(rejected.code, 2);
+    assert.match(JSON.parse(rejected.stdout).error.message, /--filter is only supported by list/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 test('list rejects conflicting status filters', async () => {
   const result = await runCli('list', '--open', '--closed', '--json');
   assert.equal(result.code, 2);

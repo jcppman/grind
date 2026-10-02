@@ -54,6 +54,25 @@ test('list filters by parent or exact scope and ledger status', async (t) => {
   ]);
 });
 
+test('list filter matches resume fields case-insensitively and combines with scope and status', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(() => ws.cleanup());
+  await writeInitiative(ws, 'app/latency', { ledger: openLedger().replace('Do the thing', 'Fix audio LATENCY spikes') });
+  await writeInitiative(ws, 'app/shipped', { ledger: closedLedger() });
+  await writeInitiative(ws, 'app/bad', { ledger: openLedger().replace('status: open', 'status: weird') });
+  await writeInitiative(ws, 'tools/latency-probe', { ledger: openLedger() });
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const context = { workspace, cwd: ws.root };
+  const ids = async (options: Parameters<typeof listCommand>[1]) => (await listCommand(context, options)).initiatives.map((i) => i.id);
+
+  assert.deepEqual(await ids({ filter: 'Latency' }), ['app/latency', 'tools/latency-probe']);
+  assert.deepEqual(await ids({ filter: 'shipped in' }), ['app/shipped']);
+  assert.deepEqual(await ids({ filter: 'latency', scope: 'app' }), ['app/latency']);
+  assert.deepEqual(await ids({ filter: 'implementation', status: 'open' }), ['app/latency', 'tools/latency-probe']);
+  assert.deepEqual(await ids({ filter: 'bad' }), ['app/bad']);
+  assert.deepEqual(await ids({ filter: '  ' }), ['app/bad', 'app/latency', 'app/shipped', 'tools/latency-probe']);
+});
+
 test('status resolves from a checkout and merges resolution diagnostics', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
