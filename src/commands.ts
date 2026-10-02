@@ -38,12 +38,15 @@ export interface ListResult {
 export interface ListOptions {
   scope?: string;
   status?: LedgerState['status'];
+  /** Case-insensitive text matched against the id, roadmap, and recorded resume fields. */
+  filter?: string;
 }
 
 /** Unarchived initiatives with their recorded resume information; malformed ones stay listed. */
 export async function listCommand(context: CommandContext, options: ListOptions = {}): Promise<ListResult> {
   const listing = await listInitiatives(context.workspace.initiativesDir);
   const scope = options.scope === undefined ? null : normalizeListScope(options.scope);
+  const filter = options.filter?.trim().toLowerCase() || null;
   const initiatives: ListEntry[] = [];
   const roadmapCatalog = await readRoadmaps(context.workspace.stateDir);
   for (const entry of listing.entries) {
@@ -52,7 +55,7 @@ export async function listCommand(context: CommandContext, options: ListOptions 
     const record = await readInitiative(entry.dir, { workspace: context.workspace, roadmapCatalog });
     const state = record.ledgerState?.state ?? null;
     if (options.status !== undefined && state?.status !== options.status) continue;
-    initiatives.push({
+    const item: ListEntry = {
       roadmap: record.roadmap ? { id: record.roadmap.id, path: record.roadmap.path } : null,
       id: entry.id,
       dir: entry.dir,
@@ -63,9 +66,17 @@ export async function listCommand(context: CommandContext, options: ListOptions 
       next_action: state?.next_action ?? null,
       result: state?.result ?? null,
       diagnostics: record.diagnostics,
-    });
+    };
+    if (filter !== null && !matchesListFilter(item, filter)) continue;
+    initiatives.push(item);
   }
   return { initiatives, diagnostics: [...listing.diagnostics, ...roadmapCatalog.diagnostics] };
+}
+
+function matchesListFilter(item: ListEntry, filter: string): boolean {
+  return [item.id, item.roadmap?.id, item.phase, item.current_task, item.next_action, item.result].some(
+    (value) => value?.toLowerCase().includes(filter),
+  );
 }
 
 function normalizeListScope(scope: string): string {

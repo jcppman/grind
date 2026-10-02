@@ -31,6 +31,8 @@ Options:
   --scope <folder>    workspace-relative scope for create
   --open              list only open initiatives
   --closed            list only closed initiatives
+  --filter <text>     list only initiatives whose id, roadmap, phase, task,
+                      next action, or result contains the text
   --message <text>    checkpoint commit message for save
   --outcome <value>   delivered or abandoned for close
   --result <text>     result location or summary for close
@@ -53,6 +55,7 @@ export interface ParsedArgs {
   closed: boolean;
   workspace?: string;
   scope?: string;
+  filter?: string;
   message?: string;
   outcome?: string;
   result?: string;
@@ -73,10 +76,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
       parsed.workspace = value;
       i += 1;
-    } else if (['--scope', '--message', '--outcome', '--result', '--notes', '--date'].includes(arg)) {
+    } else if (['--scope', '--filter', '--message', '--outcome', '--result', '--notes', '--date'].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new GrindError('USAGE', `${arg} requires a value`);
-      parsed[arg.slice(2) as 'scope' | 'message' | 'outcome' | 'result' | 'notes' | 'date'] = value;
+      parsed[arg.slice(2) as 'scope' | 'filter' | 'message' | 'outcome' | 'result' | 'notes' | 'date'] = value;
     } else if (arg.startsWith('--workspace=')) parsed.workspace = arg.slice('--workspace='.length);
     else if (arg.startsWith('-')) throw new GrindError('USAGE', `Unknown option ${arg}`);
     else if (parsed.command === null) parsed.command = arg;
@@ -108,7 +111,7 @@ export async function run(argv: readonly string[]): Promise<number> {
     if (args.positional.length > (args.command === 'dashboard' ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
-    for (const [option, command] of [['scope', 'create'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
+    for (const [option, command] of [['scope', 'create'], ['filter', 'list'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
       if (args[option] !== undefined && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
     if ((args.open || args.closed) && args.command !== 'list') throw new GrindError('USAGE', '--open and --closed are only supported by list');
@@ -150,6 +153,7 @@ export async function run(argv: readonly string[]): Promise<number> {
       const result = await listCommand(context, {
         ...(identifier === undefined ? {} : { scope: identifier }),
         ...(args.open ? { status: 'open' as const } : args.closed ? { status: 'closed' as const } : {}),
+        ...(args.filter === undefined ? {} : { filter: args.filter }),
       });
       emit(json, { ok: true, data: result }, formatList(result));
     } else if (args.command === 'context') {
