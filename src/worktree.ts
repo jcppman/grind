@@ -225,6 +225,8 @@ export interface SavedStash {
   label: string;
   commit: string;
   branch: string;
+  /** Checkout the changes were stashed from. */
+  origin: string;
   /** Directory where the stash belongs once its branch is checked out there. */
   restoreIn: string;
 }
@@ -265,7 +267,7 @@ async function stashChanges(dir: string, label: string, branch: string, restoreI
   const commit = await top();
   // Some status entries, such as a dirty submodule, cannot be stashed; then nothing was saved.
   if (commit === before) return null;
-  return { label, commit, branch, restoreIn };
+  return { label, commit, branch, origin: dir, restoreIn };
 }
 
 async function restoreStash(dir: string, stash: SavedStash): Promise<void> {
@@ -332,16 +334,21 @@ async function placeBranch(canonical: string, dir: string, branch: string, sourc
   return 'created';
 }
 
-/** Commands that restore each stash, based on where its branch is checked out now. */
+/**
+ * Commands that restore each stash: in place where its branch is checked out, else back in the
+ * idle checkout it came from, else at its destination.
+ */
 async function recoveryDetails(canonical: string, stashes: readonly SavedStash[]) {
   const worktrees = await listWorktrees(canonical);
   const details = [];
   for (const stash of stashes) {
     const holder = worktrees.find((item) => item.branch === stash.branch);
     const apply = (dir: string) => `git -C '${dir}' stash apply --index ${stash.commit}`;
+    const checkout = (dir: string) => [`git -C '${dir}' checkout ${stash.branch}`, apply(dir)];
     let recovery: string[];
     if (holder !== undefined) recovery = [apply(holder.path)];
-    else if (await isIdleWorktree(canonical, stash.restoreIn)) recovery = [`git -C '${stash.restoreIn}' checkout ${stash.branch}`, apply(stash.restoreIn)];
+    else if (await isIdleWorktree(canonical, stash.origin)) recovery = checkout(stash.origin);
+    else if (await isIdleWorktree(canonical, stash.restoreIn)) recovery = checkout(stash.restoreIn);
     else recovery = [`git -C '${canonical}' worktree add '${stash.restoreIn}' ${stash.branch}`, apply(stash.restoreIn)];
     details.push({ ...stash, recovery });
   }

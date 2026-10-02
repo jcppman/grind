@@ -361,14 +361,32 @@ test('recovery restores in place when the switch stops before the canonical chec
   await writeInitiative(ws, 'x', { ledger: openLedger([{ path: 'app', branch: 'x-branch' }]) });
   await writeInitiative(ws, 'y', { ledger: openLedger([{ path: 'app', branch: 'y-branch' }]) });
   await writeFile(path.join(app, 'README.md'), 'in progress\n');
+  await writeFile(path.join(yDir, 'README.md'), 'agent work on y\n');
   await writeFile(path.join(app, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
 
-  await assert.rejects(switchCommand({ workspace, cwd: app }, 'y', { force: true }), (error: { code: string; details: { stashes: Array<{ commit: string; recovery: string[] }> } }) => {
+  let stashes: Array<{ branch: string; commit: string; recovery: string[] }> = [];
+  await assert.rejects(switchCommand({ workspace, cwd: app }, 'y', { force: true }), (error: { code: string; details: { stashes: typeof stashes } }) => {
     assert.equal(error.code, 'SWITCH_INCOMPLETE');
-    assert.deepEqual(error.details.stashes[0]!.recovery, [`git -C '${app}' stash apply --index ${error.details.stashes[0]!.commit}`]);
+    stashes = error.details.stashes;
     return true;
   });
   assert.equal(await git(app, 'branch', '--show-current'), 'x-branch');
+  assert.equal(await git(yDir, 'branch', '--show-current'), '');
+  const x = stashes.find((stash) => stash.branch === 'x-branch')!;
+  const y = stashes.find((stash) => stash.branch === 'y-branch')!;
+  assert.deepEqual(x.recovery, [`git -C '${app}' stash apply --index ${x.commit}`]);
+  assert.deepEqual(y.recovery, [`git -C '${yDir}' checkout y-branch`, `git -C '${yDir}' stash apply --index ${y.commit}`]);
+
+  await rm(path.join(app, '.git', 'hooks', 'post-checkout'));
+  for (const stash of [x, y]) {
+    for (const command of stash.recovery) {
+      const [, dir, args] = /^git -C '([^']+)' (.+)$/.exec(command)!;
+      await git(dir!, ...args!.split(' '));
+    }
+  }
+  assert.equal(await readFile(path.join(app, 'README.md'), 'utf8'), 'in progress\n');
+  assert.equal(await git(yDir, 'branch', '--show-current'), 'y-branch');
+  assert.equal(await readFile(path.join(yDir, 'README.md'), 'utf8'), 'agent work on y\n');
 });
 
 test('a failed switch reports the saved stash and how to restore it', async (t) => {
