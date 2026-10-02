@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parseFrontmatter } from './frontmatter.ts';
@@ -183,7 +183,8 @@ test('switch swaps foreground and background work with staged, unstaged, and unt
 
   const result = await switchCommand(context, 'y', { force: true });
   assert.equal(result.switched, true);
-  assert.deepEqual(result.takenFrom, { path: yDir, kind: 'grind', released: 'removed' });
+  assert.deepEqual(result.takenFrom, { path: yDir, kind: 'grind', released: 'detached' });
+  assert.equal(await git(yDir, 'branch', '--show-current'), '');
   const xDir = path.join(ws.root, '.worktrees', 'app', 'x');
   assert.deepEqual(result.previous, { branch: 'x-branch', initiative: 'x', path: xDir });
   assert.equal(await git(app, 'branch', '--show-current'), 'y-branch');
@@ -295,6 +296,79 @@ test('recorded repository paths resolve from the workspace root, not the current
   const result = await worktreeCommand({ workspace, cwd: path.join(ws.root, 'web') }, 'work');
   assert.equal(result.repository, 'app');
   assert.equal((await git(decoy, 'worktree', 'list')).split('\n').length, 1);
+});
+
+test('switch keeps ignored files of the worktree it takes a branch from and reuses it later', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const app = await makeCheckout(ws, 'app', 'main');
+  await commitFile(app, '.gitignore', '.env\n');
+  await git(app, 'branch', 'feature');
+  await writeInitiative(ws, 'mainline', { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
+  await writeInitiative(ws, 'feature-work', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  const context = { workspace, cwd: ws.root };
+  const tree = (await worktreeCommand(context, 'feature-work')).path;
+  await writeFile(path.join(tree, '.env'), 'SECRET=1\n');
+
+  await switchCommand({ workspace, cwd: app }, 'feature-work', { force: true });
+  assert.equal(await readFile(path.join(tree, '.env'), 'utf8'), 'SECRET=1\n');
+  await switchCommand({ workspace, cwd: app }, 'mainline', { force: true });
+  assert.equal(await git(tree, 'branch', '--show-current'), 'feature');
+  assert.equal(await readFile(path.join(tree, '.env'), 'utf8'), 'SECRET=1\n');
+  assert.equal((await worktreeCommand(context, 'feature-work')).path, tree);
+});
+
+test('a deleted worktree is not reported as the working path and is recreated', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const app = await makeCheckout(ws, 'app');
+  await git(app, 'branch', 'feature');
+  await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  const context = { workspace, cwd: ws.root };
+  const first = await worktreeCommand(context, 'work');
+  await rm(first.path, { recursive: true, force: true });
+  const again = await worktreeCommand(context, 'work');
+  assert.deepEqual([again.path, again.created], [first.path, true]);
+  assert.equal(await git(again.path, 'branch', '--show-current'), 'feature');
+
+  await rm(again.path, { recursive: true, force: true });
+  const switched = await switchCommand({ workspace, cwd: app }, 'work');
+  assert.equal(switched.takenFrom, null);
+  assert.equal(await git(app, 'branch', '--show-current'), 'feature');
+});
+
+test('switch never takes over an existing stash when nothing could be stashed', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const sub = await makeCheckout(ws, 'sub-source');
+  const app = await makeCheckout(ws, 'app', 'owned');
+  await git(app, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'sub');
+  await git(app, 'commit', '-q', '-m', 'submodule');
+  await git(app, 'branch', 'target');
+  await writeFile(path.join(app, 'README.md'), 'older user work\n');
+  await git(app, 'stash', 'push', '-q', '-m', 'unrelated user stash');
+  await writeFile(path.join(app, 'sub', 'dirty.txt'), 'untracked in submodule\n');
+  await writeInitiative(ws, 'owned', { ledger: openLedger([{ path: 'app', branch: 'owned' }]) });
+  await writeInitiative(ws, 'target', { ledger: openLedger([{ path: 'app', branch: 'target' }]) });
+
+  await switchCommand({ workspace, cwd: app }, 'target');
+  assert.match(await git(app, 'stash', 'list'), /unrelated user stash/);
+  assert.equal(await readFile(path.join(ws.root, '.worktrees', 'app', 'owned', 'README.md'), 'utf8'), '# app\n');
+});
+
+test('recovery restores in place when the switch stops before the canonical checkout moves', async (t) => {
+  const { ws, workspace } = await setup(t);
+  const app = await makeCheckout(ws, 'app', 'x-branch');
+  const yDir = path.join(ws.root, '.worktrees', 'app', 'y');
+  await git(app, 'worktree', 'add', '-q', '-b', 'y-branch', yDir);
+  await writeInitiative(ws, 'x', { ledger: openLedger([{ path: 'app', branch: 'x-branch' }]) });
+  await writeInitiative(ws, 'y', { ledger: openLedger([{ path: 'app', branch: 'y-branch' }]) });
+  await writeFile(path.join(app, 'README.md'), 'in progress\n');
+  await writeFile(path.join(app, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+
+  await assert.rejects(switchCommand({ workspace, cwd: app }, 'y', { force: true }), (error: { code: string; details: { stashes: Array<{ commit: string; recovery: string[] }> } }) => {
+    assert.equal(error.code, 'SWITCH_INCOMPLETE');
+    assert.deepEqual(error.details.stashes[0]!.recovery, [`git -C '${app}' stash apply --index ${error.details.stashes[0]!.commit}`]);
+    return true;
+  });
+  assert.equal(await git(app, 'branch', '--show-current'), 'x-branch');
 });
 
 test('a failed switch reports the saved stash and how to restore it', async (t) => {

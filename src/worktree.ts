@@ -13,6 +13,7 @@ import {
   initiativeName,
   listWorktrees,
   locateBranch,
+  pruneWorktrees,
   repositoryCheckout,
   standardWorktreePath,
   worktreeAddArgs,
@@ -139,13 +140,12 @@ export async function worktreeCommand(context: CommandContext, identifier: strin
     if (location.path !== null) return { ...base, path: location.path, kind: location.kind as CheckoutKind, created: false, branchOrigin: null };
 
     const target = standardWorktreePath(context.workspace, repositoryPath, entry.id);
-    if (await lstat(target).catch(() => null)) {
+    if (await lstat(target).catch(() => null) && !(await isIdleWorktree(canonical, target))) {
       throw new GrindError('USAGE', `${target} already exists but does not hold ${tracked.branch}; move or remove it first`, { path: target });
     }
     const source = await branchSource(canonical, tracked.branch);
-    await mkdir(path.dirname(target), { recursive: true });
-    await checkedGit(canonical, ...worktreeAddArgs(target, tracked.branch, source));
-    return { ...base, path: target, kind: 'grind', created: true, branchOrigin: source.origin };
+    const placed = await placeBranch(canonical, target, tracked.branch, source);
+    return { ...base, path: target, kind: 'grind', created: placed === 'created', branchOrigin: source.origin };
   });
 }
 
@@ -236,8 +236,8 @@ export interface SwitchResult {
   branch: string;
   switched: boolean;
   previous: { branch: string | null; initiative: string | null; path: string | null } | null;
-  /** Where the target branch was taken from. */
-  takenFrom: { path: string; kind: CheckoutKind; released: 'removed' | 'detached' } | null;
+  /** Where the target branch was taken from; that worktree is left in place with a detached HEAD. */
+  takenFrom: { path: string; kind: CheckoutKind; released: 'detached' } | null;
   branchOrigin: BranchSource['origin'] | null;
   recorded: boolean;
   warnings: string[];
@@ -259,8 +259,12 @@ async function uncommittedChanges(dir: string): Promise<string[]> {
 async function stashChanges(dir: string, label: string, branch: string, restoreIn: string): Promise<SavedStash | null> {
   if ((await uncommittedChanges(dir)).length === 0) return null;
   const excludes = (await nestedWorktrees(dir)).map((item) => `:(exclude,literal)${item}`);
+  const top = async () => (await git(['rev-parse', '--verify', '--quiet', 'refs/stash'], dir)).stdout.trim();
+  const before = await top();
   await checkedGit(dir, 'stash', 'push', '--include-untracked', '--message', label, '--', '.', ...excludes);
-  const commit = (await checkedGit(dir, 'rev-parse', 'refs/stash')).trim();
+  const commit = await top();
+  // Some status entries, such as a dirty submodule, cannot be stashed; then nothing was saved.
+  if (commit === before) return null;
   return { label, commit, branch, restoreIn };
 }
 
@@ -309,13 +313,37 @@ async function recentActivity(dir: string, windowMs: number): Promise<string[]> 
   return recent;
 }
 
+/** Whether `dir` is a clean, detached worktree of the repository that a branch can be checked out into. */
+async function isIdleWorktree(canonical: string, dir: string): Promise<boolean> {
+  const worktrees = await listWorktrees(canonical);
+  const index = worktrees.findIndex((item) => item.path === dir);
+  return index > 0 && worktrees[index]?.branch === null && (await uncommittedChanges(dir)).length === 0;
+}
+
+/** Checks `branch` out at `dir`, reusing an idle worktree left there or adding a new one. */
+async function placeBranch(canonical: string, dir: string, branch: string, source: BranchSource): Promise<'reused' | 'created'> {
+  if (await isIdleWorktree(canonical, dir)) {
+    await checkedGit(dir, ...checkoutArgs(branch, source));
+    return 'reused';
+  }
+  await pruneWorktrees(canonical);
+  await mkdir(path.dirname(dir), { recursive: true });
+  await checkedGit(canonical, ...worktreeAddArgs(dir, branch, source));
+  return 'created';
+}
+
+/** Commands that restore each stash, based on where its branch is checked out now. */
 async function recoveryDetails(canonical: string, stashes: readonly SavedStash[]) {
+  const worktrees = await listWorktrees(canonical);
   const details = [];
   for (const stash of stashes) {
-    const checkout = stash.restoreIn !== canonical && !(await pathExists(stash.restoreIn))
-      ? `git -C '${canonical}' worktree add '${stash.restoreIn}' ${stash.branch}`
-      : `git -C '${stash.restoreIn}' switch ${stash.branch}`;
-    details.push({ ...stash, recovery: [checkout, `git -C '${stash.restoreIn}' stash apply --index ${stash.commit}`] });
+    const holder = worktrees.find((item) => item.branch === stash.branch);
+    const apply = (dir: string) => `git -C '${dir}' stash apply --index ${stash.commit}`;
+    let recovery: string[];
+    if (holder !== undefined) recovery = [apply(holder.path)];
+    else if (await isIdleWorktree(canonical, stash.restoreIn)) recovery = [`git -C '${stash.restoreIn}' checkout ${stash.branch}`, apply(stash.restoreIn)];
+    else recovery = [`git -C '${canonical}' worktree add '${stash.restoreIn}' ${stash.branch}`, apply(stash.restoreIn)];
+    details.push({ ...stash, recovery });
   }
   return details;
 }
@@ -364,8 +392,8 @@ export async function switchCommand(context: CommandContext, identifier: string,
         block(`${location.path} changed in the last few minutes (${recent.slice(0, 5).join(', ')}); an agent may still be working there. Force the switch to take it anyway`, { path: location.path, recent });
       }
     }
-    if (previousPath !== null && previousPath !== location.path && await lstat(previousPath).catch(() => null)) {
-      block(`${previousPath} already exists; move or remove it so ${current} can move there`, { path: previousPath });
+    if (previousPath !== null && previousPath !== location.path && await lstat(previousPath).catch(() => null) && !(await isIdleWorktree(canonical, previousPath))) {
+      block(`${previousPath} already exists and is not an idle worktree of this repository; move or remove it so ${current} can move there`, { path: previousPath });
     }
 
     if (tracked.unrecorded) await recordRepository(tracked);
@@ -380,15 +408,11 @@ export async function switchCommand(context: CommandContext, identifier: string,
       if (location.path !== null) {
         const saved = await stashChanges(location.path, `grind switch: ${entry.id} (${branch})`, branch, canonical);
         if (saved) pending.push(saved);
-        if (location.kind === 'grind') {
-          await checkedGit(canonical, 'worktree', 'remove', location.path);
-          takenFrom = { path: location.path, kind: 'grind', released: 'removed' };
-        } else {
-          await checkedGit(location.path, 'checkout', '--detach');
-          takenFrom = { path: location.path, kind: location.kind as CheckoutKind, released: 'detached' };
-        }
+        await checkedGit(location.path, 'checkout', '--detach');
+        takenFrom = { path: location.path, kind: location.kind as CheckoutKind, released: 'detached' };
         await checkedGit(canonical, 'checkout', branch);
       } else {
+        await pruneWorktrees(canonical);
         const source = await branchSource(canonical, branch);
         await checkedGit(canonical, ...checkoutArgs(branch, source));
         branchOrigin = source.origin;
@@ -399,10 +423,9 @@ export async function switchCommand(context: CommandContext, identifier: string,
         pending.splice(pending.indexOf(incoming), 1);
       }
       if (previousPath !== null && current !== null) {
-        await mkdir(path.dirname(previousPath), { recursive: true });
-        await checkedGit(canonical, 'worktree', 'add', previousPath, current);
+        const placed = await placeBranch(canonical, previousPath, current, { origin: 'local', base: null, track: false });
         warnings.push(...blockedLinkWarnings(await ensureInstructionLinks(context.workspace, canonical)));
-        warnings.push(`Ignored files such as dependencies, build output, and .env stayed in ${canonical}; ${previousPath} needs its own`);
+        if (placed === 'created') warnings.push(`Ignored files such as dependencies, build output, and .env stayed in ${canonical}; ${previousPath} needs its own`);
         const outgoing = pending.find((stash) => stash.restoreIn === previousPath);
         if (outgoing) {
           await restoreStash(previousPath, outgoing);

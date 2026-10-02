@@ -14,6 +14,7 @@ export interface WorktreeEntry {
   branch: string | null;
   head: string | null;
   bare: boolean;
+  prunable: boolean;
 }
 
 export type CheckoutKind = 'canonical' | 'grind' | 'app' | 'other';
@@ -34,7 +35,10 @@ export interface RepositoryCheckout {
   branch: string | null;
 }
 
-/** Worktrees of the repository at `dir`; the first entry is the main worktree. */
+/**
+ * Worktrees of the repository at `dir`; the first entry is the main worktree. Registrations
+ * whose directory is gone are left out.
+ */
 export async function listWorktrees(dir: string): Promise<WorktreeEntry[]> {
   const result = await git(['worktree', 'list', '--porcelain'], dir);
   if (!result.ok) throw new GrindError('GIT_ERROR', result.stderr.trim() || `Cannot list worktrees of ${dir}`);
@@ -42,14 +46,15 @@ export async function listWorktrees(dir: string): Promise<WorktreeEntry[]> {
   let current: WorktreeEntry | null = null;
   for (const line of result.stdout.split('\n')) {
     if (line.startsWith('worktree ')) {
-      current = { path: line.slice('worktree '.length), branch: null, head: null, bare: false };
+      current = { path: line.slice('worktree '.length), branch: null, head: null, bare: false, prunable: false };
       entries.push(current);
     } else if (current !== null && line.startsWith('branch refs/heads/')) current.branch = line.slice('branch refs/heads/'.length);
     else if (current !== null && line.startsWith('HEAD ')) current.head = line.slice('HEAD '.length);
     else if (current !== null && line === 'bare') current.bare = true;
+    else if (current !== null && (line === 'prunable' || line.startsWith('prunable '))) current.prunable = true;
   }
   for (const entry of entries) entry.path = await realpath(entry.path).catch(() => path.resolve(entry.path));
-  return entries;
+  return entries.filter((entry, index) => index === 0 || !entry.prunable);
 }
 
 /** The repository containing `dir`, identified by its canonical checkout inside the workspace. */
@@ -64,6 +69,11 @@ export async function repositoryCheckout(workspace: Workspace, dir: string): Pro
   if (await findNestedWorkspaceConfig(workspace.root, main.path)) return null;
   const current = worktrees.find((entry) => entry.path === root);
   return { root, canonical: main.path, repositoryPath: toPosix(relative), branch: current?.branch ?? null };
+}
+
+/** Removes registrations of worktrees whose directory is gone, so their branches can be checked out again. */
+export async function pruneWorktrees(dir: string): Promise<void> {
+  await git(['worktree', 'prune'], dir);
 }
 
 export function worktreesRoot(workspace: Workspace): string {

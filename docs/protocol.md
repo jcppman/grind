@@ -99,11 +99,11 @@ workspace root and the canonical checkout into the matching folder under
 leaves correct links alone and reports, rather than replaces, a file in the way.
 
 `grind switch <init>` is the user's command for bringing an init into the canonical
-checkout. It saves the current work in a labelled stash and recreates it at its
-owning init's standard worktree; it takes the target branch from its worktree
-after stashing that worktree's changes. Grind worktrees are removed and
-recreated at the same path; app-managed worktrees are detached and left in place.
-Ignored files do not move. Switch refuses an in-progress Git operation, uncommitted
+checkout. It saves the current work in a labelled stash and moves it to its owning
+init's standard worktree; it takes the target branch from its worktree after
+stashing that worktree's changes. The worktree it takes a branch from is detached and
+left in place with its ignored files, such as `.env` and dependencies, and is
+reused when the work moves back. Ignored files in the canonical checkout do not move. Switch refuses an in-progress Git operation, uncommitted
 changes on a branch no init owns, a process working inside the target worktree, and,
 without `--force`, a worktree changed in the last few minutes. On failure it
 reports each remaining stash and how to restore it. Agents run switch only when the

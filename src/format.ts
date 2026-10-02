@@ -216,7 +216,7 @@ export function formatWorktree(result: WorktreeResult): string {
 export function formatSwitch(result: SwitchResult): string {
   if (!result.switched) return `${result.initiative} is already in the foreground at ${result.canonical}.`;
   const lines = [`${result.initiative} (${result.branch}) is now in the foreground at ${result.canonical}.`];
-  if (result.takenFrom) lines.push(`Taken from ${result.takenFrom.path} (${result.takenFrom.released}).`);
+  if (result.takenFrom) lines.push(`Taken from ${result.takenFrom.path}, which is left in place with a detached HEAD.`);
   const previous = result.previous;
   if (previous?.path) lines.push(`${previous.initiative} (${previous.branch}) moved to the background at ${previous.path}.`);
   else if (previous?.branch) lines.push(`${previous.branch} is no longer checked out; no init owns it alone, so no worktree was created.`);
