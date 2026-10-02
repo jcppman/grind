@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { dashboardData, directoryCommand, serveDashboard } from './dashboard.ts';
 import { closedLedger, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
+import { switchCommand } from './worktree.ts';
 
 const exec = promisify(execFile);
 
@@ -34,9 +35,10 @@ test('dashboard preserves recorded status and shows every checkout, archive, and
   const app = await makeCheckout(ws, 'app');
   const worktree = path.join(ws.root, 'linked');
   await git(app, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+  const lib = await makeCheckout(ws, 'lib');
   const dir = await writeInitiative(ws, 'active', { ledger: openLedger([
-    { path: 'app', branch: 'different' },
-    { path: 'linked-repo', branch: 'feature', checkout: 'linked' },
+    { path: 'app', branch: 'feature' },
+    { path: 'lib', branch: 'idle' },
     { path: 'missing', branch: 'main' },
   ]) });
   await writeInitiative(ws, 'empty');
@@ -50,11 +52,14 @@ test('dashboard preserves recorded status and shows every checkout, archive, and
   const active = data.initiatives.find(i => i.id === 'active')!;
   assert.equal(active.status, 'open');
   assert.equal(active.repositories.length, 3);
-  assert.equal(active.repositories[0]?.onRecordedBranch, false);
-  assert.equal(active.repositories[1]?.directory, worktree);
-  assert.equal(active.repositories[1]?.command, directoryCommand(worktree));
-  assert.equal(active.repositories[2]?.command, null);
-  assert.ok(active.diagnostics.some(d => d.code === 'BRANCH_MISMATCH'));
+  assert.equal(active.repositories[0]?.directory, worktree);
+  assert.equal(active.repositories[0]?.command, directoryCommand(worktree));
+  assert.equal(active.repositories[0]?.location, 'other');
+  assert.equal(active.repositories[1]?.directory, lib);
+  assert.equal(active.repositories[1]?.location, null);
+  assert.equal(active.repositories[1]?.command, null);
+  assert.equal(active.repositories[2]?.available, false);
+  assert.ok(active.diagnostics.some(d => d.code === 'CHECKOUT_MISSING'));
   assert.equal(data.initiatives.find(i => i.id === 'empty')?.repositories.length, 0);
   assert.equal(data.initiatives.find(i => i.id === 'closed')?.status, 'closed');
   assert.equal(data.initiatives.find(i => i.id === '_archive/old')?.archived, true);
@@ -124,4 +129,39 @@ test('editor requests resolve init folders and reject untrusted requests and unk
   const failure = await send({ id: '_archive/old', editor: 'webstorm' });
   assert.equal(failure.status, 500);
   assert.deepEqual(await failure.json(), { error: 'Editor unavailable' });
+});
+
+test('switch requests bring an open init to the foreground and report refusals', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const app = await makeCheckout(ws, 'app', 'mine');
+  await git(app, 'branch', 'feature');
+  await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+  await writeInitiative(ws, 'done', { ledger: closedLedger([{ path: 'app', branch: 'feature' }]) });
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const forced: boolean[] = [];
+  const dashboard = await serveDashboard(workspace, async () => {}, async (context, id, options) => {
+    forced.push(options?.force ?? false);
+    return switchCommand(context, id, options);
+  });
+  t.after(dashboard.close);
+  const headers = { Origin: new URL(dashboard.url).origin, 'Content-Type': 'application/json' };
+  const send = (body: unknown, requestHeaders = headers) => fetch(dashboard.url + 'switch', {
+    method: 'POST', headers: requestHeaders, body: JSON.stringify(body),
+  });
+
+  assert.equal((await send({ id: 'work', repository: 'app' }, { ...headers, Origin: 'https://example.com' })).status, 403);
+  assert.equal((await send({ id: 'done', repository: 'app' })).status, 404);
+  assert.equal((await send({ id: 'work', repository: 'other' })).status, 404);
+  assert.equal((await send({ id: 'work', repository: 'app', force: 'yes' })).status, 400);
+  await writeFile(path.join(app, 'README.md'), 'unowned edit\n');
+  const refused = await send({ id: 'work', repository: 'app' });
+  assert.equal(refused.status, 409);
+  assert.deepEqual(Object.keys(await refused.json() as object).sort(), ['canForce', 'code', 'error']);
+  await git(app, 'checkout', '--', 'README.md');
+  const switched = await send({ id: 'work', repository: './app/', force: true });
+  assert.equal(switched.status, 200);
+  assert.match((await switched.json() as { message: string }).message, /work \(feature\) is now in the foreground/);
+  assert.equal(await git(app, 'branch', '--show-current'), 'feature');
+  assert.deepEqual(forced, [false, true]);
 });

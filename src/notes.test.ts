@@ -2,184 +2,75 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { appendSidecarNotes, listParkedNoteBatches, parkCheckoutNotes, parkNotesInLedger, restoreCheckoutNotes, restoreNotesFromLedger, splitSidecarNotes } from './notes.ts';
-import { newStartOperation, readPendingOperations, writeOperation } from './operations.ts';
-import { parseSidecar, renderSidecar } from './sidecar.ts';
-import { makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar } from './test-helpers.ts';
+import { readInitiative } from './artifacts.ts';
+import { addNote, listNotes, readNotes, resolveNote } from './notes.ts';
+import { git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
 
-const notes = `## @src/a.ts#2-3
-> second
-
-First note.
-
-## @src/a.ts#2-3
-> second
-
-First note.`;
-
-test('sidecar note payloads survive exact extraction and restoration', () => {
-  const raw = `---
-initiative: app/one
-custom: keep
----
-
-${notes}`;
-  const split = splitSidecarNotes(raw);
-  assert.equal(split.payload, notes);
-  const without = parseSidecar(split.withoutNotes, '.grind.md');
-  assert.equal(without.initiative, 'app/one');
-  assert.equal(without.notes.length, 0);
-  assert.match(split.withoutNotes, /custom: keep/);
-
-  const restored = appendSidecarNotes(renderSidecar(split.withoutNotes, 'app/two'), 'app/two', split.payload);
-  const parsed = parseSidecar(restored, '.grind.md');
-  assert.equal(parsed.initiative, 'app/two');
-  assert.equal(parsed.notes.length, 2);
-  assert.equal(splitSidecarNotes(restored).payload, notes);
-});
-
-test('ledger parking is idempotent and restores exact bytes once', () => {
-  const ledger = `---
-type: Initiative Ledger
-custom: keep
----
-
-# Ledger
-
-Unrelated text.
-`;
-  const parked = parkNotesInLedger(ledger, 'app', 'op-1', notes);
-  assert.equal(parkNotesInLedger(parked, 'app', 'op-1', notes), parked);
-  assert.match(parked, /custom: keep/);
-  assert.match(parked, /Unrelated text/);
-
-  const restored = restoreNotesFromLedger(parked, 'op-1');
-  assert.equal(restored.payload, notes);
-  assert.match(restored.ledger, /custom: keep/);
-  assert.match(restored.ledger, /Unrelated text/);
-  assert.deepEqual(restoreNotesFromLedger(restored.ledger, 'op-1'), { ledger: restored.ledger, payload: '' });
-});
-
-test('different operation ids preserve identical user-authored notes as distinct batches', () => {
-  const ledger = '# Ledger\n';
-  const first = parkNotesInLedger(ledger, 'app', 'op-1', notes);
-  const second = parkNotesInLedger(first, 'app', 'op-2', notes);
-  const restoredFirst = restoreNotesFromLedger(second, 'op-1');
-  const restoredSecond = restoreNotesFromLedger(restoredFirst.ledger, 'op-2');
-  assert.equal(restoredFirst.payload, notes);
-  assert.equal(restoredSecond.payload, notes);
-});
-
-test('parking writes journal, ledger destination, and sidecar source in recoverable order', async (t) => {
+test('notes go to the init owning the file branch, in any checkout, with repository-qualified references', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
-  const initiative = await writeInitiative(ws, 'app/source', { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
-  const app = await makeCheckout(ws, 'app');
-  await writeFile(path.join(app, 'src.ts'), 'first\nsecond\n');
-  await writeSidecar(app, 'app/source', `${notes}\n`);
+  const app = await makeCheckout(ws, 'audio/app', 'main');
+  const worktree = path.join(ws.root, '.worktrees', 'audio', 'app', 'nav');
+  await git(app, 'worktree', 'add', '-q', '-b', 'nav', worktree);
+  await writeFile(path.join(worktree, 'nav.ts'), 'one\ntwo\nthree\n');
+  const dir = await writeInitiative(ws, 'audio/nav', { ledger: openLedger([{ path: 'audio/app', branch: 'nav' }]) });
   const workspace = await loadWorkspace({ cwd: ws.root });
-  const operation = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', sourceInitiative: 'app/source' },
+  const context = { workspace, cwd: worktree };
+
+  const first = await addNote(context, { file: 'nav.ts', start: 2, end: 3, comment: 'Rename this' });
+  assert.deepEqual([first.id, first.initiative, first.reference], ['n1', 'audio/nav', '@audio/app:nav.ts#2-3']);
+  const second = await addNote({ workspace, cwd: ws.root }, { file: path.join(worktree, 'nav.ts'), start: 1, end: 1, comment: 'Multi\nline\n\nbody' });
+  assert.equal(second.id, 'n2');
+  assert.equal(await readFile(path.join(dir, 'notes.md'), 'utf8'), [
+    '---', 'type: Review Notes', '---', '', '# Review notes', '',
+    '## n1 @audio/app:nav.ts#2-3', '> two', '', 'Rename this', '',
+    '## n2 @audio/app:nav.ts#1', '> one', '', 'Multi', 'line', '', 'body', '',
+  ].join('\n'));
+  assert.deepEqual((await readInitiative(dir)).diagnostics, []);
+
+  const listed = await listNotes({ workspace, cwd: ws.root }, 'nav');
+  assert.deepEqual(listed.notes.map((note) => [note.id, note.repository, note.path, note.start, note.end, note.anchor, note.body, note.file]), [
+    ['n1', 'audio/app', 'nav.ts', 2, 3, 'two', 'Rename this', path.join(worktree, 'nav.ts')],
+    ['n2', 'audio/app', 'nav.ts', 1, 1, 'one', 'Multi\nline\n\nbody', path.join(worktree, 'nav.ts')],
   ]);
-  await writeOperation(workspace, operation);
 
-  const completed = await parkCheckoutNotes(workspace, operation, 0, path.join(initiative, 'ledger.md'));
-
-  assert.equal(completed.checkouts[0]?.noteState, 'removed');
-  assert.equal(completed.checkouts[0]?.notePayload, `${notes}\n`);
-  assert.equal((await readPendingOperations(workspace))[0]?.checkouts[0]?.noteState, 'removed');
-  assert.equal(parseSidecar(await readFile(path.join(app, '.grind.md'), 'utf8'), '.grind.md').notes.length, 0);
-  const restored = restoreNotesFromLedger(await readFile(path.join(initiative, 'ledger.md'), 'utf8'), `${operation.id}.0`);
-  assert.equal(restored.payload, `${notes}\n`);
+  await resolveNote(context, 'n1');
+  assert.deepEqual((await readNotes(dir)).map((note) => note.id), ['n2']);
+  assert.equal((await addNote(context, { file: 'nav.ts', start: 1, end: 1, comment: 'Again' })).id, 'n3');
+  await assert.rejects(resolveNote(context, 'n1'), { code: 'NOTE_INVALID' });
 });
 
-test('parking resumes after ledger write or sidecar removal without duplicating notes', async (t) => {
+test('notes on unowned branches need an explicit init, and invalid input changes nothing', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
-  const initiative = await writeInitiative(ws, 'app/source', { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
-  const app = await makeCheckout(ws, 'app');
-  await writeSidecar(app, 'app/source', `${notes}\n`);
+  const app = await makeCheckout(ws, 'app', 'loose');
+  const dir = await writeInitiative(ws, 'target', { ledger: openLedger() });
+  await writeInitiative(ws, 'other', { ledger: openLedger() });
   const workspace = await loadWorkspace({ cwd: ws.root });
-  const base = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', notePayload: `${notes}\n`, noteState: 'captured' },
-  ]);
-  const ledgerPath = path.join(initiative, 'ledger.md');
-  const ledger = await readFile(ledgerPath, 'utf8');
-  await writeFile(ledgerPath, parkNotesInLedger(ledger, 'app', `${base.id}.0`, `${notes}\n`));
+  const context = { workspace, cwd: app };
 
-  const afterLedgerCrash = await parkCheckoutNotes(workspace, base, 0, ledgerPath);
-  assert.equal(afterLedgerCrash.checkouts[0]?.noteState, 'removed');
-  assert.equal((await readFile(ledgerPath, 'utf8').then((raw) => raw.match(new RegExp(`<!-- grind-note-batch:${base.id}\\.0 -->`, 'g'))?.length)), 1);
+  await assert.rejects(addNote(context, { file: 'README.md', start: 1, end: 1, comment: 'x' }), { code: 'INITIATIVE_UNRESOLVED' });
+  await assert.rejects(addNote(context, { file: 'README.md', start: 1, end: 2, comment: 'x', initiative: 'target' }), { code: 'NOTE_INVALID' });
+  await assert.rejects(addNote(context, { file: 'README.md', start: 1, end: 1, comment: 'ok\n## n9 @app:README.md#1', initiative: 'target' }), { code: 'NOTE_INVALID' });
+  await assert.rejects(addNote(context, { file: 'README.md', start: 1, end: 1, comment: '   ', initiative: 'target' }), { code: 'NOTE_INVALID' });
+  await assert.rejects(addNote(context, { file: 'missing.md', start: 1, end: 1, comment: 'x', initiative: 'target' }), { code: 'NOTE_INVALID' });
+  assert.deepEqual(await readNotes(dir), []);
 
-  const second = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', notePayload: `${notes}\n`, noteState: 'parked' },
-  ]);
-  await writeFile(ledgerPath, parkNotesInLedger(await readFile(ledgerPath, 'utf8'), 'app', `${second.id}.0`, `${notes}\n`));
-  const afterSidecarCrash = await parkCheckoutNotes(workspace, second, 0, ledgerPath);
-  assert.equal(afterSidecarCrash.checkouts[0]?.noteState, 'removed');
+  const added = await addNote(context, { file: 'README.md', start: 1, end: 1, comment: '### Sub-heading is fine\nx', initiative: 'targ' });
+  assert.equal(added.initiative, 'target');
+  assert.equal((await readNotes(dir))[0]?.body, '### Sub-heading is fine\nx');
 });
 
-test('restoration copies each parked batch once and removes ledger batches and temporary identities', async (t) => {
+test('notes after other sections and with hand edits are parsed by their headings', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
-  const target = await writeInitiative(ws, 'app/target', { ledger: openLedger([{ path: 'app', branch: 'target' }]) });
-  const app = await makeCheckout(ws, 'app', 'target');
-  await writeSidecar(app, 'app/target');
-  const ledgerPath = path.join(target, 'ledger.md');
-  let ledger = await readFile(ledgerPath, 'utf8');
-  ledger = parkNotesInLedger(ledger, 'app', 'old-1', `${notes}\n`);
-  ledger = parkNotesInLedger(ledger, 'other', 'other-1', '## @other.ts#1\n> x\n\nother\n');
-  ledger = parkNotesInLedger(ledger, 'app', 'old-2', `${notes}\n`);
-  await writeFile(ledgerPath, ledger);
-  assert.deepEqual(listParkedNoteBatches(ledger, 'app').map((batch) => batch.operationId), ['old-1', 'old-2']);
+  const dir = await writeInitiative(ws, 'work', {
+    files: { 'notes.md': '---\ntype: Review Notes\n---\n\n# Review notes\n\nPreamble.\n\n## n4 @app:src/a b.ts#7\nNo anchor here.\n\n## Agent remarks\nNot a note.\n' },
+  });
+  const notes = await readNotes(dir);
+  assert.deepEqual(notes.map((note) => [note.id, note.path, note.start, note.anchor, note.body]), [['n4', 'src/a b.ts', 7, null, 'No anchor here.']]);
   const workspace = await loadWorkspace({ cwd: ws.root });
-  const operation = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target' },
-  ]);
-
-  const completed = await restoreCheckoutNotes(workspace, operation, 0, ledgerPath, 'app/target');
-
-  assert.equal(completed.checkouts[0]?.restoreState, 'complete');
-  const sidecarRaw = await readFile(path.join(app, '.grind.md'), 'utf8');
-  assert.equal(parseSidecar(sidecarRaw, '.grind.md').notes.length, 4);
-  assert.doesNotMatch(sidecarRaw, /grind_note_batches/);
-  const finalLedger = await readFile(ledgerPath, 'utf8');
-  assert.doesNotMatch(finalLedger, /old-1|old-2/);
-  assert.match(finalLedger, /other-1/);
-});
-
-test('restoration resumes after destination copy and ledger removal without duplicate notes', async (t) => {
-  const ws = await makeTempWorkspace();
-  t.after(ws.cleanup);
-  const target = await writeInitiative(ws, 'app/target', { ledger: openLedger([{ path: 'app', branch: 'target' }]) });
-  const app = await makeCheckout(ws, 'app', 'target');
-  const ledgerPath = path.join(target, 'ledger.md');
-  const batch = { operationId: 'old-1', payload: `${notes}\n` };
-  await writeFile(ledgerPath, parkNotesInLedger(await readFile(ledgerPath, 'utf8'), 'app', batch.operationId, batch.payload));
-  const copiedSidecar = renderSidecar(appendSidecarNotes('', 'app/target', batch.payload), 'app/target', undefined, [batch.operationId]);
-  await writeFile(path.join(app, '.grind.md'), copiedSidecar);
-  const workspace = await loadWorkspace({ cwd: ws.root });
-  const copied = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', restoreBatches: [batch], restoreState: 'captured' },
-  ]);
-
-  const afterCopyCrash = await restoreCheckoutNotes(workspace, copied, 0, ledgerPath, 'app/target');
-  assert.equal(parseSidecar(await readFile(path.join(app, '.grind.md'), 'utf8'), '.grind.md').notes.length, 2);
-  assert.equal(afterCopyCrash.checkouts[0]?.restoreState, 'complete');
-
-  const secondBatch = { operationId: 'old-2', payload: `${notes}\n` };
-  const sidecarWithSecond = renderSidecar(
-    appendSidecarNotes(await readFile(path.join(app, '.grind.md'), 'utf8'), 'app/target', secondBatch.payload),
-    'app/target',
-    undefined,
-    [secondBatch.operationId],
-  );
-  await writeFile(path.join(app, '.grind.md'), sidecarWithSecond);
-  const removed = newStartOperation('app/target', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'target', restoreBatches: [secondBatch], restoreState: 'copied' },
-  ]);
-  const afterLedgerCrash = await restoreCheckoutNotes(workspace, removed, 0, ledgerPath, 'app/target');
-  assert.equal(afterLedgerCrash.checkouts[0]?.restoreState, 'complete');
-  assert.equal(parseSidecar(await readFile(path.join(app, '.grind.md'), 'utf8'), '.grind.md').notes.length, 4);
+  await resolveNote({ workspace, cwd: ws.root }, 'n4', 'work');
+  assert.equal(await readFile(path.join(dir, 'notes.md'), 'utf8'), '---\ntype: Review Notes\n---\n\n# Review notes\n\nPreamble.\n\n## Agent remarks\nNot a note.\n');
 });

@@ -18,8 +18,9 @@ upward to the nearest enclosing workspace boundary.
 
 ## Status
 
-Milestone 2 provides recoverable branch switching and note transfer, closure and
-reopening, retention archival, `agent-note`, and scoped checkpoint saves. The matching
+Grind provides per-init worktrees, foreground switching of the canonical checkout,
+review notes kept with each init, closure, retention archival, and scoped
+checkpoint saves. The matching
 compiled CLI and shared context/create/start/save/close/housekeeping skills run in Codex and
 Claude Code from the same relocatable package.
 
@@ -31,10 +32,18 @@ setup, terminal use, and opt-in session hooks.
 loading; it is disabled by default. Oversized contexts produce only an association
 notice and a command to load the full context if needed.
 
-The initiative argument is optional for context and start. From an initiative folder
-or associated checkout, Grind resolves it automatically. Elsewhere, invoke
-`/grind:context` or `/grind:start` without an argument to choose from the initiatives
-in the current workspace.
+Say "let's work on init X" or run `/grind:start X`: the agent loads the init's
+context and works in its worktree at `.worktrees/<repository>/<init>`, leaving your
+canonical checkout alone. From an initiative folder or a checkout of one of its
+branches, Grind resolves the init automatically; elsewhere, invoke `/grind:context`
+or `/grind:start` without an argument to choose one.
+
+To take over an agent's work yourself, run `grind switch <init>` in the canonical
+checkout. It moves your current work to its init's worktree and brings the target
+branch to the foreground, keeping staged, unstaged, and untracked changes. Inside a
+repository, `grind status` names the init owning the current branch and where the
+repository's other inits live. Review notes from `grind note add` go to the init
+owning the file's branch and are committed with it.
 
 ## Dashboard
 

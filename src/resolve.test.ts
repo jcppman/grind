@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { resolveInitiative } from './resolve.ts';
-import { closedLedger, git, makeCheckout, makeSymlink, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, type TempWorkspace } from './test-helpers.ts';
+import { closedLedger, git, makeCheckout, makeSymlink, makeTempWorkspace, openLedger, writeInitiative, type TempWorkspace } from './test-helpers.ts';
 import { loadWorkspace, type Workspace } from './workspace.ts';
 
 async function setup(t: { after: (fn: () => Promise<void>) => void }): Promise<{ ws: TempWorkspace; workspace: Workspace }> {
@@ -14,13 +14,21 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }): Promise<{
   return { ws, workspace: await loadWorkspace({ cwd: ws.root }) };
 }
 
-test('explicit identifier is an exact path relative to initiatives/', async (t) => {
+test('explicit identifier is a path relative to initiatives/ or a unique fragment of one', async (t) => {
   const { ws, workspace } = await setup(t);
+  await writeInitiative(ws, 'web/feature-two');
+  await writeInitiative(ws, '_archive/app/retired');
   const result = await resolveInitiative({ workspace, cwd: ws.root, identifier: 'app/feature' });
   assert.equal(result.source, 'argument');
   assert.equal(result.initiative.id, 'app/feature');
-  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'feature' }), { code: 'INITIATIVE_NOT_FOUND' });
-  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app' }), { code: 'INITIATIVE_NOT_FOUND' });
+  assert.equal((await resolveInitiative({ workspace, cwd: ws.root, identifier: 'feature' })).initiative.id, 'app/feature');
+  assert.equal((await resolveInitiative({ workspace, cwd: ws.root, identifier: 'two' })).initiative.id, 'web/feature-two');
+  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'app' }), (error: { code: string; details: { candidates: string[] } }) => {
+    assert.equal(error.code, 'INITIATIVE_AMBIGUOUS');
+    assert.deepEqual(error.details.candidates, ['app/feature', 'app/other']);
+    return true;
+  });
+  await assert.rejects(resolveInitiative({ workspace, cwd: ws.root, identifier: 'retired' }), { code: 'INITIATIVE_NOT_FOUND' });
 });
 
 test('identifiers that traverse or escape are rejected', async (t) => {
@@ -44,30 +52,20 @@ test('enclosing folder resolves from nested document directories', async (t) => 
   await assert.rejects(resolveInitiative({ workspace, cwd: path.join(ws.initiativesDir, 'app') }), { code: 'INITIATIVE_UNRESOLVED' });
 });
 
-test('verified sidecar pointer selects the initiative', async (t) => {
+test('a linked worktree resolves through its canonical repository', async (t) => {
   const { ws, workspace } = await setup(t);
-  const checkout = await makeCheckout(ws, 'app', 'feature');
-  await writeSidecar(checkout, 'app/feature', '## @README.md#1\n\nnote\n');
-  const result = await resolveInitiative({ workspace, cwd: path.join(checkout) });
-  assert.equal(result.source, 'sidecar');
+  const checkout = await makeCheckout(ws, 'app', 'main');
+  const worktree = path.join(ws.root, '.worktrees', 'app', 'feature');
+  await git(checkout, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+  const result = await resolveInitiative({ workspace, cwd: path.join(worktree) });
+  assert.equal(result.source, 'branch');
   assert.equal(result.initiative.id, 'app/feature');
   assert.equal(result.checkout?.repositoryPath, 'app');
-  assert.equal(result.checkout?.sidecar?.notes.length, 1);
-  assert.equal(result.stalePointer, null);
+  assert.equal(result.checkout?.root, worktree);
+  assert.equal(result.checkout?.canonical, checkout);
 });
 
-test('stale pointer yields to the branch owner and is reported', async (t) => {
-  const { ws, workspace } = await setup(t);
-  const checkout = await makeCheckout(ws, 'app', 'other');
-  await writeSidecar(checkout, 'app/feature');
-  const result = await resolveInitiative({ workspace, cwd: checkout });
-  assert.equal(result.source, 'branch');
-  assert.equal(result.initiative.id, 'app/other');
-  assert.equal(result.stalePointer?.pointed, 'app/feature');
-  assert.ok(result.diagnostics.some((d) => d.code === 'STALE_POINTER'));
-});
-
-test('missing sidecar still resolves from a tracked branch', async (t) => {
+test('a tracked branch in the canonical checkout resolves', async (t) => {
   const { ws, workspace } = await setup(t);
   const checkout = await makeCheckout(ws, 'app', 'feature');
   const result = await resolveInitiative({ workspace, cwd: path.join(checkout) });
@@ -110,11 +108,7 @@ test('a checkout inside a nested workspace is not claimed by the outer one', asy
   await makeCheckout(ws, 'nested/app', 'feature');
   const { writeFile } = await import('node:fs/promises');
   await writeFile(path.join(nestedRoot, 'grind-workspace.json'), '{"stateRepository":"./state"}');
-  await assert.rejects(resolveInitiative({ workspace, cwd: path.join(nestedRoot, 'app') }), (error: { code: string; details: { nestedWorkspace: string } }) => {
-    assert.equal(error.code, 'INITIATIVE_UNRESOLVED');
-    assert.equal(error.details.nestedWorkspace, nestedRoot);
-    return true;
-  });
+  await assert.rejects(resolveInitiative({ workspace, cwd: path.join(nestedRoot, 'app') }), { code: 'INITIATIVE_UNRESOLVED' });
 });
 
 test('supporting intent resolves to its initiative and is not an explicit initiative', async (t) => {

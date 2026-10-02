@@ -2,8 +2,6 @@ import path from 'node:path';
 import { contextCommand, formatContext, type ContextResult } from './context.ts';
 import { GrindError } from './errors.ts';
 import { isRecord } from './frontmatter.ts';
-import { gitToplevel } from './git.ts';
-import { readSidecar } from './sidecar.ts';
 import { findWorkspaceConfig, loadWorkspace, readWorkspaceSettings } from './workspace.ts';
 
 export const HOOK_CONTEXT_BYTES = 6000;
@@ -28,7 +26,7 @@ function boundedNotice(notice: string, budget = HOOK_CONTEXT_BYTES): string {
 
 export function presentHookContext(result: ContextResult, pluginRoot: string, budget = HOOK_CONTEXT_BYTES): string {
   const recovery = command(pluginRoot, result.workspace, result.id);
-  if (!result.complete || result.resolution.stalePointer) {
+  if (!result.complete) {
     return boundedNotice(`${ASSOCIATION_RULE}\nGrind context needs attention (${result.diagnostics.length} diagnostic(s), ${result.diagnostics[0]?.code ?? 'incomplete'}); full context has not been loaded. Run ${recovery} to inspect and resolve the diagnostics before working on this init.`, budget);
   }
   const full = `${ASSOCIATION_RULE}\n\n${formatContext(result)}`;
@@ -51,12 +49,7 @@ export async function sessionContext(input: unknown, pluginRoot: string): Promis
     const result = await contextCommand({ workspace: await loadWorkspace({ cwd }), cwd });
     return presentHookContext(result, pluginRoot);
   } catch (error) {
-    if (error instanceof GrindError && error.code === 'INITIATIVE_UNRESOLVED' &&
-        !(isRecord(error.details) && error.details['stalePointer'])) {
-      const root = isRecord(input) && typeof input['cwd'] === 'string' ? await gitToplevel(input['cwd']) : null;
-      const sidecar = root ? await readSidecar(root) : null;
-      if (!sidecar?.initiative && !sidecar?.diagnostics.length) return null;
-    }
+    if (error instanceof GrindError && error.code === 'INITIATIVE_UNRESOLVED') return null;
     const code = error instanceof GrindError ? error.code : 'CONTEXT_HOOK_FAILED';
     const message = error instanceof Error ? error.message : String(error);
     const detail = Buffer.byteLength(message, 'utf8') <= 1000 ? `: ${message}` : '; details exceed the notice budget';

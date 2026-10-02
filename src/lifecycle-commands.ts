@@ -5,7 +5,7 @@ import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
 import { git } from './git.ts';
 import { inspectInitiative, type InitiativeInspection } from './inspect.ts';
-import { parkCheckoutNotes } from './notes.ts';
+import { readNotes } from './notes.ts';
 import {
   deleteOperation,
   newLifecycleOperation,
@@ -14,13 +14,11 @@ import {
   withLifecycleLocks,
   writeOperation,
   atomicWriteFile,
-  type OperationCheckout,
   type OperationRecord,
 } from './operations.ts';
 import { toPosix } from './paths.ts';
-import { resolveInitiative } from './resolve.ts';
-import { resolveIdentifier } from './resolve.ts';
-import { closeLedger, reopenLedger, type CloseInput } from './transitions.ts';
+import { resolveIdentifier, resolveInitiative } from './resolve.ts';
+import { closeLedger, type CloseInput } from './transitions.ts';
 import { checkedGit, validateForWrite } from './writes.ts';
 import type { Workspace } from './workspace.ts';
 
@@ -35,11 +33,6 @@ export interface ArchiveEligibility {
   eligible: boolean;
   closedDays: number | null;
   blockers: string[];
-}
-
-export async function assertReopenable(inspection: InitiativeInspection): Promise<void> {
-  if (inspection.state?.status !== 'closed') return;
-  reopenLedger(await readFile(ledgerPath(inspection), 'utf8'), new Date().toISOString());
 }
 
 function ledgerPath(inspection: InitiativeInspection): string {
@@ -73,19 +66,6 @@ async function assertInitialIndexClean(workspace: Workspace): Promise<void> {
   }
 }
 
-function operationCheckouts(inspection: InitiativeInspection): OperationCheckout[] {
-  return inspection.repositories.filter((repository) =>
-    repository.onRecordedBranch &&
-    (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id),
-  ).map((repository) => ({
-    repository: repository.recorded.path,
-    checkout: repository.observed.path,
-    sourceBranch: repository.recorded.branch,
-    targetBranch: repository.recorded.branch,
-    sourceInitiative: inspection.id,
-  }));
-}
-
 export async function closeCommand(context: CommandContext, identifier: string | undefined, options: CloseOptions) {
   if (!options.result.trim()) throw new GrindError('USAGE', 'close requires a nonempty --result');
   const pending = await readPendingOperations(context.workspace);
@@ -102,17 +82,13 @@ export async function closeCommand(context: CommandContext, identifier: string |
   const invalid = inspection.diagnostics.filter((item) => item.severity === 'error');
   if (invalid.length > 0) throw new GrindError('ARTIFACT_INVALID', 'Repair initiative and repository records before closing', { diagnostics: invalid });
   await assertInitialIndexClean(context.workspace);
-  const pendingNotes = inspection.repositories.reduce((sum, repository) =>
-    sum + (repository.onRecordedBranch && (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id)
-      ? repository.observed.sidecar?.pendingNotes ?? 0
-      : 0), 0);
-  const parkedNotes = (await readFile(ledgerPath(inspection), 'utf8')).includes('<!-- grind-note-batch:');
-  if (options.notes === 'handled' && (pendingNotes > 0 || parkedNotes)) {
-    throw new GrindError('PENDING_NOTES', 'Unresolved notes remain; handle them or use --notes parked');
+  const pendingNotes = (await readNotes(inspection.dir)).length;
+  if (options.notes === 'handled' && pendingNotes > 0) {
+    throw new GrindError('PENDING_NOTES', `${pendingNotes} unresolved note(s) remain in notes.md; handle them or use --notes parked`);
   }
   const date = options.date ?? new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new GrindError('USAGE', '--date must be YYYY-MM-DD');
-  const operation = newLifecycleOperation('close', inspection.id, { outcome: options.outcome, result: options.result, notes: options.notes, date }, operationCheckouts(inspection));
+  const operation = newLifecycleOperation('close', inspection.id, { outcome: options.outcome, result: options.result, notes: options.notes, date });
   await writeOperation(context.workspace, operation);
   return resumeClose(context.workspace, operation);
 }
@@ -124,13 +100,7 @@ async function resumeClose(workspace: Workspace, operation: OperationRecord) {
   if (!['delivered', 'abandoned'].includes(details['outcome'] ?? '') || !['handled', 'parked'].includes(details['notes'] ?? '') || !details['result'] || !details['date']) {
     throw new GrindError('OPERATION_INVALID', 'Close journal lacks required transition details');
   }
-  return withLifecycleLocks(workspace, operation.checkouts.map((item) => item.checkout), operation.id, async () => {
-    let current = operation;
-    if (details['notes'] === 'parked') {
-      for (let index = 0; index < current.checkouts.length; index += 1) {
-        current = await parkCheckoutNotes(workspace, current, index, ledgerPath(inspection));
-      }
-    }
+  return withLifecycleLocks(workspace, [], operation.id, async () => {
     const file = ledgerPath(inspection);
     const raw = await readFile(file, 'utf8');
     if (inspection.state?.status === 'open') {
@@ -140,44 +110,11 @@ async function resumeClose(workspace: Workspace, operation: OperationRecord) {
     } else if (inspection.state?.status !== 'closed') {
       throw new GrindError('OPERATION_INVALID', `Cannot reconcile closure for ${operation.target}`);
     }
-    current = updateOperation(current, 'ledger-closed');
-    await writeOperation(workspace, current);
+    await writeOperation(workspace, updateOperation(operation, 'ledger-closed'));
     const commit = await commitScoped(workspace, [inspection.dir], `Close ${operation.target}`);
     await deleteOperation(workspace, operation.id);
     return { id: operation.target, status: 'closed' as const, commit, notes: details['notes'] };
   });
-}
-
-export async function reopenPreparedInitiative(workspace: Workspace, inspection: InitiativeInspection) {
-  const pending = await readPendingOperations(workspace);
-  let operation: OperationRecord;
-  if (pending.length > 0) {
-    if (pending.length !== 1 || pending[0]?.kind !== 'reopen' || pending[0].target !== inspection.id) {
-      throw new GrindError('OPERATION_PENDING', 'Another lifecycle operation must be reconciled first', { operations: pending });
-    }
-    operation = pending[0];
-  } else {
-    await assertInitialIndexClean(workspace);
-    operation = newLifecycleOperation('reopen', inspection.id, {});
-    await writeOperation(workspace, operation);
-  }
-  return withLifecycleLocks(workspace, [], operation.id, async () => {
-    const refreshed = await inspectInitiative(workspace, { id: inspection.id, dir: inspection.dir, archived: false });
-    const file = ledgerPath(refreshed);
-    if (refreshed.state?.status === 'closed') {
-      await atomicWriteFile(file, reopenLedger(await readFile(file, 'utf8'), new Date().toISOString()));
-    } else if (refreshed.state?.status !== 'open') {
-      throw new GrindError('OPERATION_INVALID', `Cannot reconcile reopening for ${inspection.id}`);
-    }
-    await writeOperation(workspace, updateOperation(operation, 'ledger-reopened'));
-    const commit = await commitScoped(workspace, [inspection.dir], `Reopen ${inspection.id}`);
-    await deleteOperation(workspace, operation.id);
-    return commit;
-  });
-}
-
-function checkedOutBranches(raw: string): string[] {
-  return raw.split('\n').filter((line) => line.startsWith('branch refs/heads/')).map((line) => line.slice('branch refs/heads/'.length));
 }
 
 export async function inspectArchiveEligibility(workspace: Workspace, inspection: InitiativeInspection): Promise<ArchiveEligibility> {
@@ -196,19 +133,9 @@ export async function inspectArchiveEligibility(workspace: Workspace, inspection
   blockers.push(...inspection.diagnostics.filter((item) => item.severity === 'error').map((item) => item.message));
   const pending = (await readPendingOperations(workspace)).filter((operation) => operation.target === inspection.id);
   if (pending.length > 0) blockers.push('a lifecycle operation is pending');
-  const file = ledgerPath(inspection);
-  const raw = await readFile(file, 'utf8').catch(() => '');
-  if (raw.includes('<!-- grind-note-batch:')) blockers.push('unresolved parked notes remain');
+  if ((await readNotes(inspection.dir)).length > 0) blockers.push('unresolved notes remain in notes.md');
   for (const repository of inspection.repositories) {
-    const relevantSidecarNotes = repository.onRecordedBranch &&
-      (repository.observed.sidecar?.initiative === null || repository.observed.sidecar?.initiative === inspection.id)
-      ? repository.observed.sidecar?.pendingNotes ?? 0
-      : 0;
-    if (relevantSidecarNotes > 0) blockers.push(`unresolved notes remain for ${repository.recorded.path}`);
-    if (!repository.observed.repository) continue;
-    const worktrees = await git(['worktree', 'list', '--porcelain'], repository.observed.path);
-    if (!worktrees.ok) blockers.push(`linked worktrees cannot be inspected for ${repository.recorded.path}`);
-    else if (checkedOutBranches(worktrees.stdout).includes(repository.recorded.branch)) blockers.push(`${repository.recorded.branch} is checked out in a linked worktree`);
+    if (repository.observed.path !== null) blockers.push(`${repository.recorded.branch} is checked out at ${repository.observed.path}`);
   }
   return { eligible: blockers.length === 0, closedDays, blockers: [...new Set(blockers)] };
 }

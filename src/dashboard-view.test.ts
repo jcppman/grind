@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { dashboardTreeScript } from './dashboard-view.ts';
+import { dashboardTreeScript, dashboardScript } from './dashboard-view.ts';
 
 interface Entry {
   id: string;
@@ -65,4 +65,8 @@ test('search and status filters produce only matching descendants and preserve u
   assert.equal(root.count, 1);
   assert.equal(root.groups.get('audio')?.groups.get('rytho')?.count, 1);
   assert.equal(groupInitiatives(matchingInitiatives(entries, 'all', 'missing')).groups.size, 0);
+});
+
+test('the served dashboard script parses', () => {
+  assert.doesNotThrow(() => new Function(dashboardScript));
 });

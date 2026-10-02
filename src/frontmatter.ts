@@ -1,4 +1,4 @@
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseDocument, type Document } from 'yaml';
 
 export interface Frontmatter {
   /** Parsed YAML mapping, or null when the file has no frontmatter block. */
@@ -66,4 +66,16 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function getString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+/** Applies `edit` to the frontmatter YAML, keeping its comments and formatting and the body unchanged. */
+export function editFrontmatter(raw: string, edit: (document: Document) => void): string {
+  const open = OPEN.exec(raw);
+  const afterOpen = open ? raw.slice(open[0].length) : '';
+  const close = open ? /^---[ \t]*(?:\r?\n|$)/m.exec(afterOpen) : null;
+  if (!open || !close) throw new Error('File has no closed frontmatter block');
+  const document = parseDocument(afterOpen.slice(0, close.index));
+  if (document.errors.length > 0) throw new Error(`Invalid YAML frontmatter: ${document.errors[0]?.message}`);
+  edit(document);
+  return `${open[0]}${String(document)}${afterOpen.slice(close.index)}`;
 }

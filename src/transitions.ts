@@ -51,24 +51,3 @@ export function closeLedger(raw: string, input: CloseInput): string {
   const history = `### Closed ${input.date}\n\n- Outcome: ${input.outcome}\n- Result: ${input.result}`;
   return render(data, grind, appendHistory(body, history));
 }
-
-export function reopenLedger(raw: string, updatedAt: string): string {
-  const { data, grind, body } = ledgerParts(raw);
-  if (grind['status'] !== 'closed') throw new GrindError('UNSUPPORTED_OPERATION', 'Only a closed initiative can be reopened');
-  const resume = grind['resume'];
-  if (!isRecord(resume) || !['phase', 'current_task', 'next_action'].every((key) => typeof resume[key] === 'string' && (resume[key] as string).trim() !== '')) {
-    throw new GrindError('ARTIFACT_INVALID', 'Closed ledger has no valid resumable checkpoint');
-  }
-  const closed = isRecord(grind['closed']) ? grind['closed'] : {};
-  const result = typeof grind['result'] === 'string' ? grind['result'] : '';
-  grind['status'] = 'open';
-  grind['updated_at'] = updatedAt;
-  grind['phase'] = resume['phase'];
-  grind['current_task'] = resume['current_task'];
-  grind['next_action'] = resume['next_action'];
-  delete grind['result'];
-  delete grind['closed'];
-  delete grind['resume'];
-  const history = `### Reopened ${updatedAt.slice(0, 10)}\n\n- Prior closure: ${String(closed['date'] ?? '?')} (${String(closed['outcome'] ?? '?')})\n- Prior result: ${result}`;
-  return render(data, grind, appendHistory(body, history));
-}

@@ -42,6 +42,7 @@ h2{font-size:18px;letter-spacing:-.3px;margin:9px 0;overflow-wrap:anywhere}
 .repos{border-top:1px solid #eef0ea;padding:17px 25px;background:#fbfcf9}
 .sectionlabel{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:#81907c;font-weight:700}
 .repo{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:14px}
+.repoactions{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .reponame{font-size:13px;font-weight:650}
 .branch{font-family:ui-monospace,monospace;font-size:11px;color:#788575;margin-left:12px}
 .path{font-family:ui-monospace,monospace;font-size:11px;color:#7c897b;overflow-wrap:anywhere;margin-top:6px}
@@ -210,6 +211,36 @@ function openButton(initiative) {
   return button;
 }
 
+function switchButton(initiative, repo) {
+  const button = element('button', 'open-editor', 'Switch to foreground');
+  button.type = 'button';
+  button.title = 'Check out ' + repo.branch + ' in the canonical checkout of ' + repo.name + ', moving its current work to a worktree';
+  button.setAttribute('aria-label', 'Switch ' + initiative.id + ' to the foreground in ' + repo.name);
+  async function request(force) {
+    const response = await fetch('switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: initiative.id, repository: repo.name, force }),
+    });
+    return { ok: response.ok, result: await response.json() };
+  }
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    $('error').textContent = '';
+    $('notice').textContent = '';
+    try {
+      let { ok, result } = await request(false);
+      if (!ok && result.canForce && window.confirm(result.error + ' Switch anyway?')) ({ ok, result } = await request(true));
+      if (!ok) throw new Error(result.error || 'Could not switch');
+      $('notice').textContent = result.message;
+      await refresh();
+    } catch (error) {
+      $('error').textContent = error.message;
+    } finally { button.disabled = false; }
+  });
+  return button;
+}
+
 function render() {
   const query = $('search').value.trim();
   const entries = matchingInitiatives(data.initiatives, filter, query);
@@ -284,11 +315,15 @@ function render() {
       const name = element('div', 'reponame', repo.name);
       name.append(element('span', 'branch', 'Recorded: ' + repo.branch));
       info.append(name, element('div', 'path', repo.directory));
-      if (!repo.available) info.append(element('div', 'warning', 'Checkout unavailable'));
+      if (!repo.available) info.append(element('div', 'warning', 'Repository unavailable'));
       else {
-        info.append(element('div', repo.onRecordedBranch ? 'muted' : 'warning', 'Current: ' + (repo.actualBranch || 'detached HEAD') + ' · ' + repo.changes + ' changed files'));
+        const where = { canonical: 'Canonical checkout', grind: 'Worktree', app: 'App worktree', other: 'Worktree' }[repo.location];
+        info.append(element('div', 'muted', where ? where + ' · ' + repo.changes + ' changed files' : 'Branch not checked out'));
       }
-      row.append(info, copyButton(repo.command, 'Copy cd command for repository ' + repo.name));
+      const actions = element('div', 'repoactions');
+      if (repo.available && repo.location !== 'canonical' && initiative.status === 'open' && !initiative.archived) actions.append(switchButton(initiative, repo));
+      actions.append(copyButton(repo.command, 'Copy cd command for repository ' + repo.name));
+      row.append(info, actions);
       repos.append(row);
     }
     card.append(head, repos);

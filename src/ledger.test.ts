@@ -17,7 +17,7 @@ test('valid open ledger with an empty repository list', () => {
 test('valid open ledger parses repository entries', () => {
   const result = validate(openLedger([{ path: 'grind', branch: 'main', pull_request: '"https://x/1"' }]));
   assert.deepEqual(result.state?.repositories, [
-    { path: 'grind', branch: 'main', checkout: 'clone', pull_request: 'https://x/1' },
+    { path: 'grind', branch: 'main', pull_request: 'https://x/1' },
   ]);
 });
 
@@ -65,19 +65,10 @@ test('repository path escaping the workspace is rejected', () => {
   assert.ok(codes(openLedger([{ path: '/abs', branch: 'main' }])).includes('INVALID_REPOSITORY_PATH'));
 });
 
-test('worktree checkout escaping the workspace is rejected', () => {
-  const raw = openLedger([{ path: 'grind', branch: 'main', checkout: '../../elsewhere' }]);
-  assert.ok(codes(raw).includes('INVALID_REPOSITORY_CHECKOUT'));
-  const ok = validate(openLedger([{ path: 'grind', branch: 'main', checkout: 'wt/grind-bootstrap' }]));
-  assert.deepEqual(ok.diagnostics, []);
-});
-
-test('worktree checkout inside the state directory is rejected', () => {
-  const raw = openLedger([{ path: 'grind', branch: 'main', checkout: './yyu-dev/grind-state/wt' }]);
-  const result = validateLedger(parseFrontmatter(raw), 'ledger.md', { statePathFromWorkspace: 'yyu-dev/grind-state' });
-  assert.ok(result.diagnostics.some((d) => d.code === 'CHECKOUT_IN_STATE'));
-  const sibling = openLedger([{ path: 'grind', branch: 'main', checkout: 'yyu-dev/grind-state-wt' }]);
-  assert.deepEqual(validateLedger(parseFrontmatter(sibling), 'ledger.md', { statePathFromWorkspace: 'yyu-dev/grind-state' }).diagnostics, []);
+test('a legacy checkout field is accepted and ignored', () => {
+  const result = validate(openLedger([{ path: 'grind', branch: 'main', checkout: '../../elsewhere' }]));
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.state?.repositories, [{ path: 'grind', branch: 'main', pull_request: null }]);
 });
 
 test('branch with whitespace or control characters is rejected', () => {

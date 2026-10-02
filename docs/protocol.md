@@ -61,19 +61,55 @@ even when the working directory is `audio`. This creates
 `initiatives/audio/rytho/<outcome>/` in the state repository. A `rytho-` name
 prefix is not a substitute for the repository scope.
 
-`grind.repositories` records checkouts and exact branches assigned to initiative
-work, not every repository consulted. A checkout's current branch is evidence of
-its state, not evidence that the branch belongs to this initiative. During creation,
+`grind.repositories` records repositories, by the workspace-relative path of their
+canonical checkout, and the exact branches assigned to initiative work, not every
+repository consulted. A checkout's current branch is evidence of its state, not
+evidence that the branch belongs to this initiative. A legacy `checkout` field is
+accepted and ignored. During creation,
 record an existing branch only when its association with the initiative is
 established by the user or verified initiative work. Otherwise leave
 `grind.repositories` empty and describe candidate repositories in the ledger's
 working state. Do not invent branch names to fill the required field or put
 placeholder branches in tracking records.
 
-Choose and create new branches or worktrees when execution needs them, following
-the repository's branching rules, then record the verified checkout and branch.
-Creation alone does not create or switch branches. Repositories used only as
-references do not need an initiative branch or tracking entry.
+Choose and create new branches when execution needs them, following the
+repository's branching rules, then record the verified branch. `grind worktree`
+records a branch named after the init when it creates one for an untracked
+repository. Creation alone does not create or switch branches. Repositories used
+only as references do not need an initiative branch or tracking entry.
+
+### Checkouts and worktrees
+
+The canonical checkout of a repository belongs to the user. Agents do not change
+its branch unless the user asks. Agents work in worktrees at
+`<workspace>/.worktrees/<repository path>/<init name>`, where the init name is the
+last segment of its ID.
+
+An init's work lives wherever its recorded branch is checked out: the canonical
+checkout, a Grind worktree, an app-managed worktree, or nowhere. Run
+`grind worktree <init> [--repo <repository>]` to get that path; it creates the
+standard worktree when the branch is not checked out, and stops when the branch is
+in the canonical checkout, because the user holds it. Ask the user whether to work
+there or wait. Look the path up again before resuming after any pause, because the
+user may have moved the work.
+
+`grind worktree` also links each `CLAUDE.md` and `AGENTS.md` between the
+workspace root and the canonical checkout into the matching folder under
+`.worktrees`, so worktrees receive the same directory-scoped instructions. It
+leaves correct links alone and reports, rather than replaces, a file in the way.
+
+`grind switch <init>` is the user's command for bringing an init into the canonical
+checkout. It saves the current work in a labelled stash and moves it to its owning
+init's standard worktree; it takes the target branch from its worktree after
+stashing that worktree's changes. The worktree it takes a branch from is detached and
+left in place with its ignored files, such as `.env` and dependencies, and is
+reused when the work moves back. Ignored files in the canonical checkout do not move. Switch refuses an in-progress Git operation, uncommitted
+changes on a branch no init owns, a process working inside the target worktree, and,
+without `--force`, a worktree changed in the last few minutes. On failure it
+reports each remaining stash and how to restore it. Agents run switch only when the
+user asks. Without an argument, switch lists the repository's inits and where each
+is checked out; `grind status` inside a repository also names the init owning its
+current branch.
 
 
 ## Initiative artifacts
@@ -371,8 +407,8 @@ rewriting working state, or move them into a warranted specification. Link to ru
 already owned by a specification, plan, protocol, or repository document instead
 of maintaining another copy. Record the next concrete task or unresolved decision in `next_action`, not routine workflow such as
 asking the user what to do. It is a candidate task, not execution authorization.
-Preserve pending parked notes, lifecycle records needed for recovery, and unknown
-metadata when trimming prose.
+Preserve lifecycle records needed for recovery and unknown metadata when trimming
+prose. Save sets `grind.updated_at` to the time of the save; do not write it by hand.
 
 Provides resumable external working memory:
 
@@ -389,8 +425,8 @@ is inspectable, editable, portable, and versioned.
 
 The ledger is also the handoff. Because the protocol is the same for every
 session, context can be loaded with `/grind:context` or automatically from an
-initiative folder or associated checkout. Accompany it with the current request;
-use `/grind:start` to prepare the initiative and choose what to do next. No per-session handoff
+initiative folder or a checkout of one of its branches. Accompany it with the current
+request; use `/grind:start` to prepare the initiative and choose what to do next. No per-session handoff
 document is written.
 
 
@@ -447,13 +483,24 @@ implement the fix.
 
 ## Reading review notes
 
-Notes are the user's review of the working tree, written while the agent was
-not looking. The agent reads them when the user says so, and checks every
-clone and worktree in `grind.repositories` for pending notes during context loading.
-Loading context surfaces notes without processing them. Handle them when the
-user asks or before resuming execution, respecting the user's current instruction.
+Notes are the user's review of the code, kept in the init's `notes.md` and committed
+with the init by `save`. `grind note add <file> <start> [end] <comment|->` records a
+note with the init owning the file's branch, wherever that branch is checked out;
+`--init` selects the init when no init or several own the branch. Each note is a
+heading with a short ID and a repository-qualified reference, the anchor line, and
+the comment:
 
-Processing the notes in a sidecar:
+```markdown
+## n3 @audio/rytho:app/frontend/src/navigation.ts#40-52
+> const routes = buildRoutes(config);
+
+Extract this into the router module.
+```
+
+`grind note list [init] --json` serves editor integrations and includes each file's
+path in the init's current checkout. Context loading surfaces notes without
+processing them. Handle them when the user asks or before resuming execution,
+respecting the user's current instruction:
 
 1. Read them all before changing anything.
 2. For each note, confirm that the anchor line still falls inside the
@@ -463,14 +510,14 @@ Processing the notes in a sidecar:
    in the chat instead of changing code.
 4. Work through the notes from the bottom up, so line numbers above stay valid
    while notes are still being handled.
-5. Delete each note once it is handled. Leave a note in place when handling it
-   needs a decision from the user, and say so in the chat.
+5. Resolve each note once it is handled, with `grind note done <id>` or by deleting
+   it from `notes.md`. Leave a note in place when handling it needs a decision from
+   the user, and say so in the chat.
 6. Report in the chat, per note, what was done.
 
 A note that changes a decision or reveals something is recorded in the ledger,
-as any decision or discovery would be. The sidecar itself is never a record
-and is never committed. An ordinary save commits prepared initiative artifacts;
-it does not automatically commit unfinished application code.
+as any decision or discovery would be. An ordinary save commits prepared initiative
+artifacts; it does not automatically commit unfinished application code.
 
 
 ## Session-start protocol
@@ -485,18 +532,18 @@ An explicit user selection takes precedence. Do not reload every turn.
 
 Run the matching plugin CLI's `context [initiative] --json`, with `--workspace`
 when needed. It resolves the init, assembles intent and ledger without summarizing,
-extracts mandatory index sections, and reports observed repositories, HEAD commits,
-pending note locations, lifecycle operations, and diagnostics. `complete: false`
+extracts mandatory index sections, and reports where each recorded branch is checked
+out, HEAD commits, review notes, lifecycle operations, and diagnostics. `complete: false`
 requires resolving missing or malformed context before substantive work. Code and
 Git remain authoritative over recorded prose.
 
 Report the selected init, discrepancies, candidate next action, and unresolved
 decisions. Load detailed specs and plans for the chosen topic, not merely because
-the ledger mentions them. Explicit selection does not change checkout association.
-Context alone does not fetch, switch, reopen, repair pointers, process notes,
-save a checkpoint, or execute the next action. Closed inits remain readable.
-Their repository tracking is historical and does not block an open init using
-the same branch. Reopening requires that no open init owns the tracked branches.
+the ledger mentions them. Context alone does not fetch, create worktrees, switch
+branches, reopen, process notes, save a checkpoint, or execute the next action.
+Closed inits remain readable. Their repository tracking is historical and does not
+block an open init using the same branch. Reopening requires that no open init owns
+the tracked branches.
 
 A hook supplies complete context when it fits its output budget; otherwise it
 supplies only the init's actual status and a command to load context if needed.
@@ -504,31 +551,30 @@ It writes no temporary context or session-tracking files. A notice is not loaded
 context. Hooks do not override the user's selected init on resume or compaction.
 The host retains conversation selection; Grind maintains no separate session state.
 
-Absent automatic discovery is quiet unless there is stale-pointer evidence.
-Ambiguity and malformed state are surfaced rather than guessed. Explicit invocation
+Absent automatic discovery is quiet. Ambiguity and malformed state are surfaced
+rather than guessed. Explicit invocation
 without a resolvable init lists candidates and lets the user choose; when exactly
 one candidate exists the skill may select it. No records are migrated during reads.
 
 ### Prepare an initiative
 
-`/grind:start [initiative]` reuses context loading and prepares the initiative.
-Preflight the tracked checkouts and use the CLI's supported switch/reopen mechanics.
-Start ensures `.grind.md` is ignored before switching or repairing a pointer. When
-needed, it appends `/.grind.md` to Git's local `info/exclude`, preserving existing
-content and using the common Git directory for linked worktrees. It leaves effective
-existing ignore rules alone and does not edit global configuration or `.gitignore`.
-A tracked sidecar, an exclusion write failure, or an overriding ignore rule blocks
-preparation.
-Stop if the transition cannot be performed safely or is unavailable. Reinspect
-state after a transition and surface relevant review notes, discrepancies, and the
-recorded next action. Then ask what the user wants to do and wait; the ledger's
-next action is context, not an instruction to execute. Do not process review notes
-or begin substantive work on a bare start. The user may want to discuss the work.
+`/grind:start <init> [task]` is the entry for "let's work on init X". It accepts a
+unique fragment of the init ID and offers a choice of open inits without one.
 
-When start accompanies a substantive task, proceed with that task without asking
-what to do again. Follow the user's requested scope and the normal review-note,
-execution, and checkpoint rules. Preparation may still perform the CLI's required
-note parking/restoration and lifecycle persistence.
+1. Load context, including roadmap position and review notes.
+2. If the init is closed, ask whether to reopen it. Reopen by editing the ledger:
+   set `grind.status: open`, restore `phase`, `current_task`, and `next_action`
+   from `grind.resume`, remove `grind.closed`, `grind.result`, and `grind.resume`,
+   and record the reopening under Lifecycle history. Save validates the result.
+3. For each repository with a recorded branch, get the working path from
+   `grind worktree`. If the user holds the branch in the canonical checkout, say so
+   and ask whether to work there or wait. An init with no recorded branch gets no
+   branch or worktree until implementation needs one.
+4. Report the working path, the branch's state against its remote, review notes,
+   discrepancies, and the next action.
+5. Carry out an accompanying task in the worktree. Otherwise ask what the user
+   wants to do and wait; the ledger's next action is context, not an instruction
+   to execute. Do not process review notes or begin substantive work on a bare start.
 
 A substantive request accompanying context loading authorizes that requested work,
 not automatic execution of a different recorded task or unrelated checkout changes.
@@ -592,25 +638,22 @@ When the outcome is delivered, or the work is deliberately dropped:
    finalizing closure, respecting existing authorization for external actions.
 2. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
    which in the ledger.
-3. Prepare a valid checkpoint. Handle every pending review note or choose the explicit
-   parked disposition so the exact note payload is retained in the ledger.
+3. Prepare a valid checkpoint. Handle every review note, or choose the explicit
+   parked disposition to keep the remaining notes in `notes.md`.
 4. Run `grind close` with delivered or abandoned outcome, result location, and note
    disposition. The CLI records the prior execution checkpoint in lifecycle history
    and commits only the initiative state.
 
 The folder stays where it is. A closed initiative can bounce back through QA
-feedback or a production regression. Running `grind start` on an unarchived
-closed initiative sets `grind.status: open`, moves the prior `grind.closed` and
-result into durable ledger history, restores execution fields, and then follows
-the normal start protocol.
+feedback or a production regression; reopen it as described in Prepare an
+initiative.
 
 ## Archiving
 
 An initiative closed for more than 60 days is archived with `grind archive`: moved
 to `initiatives/_archive/<scope>/<name>/`, keeping its scope path, and committed.
-Pending operations, unresolved notes, missing repositories, unverifiable worktree
-state, destination collisions, and any owned branch checked out in a linked worktree
-block archival.
+Pending operations, unresolved notes, missing repositories, destination collisions,
+and any owned branch that is still checked out block archival.
 
 Session-start inspection lists closed initiatives past the 60-day mark as ready
 to archive. Context loading only reports them. Perform eligible moves during an

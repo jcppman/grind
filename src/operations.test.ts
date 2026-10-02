@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { statusCommand } from './commands.ts';
+import { initiativeStatus } from './commands.ts';
 import {
   assertNoPendingOperation,
-  newStartOperation,
+  newLifecycleOperation,
   readPendingOperations,
   withLifecycleLocks,
   writeOperation,
@@ -19,16 +19,13 @@ test('operation journals are atomic, durable, and visible through status', async
   t.after(ws.cleanup);
   await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
   await commitState(ws);
-  const app = await makeCheckout(ws, 'app', 'main');
   const workspace = await loadWorkspace({ cwd: ws.root });
-  const operation = newStartOperation('app/x', [
-    { repository: 'app', checkout: app, sourceBranch: 'main', targetBranch: 'feature' },
-  ]);
+  const operation = newLifecycleOperation('close', 'app/x', { outcome: 'delivered' });
   const file = await writeOperation(workspace, operation);
 
   assert.deepEqual((await readPendingOperations(workspace)).map((item) => item.id), [operation.id]);
   assert.equal(JSON.parse(await readFile(file, 'utf8')).target, 'app/x');
-  const status = await statusCommand({ workspace, cwd: ws.root }, 'app/x');
+  const status = await initiativeStatus({ workspace, cwd: ws.root }, 'app/x');
   assert.deepEqual(status.pendingOperations.map((item) => item.id), [operation.id]);
 });
 
@@ -38,7 +35,7 @@ test('pending operation blocks mutation of its initiative', async (t) => {
   const dir = await writeInitiative(ws, 'app/x');
   await commitState(ws);
   const workspace = await loadWorkspace({ cwd: ws.root });
-  await writeOperation(workspace, newStartOperation('app/x', []));
+  await writeOperation(workspace, newLifecycleOperation('archive', 'app/x', {}));
   await writeFile(path.join(dir, 'intent.md'), '---\ntype: Intent\ngrind:\n  root: true\n---\n\n# changed\n');
 
   await assert.rejects(assertNoPendingOperation(workspace, 'app/x'), { code: 'OPERATION_PENDING' });

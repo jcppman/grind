@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
@@ -26,6 +26,7 @@ test('parseArgs separates command, positionals, and options', () => {
     help: false,
     open: false,
     closed: false,
+    force: false,
     workspace: '/w',
   });
   assert.throws(() => parseArgs(['--workspace']), { code: 'USAGE' });
@@ -40,6 +41,7 @@ test('parseArgs accepts list scope and status filters', () => {
     help: false,
     open: false,
     closed: true,
+    force: false,
   });
 });
 
@@ -81,6 +83,11 @@ test('list accepts a scope with an open or closed filter', async () => {
   }
 });
 
+test('a bare dash is only an argument of note commands', () => {
+  assert.throws(() => parseArgs(['status', '-']), { code: 'USAGE' });
+  assert.deepEqual(parseArgs(['note', 'add', 'f', '1', '-']).positional, ['add', 'f', '1', '-']);
+});
+
 test('list rejects conflicting status filters', async () => {
   const result = await runCli('list', '--open', '--closed', '--json');
   assert.equal(result.code, 2);
@@ -88,7 +95,7 @@ test('list rejects conflicting status filters', async () => {
 });
 
 import { readFile } from 'node:fs/promises';
-import { closedLedger, makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar, git } from './test-helpers.ts';
+import { closedLedger, makeCheckout, makeTempWorkspace, openLedger, writeInitiative, git } from './test-helpers.ts';
 
 async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: string): Promise<string> {
   return [
@@ -99,12 +106,11 @@ async function snapshot(ws: { root: string; stateGitRoot: string }, checkout: st
   ].join('\n---\n');
 }
 
-test('list, status, and start work from different entry directories and start excludes the sidecar', async () => {
+test('list and status work from different entry directories without writing', async () => {
   const ws = await makeTempWorkspace();
   try {
     const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
     const app = await makeCheckout(ws, 'app', 'feature');
-    await writeSidecar(app, 'app/x');
     const before = await snapshot(ws, app);
 
     const list = await execFileAsync(process.execPath, [CLI, 'list', '--json', '--workspace', ws.root], { encoding: 'utf8' });
@@ -113,8 +119,9 @@ test('list, status, and start work from different entry directories and start ex
     const fromCheckout = await execFileAsync(process.execPath, [CLI, 'status', '--json'], { cwd: app, encoding: 'utf8' });
     const status = JSON.parse(fromCheckout.stdout);
     assert.equal(status.ok, true);
-    assert.equal(status.data.inspection.id, 'app/x');
-    assert.equal(status.data.resolution.source, 'sidecar');
+    assert.equal(status.data.kind, 'repository');
+    assert.equal(status.data.owner.id, 'app/x');
+    assert.equal(status.data.checkout.kind, 'canonical');
 
     const fromFolder = await execFileAsync(process.execPath, [CLI, 'status'], { cwd: dir, encoding: 'utf8' });
     assert.match(fromFolder.stdout, /app\/x {2}\[open\]/);
@@ -122,15 +129,33 @@ test('list, status, and start work from different entry directories and start ex
 
     assert.equal(await snapshot(ws, app), before);
 
-    const start = await execFileAsync(process.execPath, [CLI, 'start', 'app/x', '--json', '--workspace', ws.root], { cwd: ws.stateGitRoot, encoding: 'utf8' });
-    assert.equal(JSON.parse(start.stdout).data.switched, false);
+    const start = await runCli('start', 'app/x', '--json', '--workspace', ws.root);
+    assert.equal(JSON.parse(start.stdout).error.code, 'USAGE');
 
     const unresolved = await runCli('status', '--workspace', ws.root, '--json');
     assert.equal(unresolved.code, 1);
     assert.equal(JSON.parse(unresolved.stdout).error.code, 'INITIATIVE_UNRESOLVED');
 
-    assert.equal(await snapshot(ws, app), before.replace('?? .grind.md', ''));
-    assert.equal(await git(app, 'check-ignore', '.grind.md'), '.grind.md');
+    assert.equal(await snapshot(ws, app), before);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('note add reads a comment from stdin and worktree prints the working path', async () => {
+  const ws = await makeTempWorkspace();
+  try {
+    const app = await makeCheckout(ws, 'app', 'main');
+    await git(app, 'branch', 'feature');
+    await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
+    const worktree = execFileSync(process.execPath, [CLI, 'worktree', 'x'], { cwd: ws.root, encoding: 'utf8' }).trim();
+    assert.equal(worktree, path.join(ws.root, '.worktrees', 'app', 'x'));
+    const added = JSON.parse(execFileSync(process.execPath, [CLI, 'note', 'add', 'README.md', '1', '-', '--json'], { cwd: worktree, encoding: 'utf8', input: 'From stdin\n' }));
+    assert.equal(added.data.reference, '@app:README.md#1');
+    const listed = execFileSync(process.execPath, [CLI, 'note', 'list'], { cwd: worktree, encoding: 'utf8' });
+    assert.match(listed, /n1 @app:README\.md#1\n> # app\nFrom stdin/);
+    const repository = JSON.parse(execFileSync(process.execPath, [CLI, 'switch', '--json'], { cwd: app, encoding: 'utf8' }));
+    assert.deepEqual(repository.data.initiatives.map((item: { id: string; path: string }) => [item.id, item.path]), [['app/x', worktree]]);
   } finally {
     await ws.cleanup();
   }
