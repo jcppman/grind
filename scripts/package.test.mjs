@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { commitState, git, makeTempWorkspace, writeInitiative, closedLedger, makeCheckout, openLedger, writeSidecar } from '../src/test-helpers.ts';
+import { commitState, git, makeTempWorkspace, writeInitiative, closedLedger, makeCheckout, openLedger } from '../src/test-helpers.ts';
 
 const exec = promisify(execFile);
 // Claude Code runs hook commands with Git Bash on Windows.
@@ -39,7 +39,6 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   const cli = path.join(install, 'scripts/grind.mjs');
   const run = async (...args) => JSON.parse((await exec(process.execPath, [cli, ...args, '--workspace', ws.root, '--json'], { cwd: temp })).stdout);
   assert.equal((await run('create', 'cold')).data.id, 'cold');
-  assert.equal((await run('start', 'cold')).data.switched, false);
   assert.equal((await run('save', 'cold', '--message', 'initial')).data.saved, true);
   assert.equal((await run('save', 'cold', '--message', 'no-op')).data.saved, false);
   assert.equal((await run('list')).data.initiatives.length, 1);
@@ -48,18 +47,16 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   await writeInitiative(ws, 'closed', { ledger: closedLedger() });
   await writeInitiative(ws, 'app/mismatch', { ledger: openLedger([{ path: 'app', branch: 'other' }]) });
   const checkout = await makeCheckout(ws, 'app');
-  await writeFile(path.join(checkout, '.grind.md'), '---\ninitiative: app/mismatch\n---\n\n## @README.md#1\nReview note\n');
   const snapshot = async () => JSON.stringify([
     await git(ws.stateGitRoot, 'status', '--porcelain'),
     await git(ws.stateGitRoot, 'rev-parse', 'HEAD'),
     await git(checkout, 'status', '--porcelain'),
     await git(checkout, 'branch', '--show-current'),
-    await readFile(path.join(checkout, '.grind.md'), 'utf8'),
     await readFile(path.join(ws.initiativesDir, 'closed', 'ledger.md'), 'utf8'),
   ]);
   const before = await snapshot();
   assert.equal((await run('status', 'closed')).data.inspection.state.status, 'closed');
-  assert.equal((await run('status', 'app/mismatch')).data.inspection.repositories[0].onRecordedBranch, false);
+  assert.equal((await run('status', 'app/mismatch')).data.inspection.repositories[0].observed.path, null);
   assert.equal(await snapshot(), before);
 
   const lifecycle = await makeTempWorkspace();
@@ -67,48 +64,36 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   await git(lifecycle.stateGitRoot, 'config', 'user.name', 'Package Test');
   await git(lifecycle.stateGitRoot, 'config', 'user.email', 'package@example.invalid');
   const app = await makeCheckout(lifecycle, 'repo');
-  await git(app, 'checkout', '-q', '-b', 'feature');
-  await writeFile(path.join(app, 'feature.txt'), 'feature\n');
-  await git(app, 'add', 'feature.txt');
-  await git(app, 'commit', '-q', '-m', 'feature');
-  await git(app, 'checkout', '-q', 'main');
-  const gitDir = await git(app, 'rev-parse', '--git-dir');
-  await writeFile(path.resolve(app, gitDir, 'info', 'exclude'), '.grind.md\n');
+  await git(app, 'branch', 'feature');
   await writeInitiative(lifecycle, 'alpha', { ledger: openLedger([{ path: 'repo', branch: 'main' }]) });
   await writeInitiative(lifecycle, 'beta', { ledger: openLedger([{ path: 'repo', branch: 'feature' }]) });
   await commitState(lifecycle, 'two initiatives');
-  await writeSidecar(app, 'alpha', '## @README.md#1\n\nkeep this note\n');
-  const invoke = async (...args) => {
+  const invoke = async (cwd, ...args) => {
     try {
-      return JSON.parse((await exec(process.execPath, [cli, ...args, '--workspace', lifecycle.root, '--json'], { cwd: temp })).stdout);
+      return JSON.parse((await exec(process.execPath, [cli, ...args, '--workspace', lifecycle.root, '--json'], { cwd })).stdout);
     } catch (error) {
       return JSON.parse(error.stdout);
     }
   };
 
+  const worktree = (await invoke(temp, 'worktree', 'beta')).data.path;
+  assert.equal(worktree, path.join(lifecycle.root, '.worktrees', 'repo', 'beta'));
+  assert.equal((await invoke(temp, 'worktree', 'alpha')).error.code, 'CHECKOUT_HELD');
+  assert.equal((await invoke(worktree, 'note', 'add', 'README.md', '1', 'keep this note')).data.initiative, 'beta');
   await writeFile(path.join(app, 'dirty.txt'), 'preserve\n');
-  assert.equal((await invoke('start', 'beta')).error.code, 'START_BLOCKED');
-  assert.equal(await git(app, 'branch', '--show-current'), 'main');
-  assert.equal(await readFile(path.join(app, 'dirty.txt'), 'utf8'), 'preserve\n');
-  await rm(path.join(app, 'dirty.txt'));
-  assert.equal((await invoke('start', 'beta')).data.switched, true);
+  assert.equal((await invoke(app, 'switch', 'beta', '--force')).data.switched, true);
   assert.equal(await git(app, 'branch', '--show-current'), 'feature');
-
-  const hook = path.join(lifecycle.stateGitRoot, '.git', 'hooks', 'pre-commit');
-  await writeFile(hook, '#!/bin/sh\nexit 1\n');
-  await chmod(hook, 0o755);
-  assert.equal((await invoke('start', 'alpha')).error.code, 'COMMIT_FAILED');
-  assert.equal(await git(app, 'branch', '--show-current'), 'main');
-  await rm(hook);
-  assert.equal((await invoke('start', 'alpha')).data.inspection.id, 'alpha');
-  assert.match(await readFile(path.join(app, '.grind.md'), 'utf8'), /keep this note/);
+  const alphaTree = path.join(lifecycle.root, '.worktrees', 'repo', 'alpha');
+  assert.equal(await readFile(path.join(alphaTree, 'dirty.txt'), 'utf8'), 'preserve\n');
+  assert.equal((await invoke(app, 'status')).data.owner.id, 'beta');
+  assert.equal((await invoke(temp, 'save', 'beta', '--message', 'note')).data.saved, true);
 
   const close = ['close', 'beta', '--outcome', 'delivered', '--result', 'release/v1', '--notes', 'handled', '--date', '2026-01-01'];
-  assert.equal((await invoke(...close)).data.status, 'closed');
-  assert.equal((await invoke('start', 'beta')).data.inspection.state.status, 'open');
-  assert.equal((await invoke('start', 'alpha')).data.inspection.id, 'alpha');
-  assert.equal((await invoke(...close)).data.status, 'closed');
-  const archived = await invoke('archive', 'beta');
+  assert.equal((await invoke(temp, ...close)).error.code, 'PENDING_NOTES');
+  assert.equal((await invoke(temp, 'note', 'done', 'n1', '--init', 'beta')).data.id, 'n1');
+  assert.equal((await invoke(temp, ...close)).data.status, 'closed');
+  await git(app, 'checkout', '-q', '--detach');
+  const archived = await invoke(temp, 'archive', 'beta');
   assert.equal(archived.ok, true, JSON.stringify(archived));
   assert.equal(archived.data.archivedId, '_archive/beta');
   assert.match(await readFile(path.join(lifecycle.initiativesDir, '_archive', 'beta', 'ledger.md'), 'utf8'), /release\/v1/);

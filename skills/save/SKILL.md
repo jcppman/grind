@@ -11,7 +11,8 @@ Reconcile frontmatter, working state, and verification as one checkpoint; identi
 which revision each retained result covers. Check relevant external facts when they
 change, and label unavailable verification. Apply the protocol's evidence retention
 rules even when another workflow supplies the checkpoint requirements.
-Preserve parked notes and lifecycle recovery records. Record a concrete candidate
+Preserve lifecycle recovery records; leave `grind.updated_at` alone, because save
+sets it to the time of the save. Record a concrete candidate
 next task, not routine workflow instructions;
 update other artifacts only when their corresponding facts changed. Preserve
 Reference snapshots and follow the protocol’s Reference documents section for
@@ -22,6 +23,6 @@ Resolve the plugin root from this SKILL.md and run
 with `--workspace <directory>` if needed. Report the returned commit or no-op.
 Do not stage unrelated work, reset an index, push, or retry failed commits blindly.
 A failed commit preserves staged changes: inspect and resolve that state before
-retrying. A pending lifecycle journal must be resumed with its original start, close,
-or archive command before saving. Verify a lock owner has exited before removing its
+retrying. A pending lifecycle journal must be resumed with its original close or archive
+command before saving. Verify a lock owner has exited before removing its
 lock directory.

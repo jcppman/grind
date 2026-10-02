@@ -1,31 +1,19 @@
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { readInitiative } from './artifacts.ts';
+import { repositoryCheckout, type RepositoryCheckout } from './checkouts.ts';
 import { isInitiativeRoot, isArchivedId, listInitiatives, type InitiativeEntry } from './discovery.ts';
-import { diagnostic, GrindError, type Diagnostic } from './errors.ts';
-import { gitCurrentBranch, gitToplevel } from './git.ts';
+import { GrindError, type Diagnostic } from './errors.ts';
+import { gitToplevel } from './git.ts';
 import { isContainedRelativePath, normalizeRepositoryPath, resolveWithin, toPosix } from './paths.ts';
-import type { RepositoryEntry } from './ledger.ts';
-import { readSidecar, type Sidecar } from './sidecar.ts';
-import { findNestedWorkspaceConfig, type Workspace } from './workspace.ts';
+import type { Workspace } from './workspace.ts';
 
-export type ResolutionSource = 'argument' | 'folder' | 'sidecar' | 'branch';
-
-export interface CheckoutContext {
-  /** Real path of the checkout root. */
-  root: string;
-  /** Workspace-relative repository path. */
-  repositoryPath: string;
-  branch: string | null;
-  sidecar: Sidecar | null;
-}
+export type ResolutionSource = 'argument' | 'folder' | 'branch';
 
 export interface Resolution {
   initiative: InitiativeEntry;
   source: ResolutionSource;
-  checkout: CheckoutContext | null;
-  /** Set when the sidecar pointed somewhere Git does not confirm. */
-  stalePointer: { pointed: string; reason: string } | null;
+  checkout: RepositoryCheckout | null;
   diagnostics: Diagnostic[];
 }
 
@@ -37,25 +25,45 @@ export interface ResolveOptions {
 
 /**
  * Selects the initiative for a command: an explicit identifier, then the
- * enclosing initiative folder, then the checkout's verified sidecar or branch.
+ * enclosing initiative folder, then the open initiative owning the checkout's branch.
  */
 export async function resolveInitiative(options: ResolveOptions): Promise<Resolution> {
   const { workspace } = options;
   if (options.identifier !== undefined) {
     return {
-      initiative: await resolveIdentifier(workspace, options.identifier),
+      initiative: await resolveIdentifierOrFragment(workspace, options.identifier),
       source: 'argument',
       checkout: null,
-      stalePointer: null,
       diagnostics: [],
     };
   }
   const cwd = await realpath(options.cwd);
   const fromFolder = await resolveFromFolder(workspace, cwd);
   if (fromFolder) {
-    return { initiative: fromFolder, source: 'folder', checkout: null, stalePointer: null, diagnostics: [] };
+    return { initiative: fromFolder, source: 'folder', checkout: null, diagnostics: [] };
   }
   return resolveFromCheckout(workspace, cwd);
+}
+
+/** Resolves a full ID, or else a fragment matching exactly one unarchived initiative. */
+export async function resolveIdentifierOrFragment(workspace: Workspace, identifier: string): Promise<InitiativeEntry> {
+  try {
+    return await resolveIdentifier(workspace, identifier);
+  } catch (error) {
+    if (!(error instanceof GrindError) || error.code !== 'INITIATIVE_NOT_FOUND') throw error;
+    const fragment = toPosix(identifier).replace(/\/+$/, '');
+    const entries = (await listInitiatives(workspace.initiativesDir)).entries.filter((entry) => !entry.archived);
+    const suffix = entries.filter((entry) => entry.id.endsWith(`/${fragment}`));
+    const candidates = suffix.length > 0 ? suffix : entries.filter((entry) => entry.id.includes(fragment));
+    if (candidates.length === 1) return candidates[0] as InitiativeEntry;
+    if (candidates.length > 1) {
+      throw new GrindError('INITIATIVE_AMBIGUOUS', `"${identifier}" matches several initiatives: ${candidates.map((entry) => entry.id).join(', ')}`, {
+        identifier,
+        candidates: candidates.map((entry) => entry.id),
+      });
+    }
+    throw error;
+  }
 }
 
 export async function resolveIdentifier(
@@ -90,7 +98,8 @@ export async function resolveIdentifier(
   return { id: normalized, dir, archived: isArchivedId(normalized) };
 }
 
-async function resolveFromFolder(workspace: Workspace, cwd: string): Promise<InitiativeEntry | null> {
+/** The initiative whose folder contains `cwd`, or null. */
+export async function resolveFromFolder(workspace: Workspace, cwd: string): Promise<InitiativeEntry | null> {
   const initiativesDir = await realpath(workspace.initiativesDir).catch(() => null);
   if (initiativesDir === null) return null;
   const relative = path.relative(initiativesDir, cwd);
@@ -107,84 +116,31 @@ async function resolveFromFolder(workspace: Workspace, cwd: string): Promise<Ini
 }
 
 async function resolveFromCheckout(workspace: Workspace, cwd: string): Promise<Resolution> {
-  const checkoutRoot = await gitToplevel(cwd);
-  if (checkoutRoot === null) {
+  if (await gitToplevel(cwd) === null) {
     throw new GrindError('INITIATIVE_UNRESOLVED', `${cwd} is neither an initiative folder nor a Git checkout`, { cwd });
   }
-  const relative = path.relative(workspace.root, checkoutRoot);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new GrindError('INITIATIVE_UNRESOLVED', `Checkout ${checkoutRoot} is not a repository inside workspace ${workspace.root}`, {
-      checkout: checkoutRoot,
-    });
+  const checkout = await repositoryCheckout(workspace, cwd);
+  if (checkout === null) {
+    throw new GrindError('INITIATIVE_UNRESOLVED', `${cwd} is not in a repository inside workspace ${workspace.root}`, { cwd });
   }
-  const nested = await findNestedWorkspaceConfig(workspace.root, checkoutRoot);
-  if (nested !== null) {
-    throw new GrindError('INITIATIVE_UNRESOLVED', `Checkout ${checkoutRoot} belongs to the nested workspace at ${path.dirname(nested)}`, {
-      checkout: checkoutRoot,
-      nestedWorkspace: path.dirname(nested),
-    });
-  }
-  const checkout: CheckoutContext = {
-    root: checkoutRoot,
-    repositoryPath: toPosix(relative),
-    branch: await gitCurrentBranch(checkoutRoot),
-    sidecar: await readSidecar(checkoutRoot),
-  };
-  const diagnostics: Diagnostic[] = [...(checkout.sidecar?.diagnostics ?? [])];
   if (checkout.branch === null) {
-    throw new GrindError('INITIATIVE_UNRESOLVED', `Checkout ${checkoutRoot} has a detached HEAD; no branch identifies an initiative`, {
-      checkout: checkoutRoot,
+    throw new GrindError('INITIATIVE_UNRESOLVED', `Checkout ${checkout.root} has a detached HEAD; no branch identifies an initiative`, {
+      checkout: checkout.root,
     });
   }
-
-  const pointed = checkout.sidecar?.initiative ?? null;
-  let stalePointer: Resolution['stalePointer'] = null;
-  if (pointed !== null) {
-    const verified = await verifyPointer(workspace, pointed, checkout);
-    if (verified.entry) {
-      return { initiative: verified.entry, source: 'sidecar', checkout, stalePointer: null, diagnostics };
-    }
-    stalePointer = { pointed, reason: verified.reason };
-    diagnostics.push(diagnostic('warning', 'STALE_POINTER', `Sidecar points at ${pointed} but ${verified.reason}`, checkout.sidecar?.path));
-  }
-
   const owners = await branchOwners(workspace, checkout.repositoryPath, checkout.branch);
   if (owners.length === 1) {
-    return { initiative: owners[0] as InitiativeEntry, source: 'branch', checkout, stalePointer, diagnostics };
+    return { initiative: owners[0] as InitiativeEntry, source: 'branch', checkout, diagnostics: [] };
   }
   if (owners.length > 1) {
     throw new GrindError('INITIATIVE_AMBIGUOUS', `Branch ${checkout.branch} of ${checkout.repositoryPath} is tracked by several initiatives: ${owners.map((o) => o.id).join(', ')}`, {
       candidates: owners.map((o) => o.id),
-      stalePointer,
     });
   }
   throw new GrindError('INITIATIVE_UNRESOLVED', `No open initiative tracks ${checkout.repositoryPath} on branch ${checkout.branch}`, {
-    checkout: checkoutRoot,
+    checkout: checkout.root,
     branch: checkout.branch,
-    stalePointer,
   });
-}
-
-async function verifyPointer(
-  workspace: Workspace,
-  pointed: string,
-  checkout: CheckoutContext,
-): Promise<{ entry: InitiativeEntry | null; reason: string }> {
-  let entry: InitiativeEntry;
-  try {
-    entry = await resolveIdentifier(workspace, pointed);
-  } catch (error) {
-    return { entry: null, reason: (error as Error).message };
-  }
-  const record = await readInitiative(entry.dir, { workspace });
-  const state = record.ledgerState?.state ?? null;
-  if (state === null) return { entry: null, reason: 'its ledger state is unreadable' };
-  const tracked = state.repositories.some(
-    (r) => tracksPath(r, checkout.repositoryPath) && r.branch === checkout.branch,
-  );
-  return tracked
-    ? { entry, reason: '' }
-    : { entry: null, reason: `its ledger does not track ${checkout.repositoryPath} on branch ${checkout.branch}` };
 }
 
 /** Open, unarchived initiatives tracking this repository and branch. */
@@ -207,7 +163,6 @@ export async function branchOwners(
   return owners;
 }
 
-function tracksPath(repository: RepositoryEntry, repositoryPath: string): boolean {
-  return normalizeRepositoryPath(repository.path) === repositoryPath ||
-    (repository.checkout !== 'clone' && normalizeRepositoryPath(repository.checkout) === repositoryPath);
+export function tracksPath(repository: { path: string }, repositoryPath: string): boolean {
+  return normalizeRepositoryPath(repository.path) === normalizeRepositoryPath(repositoryPath);
 }

@@ -1,83 +1,73 @@
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { inspectInitiative, startBlockers } from './inspect.ts';
-import { closedLedger, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative, writeSidecar } from './test-helpers.ts';
+import { inspectInitiative } from './inspect.ts';
+import { closedLedger, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 import { loadWorkspace } from './workspace.ts';
 
 const entry = (id: string, dir: string) => ({ id, dir, archived: false });
 
-test('observed checkout state is compared with recorded tracking', async (t) => {
+test('observed state follows wherever the recorded branch is checked out', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   const dir = await writeInitiative(ws, 'app/x', {
     ledger: openLedger([
       { path: 'app', branch: 'feature' },
+      { path: 'lib', branch: 'topic', checkout: 'wt/ignored' },
+      { path: 'idle', branch: 'later' },
       { path: 'missing', branch: 'main' },
       { path: 'plain', branch: 'main' },
-      { path: 'other', branch: 'main', checkout: 'wt/other' },
     ]),
   });
   const app = await makeCheckout(ws, 'app', 'feature');
   await writeFile(path.join(app, 'dirty.txt'), 'x');
-  await writeFile(path.join(app, 'moved.md'), 'placeholder');
-  await git(app, 'add', 'moved.md');
-  await git(app, 'commit', '-q', '-m', 'add');
-  await git(app, 'mv', '-f', 'moved.md', '.grind.md');
-  await writeSidecar(app, 'app/x', '## @README.md#1\n\nnote\n');
-  const { mkdir } = await import('node:fs/promises');
+  const lib = await makeCheckout(ws, 'lib', 'main');
+  const libWorktree = path.join(ws.root, '.worktrees', 'lib', 'x');
+  await git(lib, 'worktree', 'add', '-q', '-b', 'topic', libWorktree);
+  await makeCheckout(ws, 'idle', 'main');
   await mkdir(path.join(ws.root, 'plain'));
-  const other = await makeCheckout(ws, 'wt/other', 'main');
-  await git(other, 'checkout', '-q', '--detach');
 
   const workspace = await loadWorkspace({ cwd: ws.root });
   const inspection = await inspectInitiative(workspace, entry('app/x', dir));
-  const byPath = Object.fromEntries(inspection.repositories.map((r) => [r.recorded.path, r]));
-  assert.equal(byPath['app']?.onRecordedBranch, true);
-  assert.deepEqual(byPath['app']?.observed.changedFiles, ['?? dirty.txt']);
-  assert.deepEqual(byPath['app']?.observed.sidecar, { initiative: 'app/x', verified: true, pendingNotes: 1 });
-  assert.equal(byPath['missing']?.observed.exists, false);
-  assert.equal(byPath['plain']?.observed.repository, false);
-  assert.equal(byPath['other']?.observed.detached, true);
-  assert.equal(byPath['other']?.observed.path, path.join(ws.root, 'wt', 'other'));
-  assert.deepEqual(
-    inspection.diagnostics.map((d) => d.code).sort(),
-    ['CHECKOUT_MISSING', 'CHECKOUT_NOT_REPOSITORY', 'DETACHED_HEAD', 'PENDING_NOTES'],
-  );
-  assert.deepEqual(startBlockers(inspection).length, 3);
+  const byPath = Object.fromEntries(inspection.repositories.map((r) => [r.recorded.path, r.observed]));
+  assert.equal(byPath['app']?.path, app);
+  assert.equal(byPath['app']?.kind, 'canonical');
+  assert.deepEqual(byPath['app']?.changedFiles, ['?? dirty.txt']);
+  assert.equal(byPath['lib']?.path, libWorktree);
+  assert.equal(byPath['lib']?.kind, 'grind');
+  assert.equal(byPath['lib']?.canonical, lib);
+  assert.equal(byPath['idle']?.path, null);
+  assert.equal(byPath['idle']?.repository, true);
+  assert.equal(byPath['idle']?.standardPath, path.join(ws.root, '.worktrees', 'idle', 'x'));
+  assert.equal(byPath['plain']?.repository, false);
+  assert.deepEqual(inspection.diagnostics.map((d) => d.code).sort(), ['CHECKOUT_MISSING', 'CHECKOUT_NOT_REPOSITORY']);
 });
 
-test('branch mismatch and foreign pointer are reported, and block start', async (t) => {
+test('app-managed and other worktrees are distinguished from Grind worktrees', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
-  const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
-  const app = await makeCheckout(ws, 'app', 'elsewhere');
-  await writeSidecar(app, 'app/y');
+  const dir = await writeInitiative(ws, 'app/x', { ledger: openLedger([{ path: 'app', branch: 'feature' }, { path: 'lib', branch: 'topic' }]) });
+  const app = await makeCheckout(ws, 'app', 'main');
+  await git(app, 'worktree', 'add', '-q', '-b', 'feature', path.join(app, '.claude', 'worktrees', 'busy'));
+  const lib = await makeCheckout(ws, 'lib', 'main');
+  await git(lib, 'worktree', 'add', '-q', '-b', 'topic', path.join(ws.root, 'lib-topic'));
   const workspace = await loadWorkspace({ cwd: ws.root });
   const inspection = await inspectInitiative(workspace, entry('app/x', dir));
-  assert.deepEqual(inspection.diagnostics.map((d) => d.code).sort(), ['BRANCH_MISMATCH', 'POINTER_MISMATCH']);
-  assert.equal(inspection.repositories[0]?.observed.sidecar?.verified, false);
-  assert.deepEqual(startBlockers(inspection), ['app is on elsewhere, not feature']);
+  assert.deepEqual(inspection.repositories.map((r) => r.observed.kind), ['app', 'other']);
 });
 
-test('clean matching checkouts have no blockers; closed and legacy ledgers are summarized', async (t) => {
+test('closed and legacy ledgers are summarized', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());
   const workspace = await loadWorkspace({ cwd: ws.root });
-  const ok = await writeInitiative(ws, 'app/ok', { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
-  await makeCheckout(ws, 'app', 'main');
-  assert.deepEqual(startBlockers(await inspectInitiative(workspace, entry('app/ok', ok))), []);
-
   const closed = await writeInitiative(ws, 'app/closed', { ledger: closedLedger() });
   const closedInspection = await inspectInitiative(workspace, entry('app/closed', closed));
   assert.equal(closedInspection.state?.status, 'closed');
   assert.deepEqual(closedInspection.artifacts.map((a) => a.type), [null, 'Intent', 'Initiative Ledger']);
-  assert.deepEqual(startBlockers(closedInspection), []);
 
   const legacy = await writeInitiative(ws, 'app/legacy', { ledger: '# Ledger\n\nStatus: open\n' });
   const legacyInspection = await inspectInitiative(workspace, entry('app/legacy', legacy));
   assert.equal(legacyInspection.legacy, true);
   assert.equal(legacyInspection.state, null);
-  assert.ok(startBlockers(legacyInspection).includes('ledger state is malformed or legacy'));
 });

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { sessionContext, presentHookContext } from './context-hook.ts';
 import { contextCommand } from './context.ts';
 import { loadWorkspace } from './workspace.ts';
-import { makeTempWorkspace, writeInitiative, closedLedger, git, makeCheckout, openLedger, writeSidecar } from './test-helpers.ts';
+import { makeTempWorkspace, writeInitiative, closedLedger, git, makeCheckout, openLedger } from './test-helpers.ts';
 
 test('hook opt-in is checked before state repository access, and invalid values are actionable', async t => {
   const ws = await makeTempWorkspace(); t.after(ws.cleanup);
@@ -50,15 +50,12 @@ test('enabled hook loads folder context, stays quiet without association, and ch
 });
 
 
-test('hook reports ambiguity, stale pointers, and detached pointers instead of treating them as absent', async t => {
+test('hook reports ambiguity and stays quiet on a detached HEAD', async t => {
   const ws = await makeTempWorkspace(); t.after(ws.cleanup);
   await writeFile(path.join(ws.root, 'grind-workspace.json'), JSON.stringify({ stateRepository: './grind-state', contextOnSessionStart: true }));
   const app = await makeCheckout(ws, 'app');
   for (const id of ['one', 'two']) await writeInitiative(ws, id, { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
   assert.match((await sessionContext({ cwd: app }, '/plugin'))!, /INITIATIVE_AMBIGUOUS/);
-  await writeSidecar(app, 'gone');
-  assert.match((await sessionContext({ cwd: app }, '/plugin'))!, /INITIATIVE_AMBIGUOUS/);
-  await writeSidecar(app, 'one');
   await git(app, 'checkout', '--detach', '-q');
-  assert.match((await sessionContext({ cwd: app }, '/plugin'))!, /INITIATIVE_UNRESOLVED/);
+  assert.equal(await sessionContext({ cwd: app }, '/plugin'), null);
 });

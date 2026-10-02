@@ -1,6 +1,9 @@
-import type { ListResult, StartResult, StatusResult } from './commands.ts';
+import type { CheckoutKind } from './checkouts.ts';
+import type { ListResult, StatusResult } from './commands.ts';
 import type { Diagnostic } from './errors.ts';
 import type { InitiativeInspection } from './inspect.ts';
+import type { ListedNote } from './notes.ts';
+import type { RepositoryInitiative, RepositoryStatus, SwitchResult, WorktreeResult } from './worktree.ts';
 
 const DEFAULT_WIDTH = 100;
 const MIN_WIDTH = 48;
@@ -143,14 +146,9 @@ function formatInspection(inspection: InitiativeInspection, width: number, optio
   if (inspection.repositories.length > 0) lines.push('', 'Repositories');
   for (const repo of inspection.repositories) {
     const { recorded, observed } = repo;
-    let seen: string;
-    if (!observed.exists) seen = 'missing';
-    else if (!observed.repository) seen = 'not a git checkout';
-    else seen = observed.detached ? 'detached HEAD' : `on ${observed.branch}`;
+    const seen = !observed.repository ? 'repository unavailable' : location(observed.path, observed.kind);
     const changes = observed.changedFiles.length > 0 ? `, ${observed.changedFiles.length} changed file(s)` : '';
-    const notes = observed.sidecar?.pendingNotes ? `, ${observed.sidecar.pendingNotes} pending note(s)` : '';
-    const pointer = observed.sidecar ? `, pointer ${observed.sidecar.initiative ?? 'absent'}${observed.sidecar.verified ? ' (verified)' : ''}` : '';
-    lines.push(...field(recorded.path, `recorded ${recorded.branch} (${recorded.checkout}); observed ${seen}${changes}${notes}${pointer}`, width));
+    lines.push(...field(recorded.path, `${recorded.branch}: ${seen}${changes}`, width));
   }
   if (inspection.diagnostics.length > 0) {
     lines.push('', 'Diagnostics');
@@ -159,10 +157,41 @@ function formatInspection(inspection: InitiativeInspection, width: number, optio
   return lines;
 }
 
+function location(dir: string | null, kind: CheckoutKind | null): string {
+  if (dir === null) return 'not checked out';
+  const labels: Record<CheckoutKind, string> = { canonical: 'canonical checkout', grind: 'worktree', app: 'app worktree', other: 'worktree' };
+  return `${labels[kind ?? 'other']} ${dir}`;
+}
+
+function repositoryInitiative(item: RepositoryInitiative, width: number): string[] {
+  return [
+    ...field(item.id, `${item.branch}: ${location(item.path, item.kind)}`, width),
+    ...(item.current_task ? field('', item.current_task, width, '    ') : []),
+  ];
+}
+
+function formatRepositoryStatus(result: RepositoryStatus, width: number, options: FormatOptions): string[] {
+  const lines = [useColor(options) ? `${ANSI.bold}${result.repository}${ANSI.reset}` : result.repository];
+  lines.push(...field('Checkout', `${result.checkout.path} (${result.checkout.kind}) on ${result.checkout.branch ?? 'detached HEAD'}`, width));
+  if (result.owner) {
+    lines.push(...field('Init', result.owner.id, width));
+    if (result.owner.current_task) lines.push(...field('Task', result.owner.current_task, width));
+    if (result.owner.next_action) lines.push(...field('Next', result.owner.next_action, width));
+  } else {
+    lines.push(...field('Init', result.owners.length > 1 ? `ambiguous: ${result.owners.join(', ')}` : 'none owns this branch', width));
+  }
+  if (result.initiatives.length > 0) {
+    lines.push('', 'Other inits in this repository');
+    for (const item of result.initiatives) lines.push(...repositoryInitiative(item, width));
+  }
+  return lines;
+}
+
 export function formatStatus(result: StatusResult, options: FormatOptions = {}): string {
   const width = outputWidth(options);
+  if (result.kind === 'repository') return formatRepositoryStatus(result, width, options).join('\n');
   const lines = formatInspection(result.inspection, width, options);
-  lines.splice(1, 0, ...field('Resolved', `via ${result.resolution.source}${result.resolution.stalePointer ? ` (stale pointer ${result.resolution.stalePointer.pointed})` : ''}`, width));
+  lines.splice(1, 0, ...field('Resolved', `via ${result.resolution.source}`, width));
   for (const operation of result.pendingOperations) {
     lines.push(...field('Pending', `${operation.kind} operation ${operation.id}: ${operation.step}`, width));
   }
@@ -172,19 +201,46 @@ export function formatStatus(result: StatusResult, options: FormatOptions = {}):
   return lines.join('\n');
 }
 
-export function formatStart(result: StartResult, options: FormatOptions = {}): string {
-  const width = outputWidth(options);
-  const lines = formatInspection(result.inspection, width, options);
-  const switchText = result.switched
-    ? `Entered ${result.inspection.id}; switched ${result.switchedRepositories.join(', ')}.`
-    : `Entered ${result.inspection.id}; no checkout was switched.`;
-  lines.push('', ...wrap(switchText, width));
-  for (const transfer of result.noteTransfers.filter((item) => item.parked > 0 || item.restored > 0)) {
-    lines.push(...wrap(`${transfer.repository}: parked ${transfer.parked} note(s), restored ${transfer.restored}.`, width));
+/** What `worktree` did, apart from the path it prints. */
+export function formatWorktree(result: WorktreeResult): string {
+  const lines: string[] = [];
+  if (result.created) lines.push(`Created a worktree for ${result.initiative} on ${result.branch} (${result.branchOrigin} branch).`);
+  if (result.recorded) lines.push(`Recorded ${result.repository} on ${result.branch} in the ledger of ${result.initiative}; save it.`);
+  for (const link of result.instructionLinks.filter((item) => item.status === 'created' || item.status === 'replaced')) {
+    lines.push(`Linked ${link.link} -> ${link.target}`);
   }
-  if (result.dependencyChanges.length > 0) {
-    lines.push(...wrap(`Dependency files changed: ${result.dependencyChanges.join(', ')}`, width));
-  }
-  if (result.pendingNotes > 0) lines.push(...wrap(`${result.pendingNotes} review note(s) await handling before resuming.`, width));
+  lines.push(...result.warnings.map((warning) => `Warning: ${warning}`));
   return lines.join('\n');
+}
+
+export function formatSwitch(result: SwitchResult): string {
+  if (!result.switched) return `${result.initiative} is already in the foreground at ${result.canonical}.`;
+  const lines = [`${result.initiative} (${result.branch}) is now in the foreground at ${result.canonical}.`];
+  if (result.takenFrom) lines.push(`Taken from ${result.takenFrom.path} (${result.takenFrom.released}).`);
+  const previous = result.previous;
+  if (previous?.path) lines.push(`${previous.initiative} (${previous.branch}) moved to the background at ${previous.path}.`);
+  else if (previous?.branch) lines.push(`${previous.branch} is no longer checked out; no init owns it alone, so no worktree was created.`);
+  if (result.recorded) lines.push(`Recorded ${result.repository} on ${result.branch} in the ledger of ${result.initiative}; save it.`);
+  lines.push(...result.warnings.map((warning) => `Note: ${warning}`));
+  return lines.join('\n');
+}
+
+export function formatRepositoryInitiatives(result: RepositoryStatus, options: FormatOptions = {}): string {
+  const width = outputWidth(options);
+  const all = [...(result.owner ? [result.owner] : []), ...result.initiatives];
+  if (all.length === 0) return `No open init tracks ${result.repository}.`;
+  return [`Inits tracking ${result.repository}`, ...all.flatMap((item) => repositoryInitiative(item, width))].join('\n');
+}
+
+export function formatNotes(result: { initiative: string; notes: ListedNote[] }): string {
+  if (result.notes.length === 0) return `${result.initiative} has no review notes.`;
+  return [
+    `${result.notes.length} review note(s) for ${result.initiative}`,
+    ...result.notes.flatMap((note) => [
+      '',
+      `${note.id} @${note.repository}:${note.path}#${note.start}${note.end === note.start ? '' : `-${note.end}`}`,
+      ...(note.anchor === null ? [] : [`> ${note.anchor}`]),
+      note.body,
+    ]),
+  ].join('\n');
 }

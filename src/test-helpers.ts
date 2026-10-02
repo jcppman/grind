@@ -174,11 +174,6 @@ export async function makeCheckout(ws: TempWorkspace, relativePath: string, bran
   return dir;
 }
 
-export async function writeSidecar(checkoutDir: string, initiative: string | null, notes = ''): Promise<void> {
-  const header = initiative === null ? '' : `---\ninitiative: ${initiative}\n---\n\n`;
-  await writeFile(path.join(checkoutDir, '.grind.md'), `${header}${notes}`);
-}
-
 export async function makeSymlink(target: string, linkPath: string): Promise<void> {
   await mkdir(path.dirname(linkPath), { recursive: true });
   await symlink(target, linkPath);

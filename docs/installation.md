@@ -1,8 +1,8 @@
 # Install Grind
 
 Node.js 24 or later and Git are required. This build provides `create`, `list`,
-`status`, `context`, recoverable `start`, `save`, `close`, `archive`, and the `agent-note`
-writer through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
+`status`, `context`, `worktree`, `switch`, `note`, `save`, `close`, and `archive`
+through shared Codex and Claude Code skills, plus a local dashboard. Init and doctor belong to later
 releases.
 
 ## Distribution
@@ -34,8 +34,7 @@ For terminal use, `npm pack` creates the npm artifact; install that artifact wit
 `npm install --global <tarball>`. Plugin installation alone does not add `grind`
 to PATH. Both entry points use the same compiled CLI.
 
-During development, `npm run build && npm link` links both `grind` and
-`agent-note` from the checkout. Rebuild after source changes because the linked
+During development, `npm run build && npm link` links `grind` from the checkout. Rebuild after source changes because the linked
 commands execute the compiled files in `dist/`. To try unmerged plugin changes in
 Claude Code, run `npm run package:plugin` and start a session with
 `claude --plugin-dir build/grind`.
@@ -72,10 +71,10 @@ the background after a session starts and load on the next launch or
 `/reload-plugins`. Start a fresh Claude Code session after installation.
 
 Use the [workspace opt-in](#automatic-context-loading) for automatic loading, or
-invoke `/grind:context [initiative]` explicitly. `/grind:start [initiative]` prepares
-the initiative and then asks what you want to do unless you also requested work.
-Both skills discover from the current folder when no identifier is supplied and
-offer available inits for selection when discovery cannot choose one.
+invoke `/grind:context [initiative]` explicitly. `/grind:start <initiative> [task]`
+loads the init, finds or creates its worktree, and then asks what you want to do
+unless you also gave a task. Both accept a unique fragment of the init ID and offer
+available inits for selection when none is given.
 
 ## Updating
 
@@ -101,7 +100,9 @@ initiative state out of the implementation repository.
 grind create outcome --scope app
 grind status app/outcome
 grind context app/outcome
-grind start app/outcome
+grind worktree app/outcome --repo app
+grind note add app/src/main.ts 10 12 'Extract this'
+grind switch app/outcome   # run inside app: bring it into the canonical checkout
 grind save app/outcome --message 'outcome: clarify intent'
 grind close app/outcome --outcome delivered --result 'release/v1' --notes handled
 grind archive app/outcome
@@ -113,11 +114,14 @@ established as initiative work, following [Creating an initiative](protocol.md#c
 An observed current branch alone does not establish ownership. All commands support
 `--json` and `--workspace`.
 
-Start automatically excludes the root `.grind.md` sidecar when needed by appending
-`/.grind.md` to Git's local `info/exclude`. Existing entries are preserved; linked
-worktrees share this file. No global Git configuration or repository `.gitignore`
-change is needed. A tracked sidecar must be untracked explicitly. If another ignore
-rule overrides the local exclusion, start reports the conflict for resolution.
+Worktrees live under `<workspace>/.worktrees/<repository path>/<init name>`; the
+canonical checkout stays with you. `grind worktree` prints only the path on stdout,
+so `cd "$(grind worktree outcome)"` works. See
+[Checkouts and worktrees](protocol.md#checkouts-and-worktrees).
+
+Version 0.5 removes `.grind.md` sidecars and `agent-note`. Delete leftover
+`.grind.md` files after moving any notes into the init's `notes.md` with
+`grind note add`.
 
 ## Automatic context loading
 

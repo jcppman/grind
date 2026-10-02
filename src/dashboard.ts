@@ -1,10 +1,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
+import path from 'node:path';
 import { listInitiatives } from './discovery.ts';
+import { GrindError } from './errors.ts';
+import { formatSwitch } from './format.ts';
 import { inspectInitiative } from './inspect.ts';
+import { tracksPath } from './resolve.ts';
 import type { Workspace } from './workspace.ts';
+import { switchCommand } from './worktree.ts';
 import { dashboardHtml, dashboardScript } from './dashboard-view.ts';
 
 export function directoryCommand(directory: string, platform: NodeJS.Platform = process.platform): string {
@@ -30,15 +35,14 @@ export async function dashboardData(workspace: Workspace) {
         next: inspection.state?.next_action ?? null,
         result: inspection.state?.result ?? null,
         diagnostics: inspection.diagnostics,
-        repositories: inspection.repositories.map(({ recorded, observed, onRecordedBranch }) => ({
+        repositories: inspection.repositories.map(({ recorded, observed }) => ({
           name: recorded.path,
-          directory: observed.path,
-          command: observed.exists && observed.repository ? directoryCommand(observed.path) : null,
+          directory: observed.path ?? observed.canonical,
+          command: observed.path === null ? null : directoryCommand(observed.path),
           branch: recorded.branch,
-          actualBranch: observed.branch,
-          onRecordedBranch,
+          location: observed.kind,
           changes: observed.changedFiles.length,
-          available: observed.exists && observed.repository,
+          available: observed.repository,
         })),
       });
     } catch (error) {
@@ -77,7 +81,48 @@ const openEditor: OpenEditor = async (editor, directory) => {
   }
 };
 
-export async function serveDashboard(workspace: Workspace, launch: OpenEditor = openEditor) {
+type Switcher = typeof switchCommand;
+
+class RequestTooLarge extends Error {}
+
+async function readJson(request: IncomingMessage): Promise<Record<string, unknown> | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 8192) throw new RequestTooLarge();
+    chunks.push(chunk);
+  }
+  try {
+    const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return typeof input === 'object' && input !== null && !Array.isArray(input) ? input : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Brings an open init's branch into the canonical checkout of one of its recorded repositories. */
+async function switchFromDashboard(workspace: Workspace, input: Record<string, unknown> | null, switcher: Switcher) {
+  if (!input || typeof input['id'] !== 'string' || typeof input['repository'] !== 'string' || (input['force'] !== undefined && typeof input['force'] !== 'boolean')) {
+    return { status: 400, body: { error: 'Choose a valid init and repository.' } };
+  }
+  const entry = (await listInitiatives(workspace.initiativesDir)).entries.find((item) => item.id === input['id']);
+  const inspection = entry === undefined || entry.archived ? null : await inspectInitiative(workspace, entry);
+  const recorded = inspection?.state?.status === 'open' ? inspection.repositories.find((item) => tracksPath(item.recorded, input['repository'] as string)) : undefined;
+  if (entry === undefined || recorded === undefined) {
+    return { status: 404, body: { error: 'That init no longer tracks this repository as open work. Refresh and try again.' } };
+  }
+  try {
+    const result = await switcher({ workspace, cwd: path.resolve(workspace.root, recorded.recorded.path) }, entry.id, { force: input['force'] === true });
+    return { status: 200, body: { message: formatSwitch(result) } };
+  } catch (error) {
+    if (!(error instanceof GrindError)) throw error;
+    const details = error.details as { recent?: unknown } | undefined;
+    return { status: 409, body: { error: error.message, code: error.code, canForce: error.code === 'SWITCH_BLOCKED' && Array.isArray(details?.recent) } };
+  }
+}
+
+export async function serveDashboard(workspace: Workspace, launch: OpenEditor = openEditor, switcher: Switcher = switchCommand) {
   const prefix = `/${randomBytes(24).toString('hex')}/`;
   const nonce = randomBytes(18).toString('base64');
   const server = createServer(async (request, response) => {
@@ -90,35 +135,36 @@ export async function serveDashboard(workspace: Workspace, launch: OpenEditor = 
       response.writeHead(403).end('Forbidden');
       return;
     }
-    if (request.method === 'POST' && request.url === `${prefix}open`) {
+    if (request.method === 'POST' && (request.url === `${prefix}open` || request.url === `${prefix}switch`)) {
       if (request.headers.origin !== `http://127.0.0.1:${address.port}` || request.headers['content-type'] !== 'application/json') {
         response.writeHead(403).end('Forbidden');
         return;
       }
       try {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        for await (const chunk of request) {
-          size += chunk.length;
-          if (size > 8192) {
-            response.writeHead(413).end('Request too large');
-            return;
-          }
-          chunks.push(chunk);
+        let input: Record<string, unknown> | null;
+        try {
+          input = await readJson(request);
+        } catch (error) {
+          if (!(error instanceof RequestTooLarge)) throw error;
+          response.writeHead(413).end('Request too large');
+          return;
         }
-        let input;
-        try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { input = null; }
-        if (!input || typeof input.id !== 'string' || !['vscode', 'webstorm'].includes(input.editor)) {
+        if (request.url === `${prefix}switch`) {
+          const result = await switchFromDashboard(workspace, input, switcher);
+          response.writeHead(result.status, { 'Content-Type': 'application/json' }).end(JSON.stringify(result.body));
+          return;
+        }
+        if (!input || typeof input['id'] !== 'string' || !['vscode', 'webstorm'].includes(input['editor'] as string)) {
           response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Choose a valid init and editor.' }));
           return;
         }
         const listing = await listInitiatives(workspace.initiativesDir);
-        const entry = listing.entries.find(entry => entry.id === input.id);
+        const entry = listing.entries.find(entry => entry.id === input['id']);
         if (!entry) {
           response.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Init folder is no longer available. Refresh and try again.' }));
           return;
         }
-        await launch(input.editor, entry.dir);
+        await launch(input['editor'] as Editor, entry.dir);
         response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ opened: true }));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }));

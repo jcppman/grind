@@ -5,15 +5,18 @@ import type { CommandContext } from './commands.ts';
 import { markdownSection, navigation, requiredLinks, resolveLink, type ContextLink } from './context-markdown.ts';
 import { diagnostic, hasErrors, type Diagnostic } from './errors.ts';
 import { parseFrontmatter } from './frontmatter.ts';
-import { git, gitCurrentBranch, gitToplevel } from './git.ts';
+import { checkoutKind, repositoryCheckout } from './checkouts.ts';
+import { git } from './git.ts';
 import { inspectInitiative } from './inspect.ts';
+import { readNotes } from './notes.ts';
 import { pendingOperationSummaries } from './operations.ts';
-import { resolveInitiative } from './resolve.ts';
-import { readSidecar } from './sidecar.ts';
+import { branchOwners, resolveInitiative } from './resolve.ts';
+import type { Workspace } from './workspace.ts';
 
 export const ENTRY_RULES = [
   'The user’s current request determines the task; the recorded next action is only a candidate.',
-  'Context loading is read-only: do not fetch, switch, reopen, repair pointers, handle notes, or save as part of loading.',
+  'Context loading is read-only: do not fetch, create worktrees, switch branches, reopen, handle notes, or save as part of loading.',
+  'Look up the working path with grind worktree before changing code, and again after any pause; never change the branch of the user’s canonical checkout unless asked.',
   'Inspect pending review notes before resuming implementation.',
   'Load the relevant specification and plan before changing behavior.',
   'Checkpoint meaningful work through the save workflow. Load operation-specific skills when needed.',
@@ -35,17 +38,22 @@ function contained(root: string, file: string): boolean {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-async function checkoutDetails(root: string) {
-  const sidecar = await readSidecar(root);
-  const head = await git(['rev-parse', '--verify', 'HEAD'], root);
+async function head(dir: string): Promise<string | null> {
+  const result = await git(['rev-parse', '--verify', 'HEAD'], dir);
+  return result.ok ? result.stdout.trim() : null;
+}
+
+async function invokingCheckoutDetails(workspace: Workspace, cwd: string) {
+  const checkout = await repositoryCheckout(workspace, cwd);
+  if (checkout === null) return null;
+  const owners = checkout.branch === null ? [] : await branchOwners(workspace, checkout.repositoryPath, checkout.branch);
   return {
-    path: root,
-    branch: await gitCurrentBranch(root),
-    head: head.ok ? head.stdout.trim() : null,
-    association: sidecar?.initiative ?? null,
-    sidecarPath: sidecar?.path ?? null,
-    notes: sidecar?.notes.map(({ reference, path, start, end, anchor }) => ({ reference, path, start, end, anchor })) ?? [],
-    diagnostics: sidecar?.diagnostics ?? [],
+    path: checkout.root,
+    repository: checkout.repositoryPath,
+    kind: checkoutKind(workspace, checkout.canonical, checkout.root),
+    branch: checkout.branch,
+    head: await head(checkout.root),
+    owners: owners.map((owner) => owner.id),
   };
 }
 
@@ -88,17 +96,14 @@ export async function contextCommand(context: CommandContext, identifier?: strin
     }
   }
   const repositories = [];
-  for (const repository of [...inspection.repositories].sort((a, b) => a.observed.path.localeCompare(b.observed.path))) {
-    repositories.push({ ...repository, details: repository.observed.repository ? await checkoutDetails(repository.observed.path) : null });
+  for (const repository of [...inspection.repositories].sort((a, b) => a.recorded.path.localeCompare(b.recorded.path))) {
+    repositories.push({ ...repository, head: repository.observed.path === null ? null : await head(repository.observed.path) });
   }
-  const invokingRoot = await gitToplevel(context.cwd);
-  const invokingCheckout = invokingRoot ? await checkoutDetails(invokingRoot) : null;
-  if (invokingCheckout) {
-    diagnostics.push(...invokingCheckout.diagnostics);
-    if (invokingCheckout.association && invokingCheckout.association !== inspection.id) {
-      diagnostics.push(diagnostic('warning', 'INVOKING_CHECKOUT_ASSOCIATION', `Invoking checkout points to ${invokingCheckout.association}; selected init is ${inspection.id}.`, invokingCheckout.path));
-    }
+  const invokingCheckout = await invokingCheckoutDetails(context.workspace, context.cwd);
+  if (invokingCheckout && invokingCheckout.owners.length > 0 && !invokingCheckout.owners.includes(inspection.id)) {
+    diagnostics.push(diagnostic('warning', 'INVOKING_CHECKOUT_ASSOCIATION', `Invoking checkout is on a branch of ${invokingCheckout.owners.join(', ')}; selected init is ${inspection.id}.`, invokingCheckout.path));
   }
+  const notes = await readNotes(inspection.dir);
   const pendingOperations = (await pendingOperationSummaries(context.workspace)).filter(op => op.target === inspection.id || `_archive/${op.target}` === inspection.id);
   return {
     schemaVersion: 1,
@@ -107,12 +112,12 @@ export async function contextCommand(context: CommandContext, identifier?: strin
     id: inspection.id,
     dir: inspection.dir,
     archived: inspection.archived,
-    resolution: { source: resolution.source, stalePointer: resolution.stalePointer },
+    resolution: { source: resolution.source },
     state: inspection.state,
     complete: Boolean(intent && ledger && record.index && inspection.state) && !hasErrors(diagnostics),
     roadmap: inspection.roadmap,
     roadmaps: record.roadmaps,
-    intent, constraints, ledger, repositories, invokingCheckout, pendingOperations,
+    intent, constraints, ledger, repositories, notes, invokingCheckout, pendingOperations,
     diagnostics, navigation: links, entryRules: ENTRY_RULES,
   };
 }
@@ -133,6 +138,7 @@ export function formatContext(result: ContextResult): string {
     '## Current checkpoint', renderSource(result.ledger),
     '## Observed state',
     ...result.repositories.map(repo => JSON.stringify(repo, null, 2)),
+    `Review notes (${result.notes.length}):\n${JSON.stringify(result.notes, null, 2)}`,
     `Invoking checkout (association only):\n${JSON.stringify(result.invokingCheckout, null, 2)}`,
     `Pending lifecycle operations:\n${JSON.stringify(result.pendingOperations, null, 2)}`,
     `Diagnostics:\n${JSON.stringify(result.diagnostics, null, 2)}`,

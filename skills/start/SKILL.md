@@ -1,25 +1,32 @@
 ---
 name: start
-description: Prepare an existing Grind init (initiative) for the session, then ask what the user wants to do. Offer a choice list when the initiative is omitted. Use when the user requests starting or switching into an init or initiative.
+description: Start or resume work on a Grind init (initiative) — the entry for "let's work on init X". Loads its context, finds or creates its worktree, and reports where to work. Accepts a unique fragment of the init ID and offers a choice list when omitted.
 ---
 
-Load the [context workflow](../context/SKILL.md), then follow Prepare an initiative in the
-[shared operating protocol](../../docs/protocol.md). Resolve the plugin root from
-this SKILL.md and run `node <plugin-root>/scripts/grind.mjs start [initiative] --json`
-with `--workspace <directory>` if needed.
+Load the [context workflow](../context/SKILL.md) for the init, then follow Prepare an
+initiative in the [shared operating protocol](../../docs/protocol.md). Pass the user's
+fragment as the identifier; the CLI resolves a unique fragment and reports ambiguity.
 
-Start performs the complete preflight before changing any checkout. It may fetch,
-park and restore notes, switch clean clones, repair pointers, resume a pending
-operation, configure a missing local sidecar exclusion, and reopen closed work after
-checkout preparation succeeds. Report a blocker instead of committing, stashing,
-discarding, merging, pushing, deleting a branch, or stealing a lock.
+If the init is closed, ask whether to reopen it before anything else, and reopen it
+by editing the ledger as the protocol describes.
 
-Reinspect the checkout and surface relevant review notes, discrepancies, and the
-recorded next action. A bare start prepares the initiative; it does not authorize
-executing that action or processing review notes. Ask what the user would like to
-do next and wait. The user may want to discuss the initiative.
+Resolve the plugin root from this SKILL.md. For each repository with a recorded
+branch, run
+`node <plugin-root>/scripts/grind.mjs worktree <init> [--repo <repository>] --json`,
+adding `--workspace <directory>` when needed. It prints the path where the init's
+work lives and creates the standard worktree when the branch is not checked out.
+`CHECKOUT_HELD` means the branch is in the user's canonical checkout: say so and ask
+whether to work there or wait. Do not switch or stash the canonical checkout. An
+init with no recorded branch gets no branch or worktree until implementation needs
+one; then run `worktree` with `--repo`, which records a branch named after the init.
 
-If the user also gives a substantive task, carry out that task within the current
-specification, plan, ledger, and conversation. Discuss material changes in direction
-before taking them. Use the [save workflow](../save/SKILL.md) at meaningful
-checkpoints. An ordinary checkpoint does not commit application code.
+Report the working path, the branch's state against its remote (`git status -sb`
+there), review notes, discrepancies, and the recorded next action. Do the work in the
+reported path. If the user gave a task, carry it out within the current
+specification, plan, ledger, and conversation. Otherwise ask what they want to do and
+wait; the next action is never executed automatically and a bare start does not
+authorize processing review notes.
+
+Look the path up again with `worktree` before resuming after a pause; the user may
+have moved the work with `grind switch`. Use the [save workflow](../save/SKILL.md) at
+meaningful checkpoints. An ordinary checkpoint does not commit application code.

@@ -6,5 +6,5 @@ in the workspace configuration and the host's plugin-hook trust settings. A hook
 notice describes directory association only; the user's explicit init selection
 takes precedence. Use complete injected context without rereading it, and invoke
 context when a notice alone is insufficient for the task. Loading is read-only
-and never executes the recorded next action. Use start for checkout preparation
-and save at meaningful checkpoints.
+and never executes the recorded next action. Use start to find or create the init's
+worktree, and save at meaningful checkpoints.
