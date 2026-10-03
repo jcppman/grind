@@ -390,6 +390,13 @@ with its commit or artifact reference and limitations. Preserve historical ratio
 only when it still affects future decisions; Git retains earlier checkpoints.
 Do not create a separate history file by default.
 
+Use consistent terms for the same component or state. Distinguish implemented
+behavior, verified behavior, and proposed work. State what each check established
+and what remains unverified; a passing check supports only the behavior it covers.
+Preserve conditions, exceptions, and uncertainty when shortening the checkpoint.
+For example: "At commit `abc123`, expired sessions return HTTP 401. The regression
+test passes. Production behavior is unverified. Next: review the retry behavior."
+
 Reconcile the whole checkpoint, including frontmatter and verification, against
 observed state before saving. Remove competing “current” claims and commit-by-commit
 narratives. Check relevant PR head, draft/merge state, and derived descriptions when
