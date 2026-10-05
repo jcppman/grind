@@ -404,6 +404,11 @@ work changes them; if remote verification is unavailable, label the last observa
 and uncertainty. Context loading remains read-only and does not require network
 access. `current_task` names work to do, not a completed-work status sentence.
 
+Do not record where a branch is checked out. Record the branch and its commit,
+push, and PR state; Git owns the location, and `grind worktree` reports it. The user
+can move work between checkouts with `grind switch`, which does not edit the ledger,
+so a recorded location becomes wrong without notice.
+
 When a review is interrupted, retain a compact handoff: reviewed head/base,
 unresolved findings with links, and next action. Record the outcome when it ends.
 Polling history and scheduler state stay with the review workflow.
@@ -596,7 +601,7 @@ Update the ledger when a meaningful milestone occurs, including:
 - investigation reveals a fact that changes or constrains the work
 - repository reality contradicts the plan or specification
 - a blocker, dependency, or important open question appears or is resolved
-- branch, worktree, test, migration, deployment, or rollout state changes materially
+- branch, test, migration, deployment, or rollout state changes materially
 
 Do not update it for routine commands, minor edits, or every conversational
 turn. The aim is a useful checkpoint, not an activity log.

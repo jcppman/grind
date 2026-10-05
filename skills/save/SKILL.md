@@ -8,7 +8,8 @@ During-work update, and Session-end sections of the [shared operating protocol](
 validation evidence. Rewrite current state, remove superseded observations and
 duplicate history, and retain relevant verification references and open questions.
 Reconcile frontmatter, working state, and verification as one checkpoint; identify
-which revision each retained result covers. Check relevant external facts when they
+which revision each retained result covers. Record branches, not where they are
+checked out. Check relevant external facts when they
 change, and label unavailable verification. Apply the protocol's evidence retention
 rules even when another workflow supplies the checkpoint requirements.
 Preserve lifecycle recovery records; leave `grind.updated_at` alone, because save
