@@ -78,6 +78,11 @@ records a branch named after the init when it creates one for an untracked
 repository. Creation alone does not create or switch branches. Repositories used
 only as references do not need an initiative branch or tracking entry.
 
+A repository entry holds one branch, and `grind switch` and `grind worktree` act on
+it. When initiative work in a repository forms a stack of dependent pull requests,
+record the top branch and its pull request, and list the layers in order in the
+ledger body. Update the entry whenever a layer is added on top.
+
 ### Checkouts and worktrees
 
 The canonical checkout of a repository belongs to the user. Agents do not change
