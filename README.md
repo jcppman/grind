@@ -9,7 +9,7 @@ init,” or “save this init.” Both names select the same workflows. For an e
 command, use `/grind:create xxx`.
 
 Read [the operating protocol](docs/protocol.md) for the workflow. Grind will ship
-shared context, create, start, save, close, and housekeeping skills with Codex and Claude Code plugin
+shared context, triage, create, start, save, close, and housekeeping skills with Codex and Claude Code plugin
 manifests. The CLI will own deterministic filesystem and Git mechanics.
 
 Initiative artifacts belong in the workspace's configured private state repository,
@@ -21,7 +21,7 @@ upward to the nearest enclosing workspace boundary.
 Grind provides per-init worktrees, foreground switching of the canonical checkout,
 review notes kept with each init, closure, retention archival, and scoped
 checkpoint saves. The matching
-compiled CLI and shared context/create/start/save/close/housekeeping skills run in Codex and
+compiled CLI and shared context/triage/create/start/save/close/housekeeping skills run in Codex and
 Claude Code from the same relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
@@ -83,3 +83,10 @@ Use `/grind:housekeeping` for a project or roadmap to reconcile milestone
 contributions, init scope, stale checkpoints, and completed work. The skill checks
 delivery evidence and raises unresolved conflicts in intent or priorities with
 the user. Ask for an audit only when you want findings without record changes.
+
+Use `$grind:triage` in Codex or `/grind:triage` in Claude Code to bring up work
+without choosing an init first. The skill checks relevant open inits and actual
+implementation progress, including whether the addition requires revisiting work
+already completed. It proposes an existing or new init, needed record changes,
+and suitable roadmap placement, then waits for your confirmation before writing.
+Confirming placement does not itself start implementation.
