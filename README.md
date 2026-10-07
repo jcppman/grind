@@ -9,8 +9,8 @@ init,” or “save this init.” Both names select the same workflows. For an e
 command, use `/grind:create xxx`.
 
 Read [the operating protocol](docs/protocol.md) for the workflow. Grind will ship
-shared context, triage, create, start, save, close, and housekeeping skills with Codex and Claude Code plugin
-manifests. The CLI will own deterministic filesystem and Git mechanics.
+shared context, triage, coordinate, create, start, save, close, and housekeeping
+skills with Codex and Claude Code plugin manifests. The CLI will own deterministic filesystem and Git mechanics.
 
 Initiative artifacts belong in the workspace's configured private state repository,
 not in this implementation repository. Find `grind-workspace.json` by walking
@@ -21,8 +21,8 @@ upward to the nearest enclosing workspace boundary.
 Grind provides per-init worktrees, foreground switching of the canonical checkout,
 review notes kept with each init, closure, retention archival, and scoped
 checkpoint saves. The matching
-compiled CLI and shared context/triage/create/start/save/close/housekeeping skills run in Codex and
-Claude Code from the same relocatable package.
+compiled CLI and shared skills run in Codex and Claude Code from the same
+relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
 setup, terminal use, and opt-in session hooks.
@@ -90,3 +90,8 @@ implementation progress, including whether the addition requires revisiting work
 already completed. It proposes an existing or new init, needed record changes,
 and suitable roadmap placement, then waits for your confirmation before writing.
 Confirming placement does not itself start implementation.
+
+Use `$grind:coordinate` in Codex or `/grind:coordinate` in Claude Code to add a
+coordination note to another init’s ledger and get a prompt to relay to its working
+session. The note links to the source design and preserves the receiving init’s
+current work. The skill does not send the prompt or start work in another session.
