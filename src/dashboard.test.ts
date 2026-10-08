@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { get } from 'node:http';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
@@ -164,4 +164,42 @@ test('switch requests bring an open init to the foreground and report refusals',
   assert.match((await switched.json() as { message: string }).message, /work \(feature\) is now in the foreground/);
   assert.equal(await git(app, 'branch', '--show-current'), 'feature');
   assert.deepEqual(forced, [false, true]);
+});
+
+
+test('dashboard opens only the currently resolved roadmap', async t => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const intent = '---\ntype: Intent\ngrind:\n  root: true\n  roadmap: product\n---\n# Outcome\n';
+  const contents = '---\ntype: Roadmap\ngrind:\n  id: product\n---\n# Product\n';
+  const file = path.join(ws.stateDir, "product's roadmap.md");
+  await writeFile(file, contents);
+  await writeInitiative(ws, 'linked', { intent });
+  await writeInitiative(ws, 'unlinked');
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const calls: unknown[] = [];
+  const dashboard = await serveDashboard(workspace, async (editor, target) => { calls.push([editor, target]); });
+  t.after(dashboard.close);
+  const send = (id: string, target: unknown = 'roadmap') => fetch(dashboard.url + 'open', {
+    method: 'POST',
+    headers: { Origin: new URL(dashboard.url).origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, target, editor: 'vscode' }),
+  });
+  const data = await dashboardData(workspace);
+  assert.deepEqual(data.initiatives.find(i => i.id === 'linked')?.roadmap, { id: 'product', path: file });
+  assert.equal(data.initiatives.find(i => i.id === 'unlinked')?.roadmap, null);
+  assert.equal((await send('unlinked')).status, 404);
+  assert.equal((await send('linked', file)).status, 400);
+  const moved = path.join(ws.stateDir, 'renamed.md');
+  await rename(file, moved);
+  assert.equal((await send('linked')).status, 200);
+  assert.deepEqual(calls, [['vscode', moved]]);
+  await writeFile(file, contents);
+  assert.equal((await send('linked')).status, 404);
+  assert.equal((await dashboardData(workspace)).initiatives.find(i => i.id === 'linked')?.roadmap, null);
+  await rm(file);
+  await rm(moved);
+  assert.equal((await send('linked')).status, 404);
+  assert.equal((await dashboardData(workspace)).initiatives.find(i => i.id === 'linked')?.roadmap, null);
+  assert.equal(calls.length, 1);
 });

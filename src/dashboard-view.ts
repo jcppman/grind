@@ -183,11 +183,13 @@ function nameButton(id, text) {
   return button;
 }
 
-function openButton(initiative) {
-  const button = element('button', 'open-editor', 'Open in editor');
+function openButton(initiative, target = 'init') {
+  const roadmap = target === 'roadmap';
+  const label = roadmap ? 'Roadmap' : 'init folder';
+  const button = element('button', 'open-editor', roadmap ? 'open Roadmap' : 'Open in editor');
   button.type = 'button';
-  button.title = 'Open init folder: ' + initiative.directory;
-  button.setAttribute('aria-label', 'Open init folder for ' + initiative.id);
+  button.title = 'Open ' + label + ': ' + (roadmap ? initiative.roadmap.path : initiative.directory);
+  button.setAttribute('aria-label', 'Open ' + label + ' for ' + initiative.id);
   button.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -199,11 +201,11 @@ function openButton(initiative) {
       const response = await fetch('open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: initiative.id, editor }),
+        body: JSON.stringify({ id: initiative.id, editor, target }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not open init folder');
-      $('notice').textContent = 'Opened ' + initiative.id + ' in ' + (editor === 'vscode' ? 'VS Code' : 'WebStorm');
+      if (!response.ok) throw new Error(result.error || 'Could not open ' + label);
+      $('notice').textContent = 'Opened ' + (roadmap ? initiative.roadmap.id : initiative.id) + ' in ' + (editor === 'vscode' ? 'VS Code' : 'WebStorm');
     } catch (error) {
       $('error').textContent = error.message;
     } finally { button.disabled = false; }
@@ -291,7 +293,11 @@ function render() {
     rowBadges.append(element('span', 'badge ' + (initiative.status || 'unavailable'), initiative.status || 'Status unavailable'));
     if (initiative.archived) rowBadges.append(element('span', 'badge archived', 'Archived'));
     if (initiative.diagnostics.length) rowBadges.append(element('span', 'badge unavailable', 'Needs attention'));
-    row.append(rowBadges, openButton(initiative));
+    row.append(rowBadges);
+    const editorActions = element('span', 'repoactions');
+    if (initiative.roadmap) editorActions.append(openButton(initiative, 'roadmap'));
+    editorActions.append(openButton(initiative));
+    row.append(editorActions);
     card.append(row);
     const head = element('div', 'cardhead');
     const summary = element('div', '');

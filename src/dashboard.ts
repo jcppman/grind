@@ -30,6 +30,7 @@ export async function dashboardData(workspace: Workspace) {
         directory: entry.dir,
         command: directoryCommand(entry.dir),
         archived: entry.archived,
+        roadmap: inspection.roadmap,
         status: inspection.state?.status ?? null,
         task: inspection.state?.current_task ?? null,
         next: inspection.state?.next_action ?? null,
@@ -48,7 +49,7 @@ export async function dashboardData(workspace: Workspace) {
     } catch (error) {
       initiatives.push({
         id: entry.id, directory: entry.dir, command: directoryCommand(entry.dir), archived: entry.archived,
-        status: null, task: null, next: null, result: null, repositories: [],
+        status: null, task: null, next: null, result: null, roadmap: null, repositories: [],
         diagnostics: [{ severity: 'error', code: 'INSPECTION_FAILED', message: (error as Error).message }],
       });
     }
@@ -154,7 +155,7 @@ export async function serveDashboard(workspace: Workspace, launch: OpenEditor = 
           response.writeHead(result.status, { 'Content-Type': 'application/json' }).end(JSON.stringify(result.body));
           return;
         }
-        if (!input || typeof input['id'] !== 'string' || !['vscode', 'webstorm'].includes(input['editor'] as string)) {
+        if (!input || typeof input['id'] !== 'string' || !['vscode', 'webstorm'].includes(input['editor'] as string) || (input['target'] !== undefined && !['init', 'roadmap'].includes(input['target'] as string))) {
           response.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Choose a valid init and editor.' }));
           return;
         }
@@ -164,7 +165,14 @@ export async function serveDashboard(workspace: Workspace, launch: OpenEditor = 
           response.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Init folder is no longer available. Refresh and try again.' }));
           return;
         }
-        await launch(input['editor'] as Editor, entry.dir);
+        const target = input['target'] === 'roadmap'
+          ? (await inspectInitiative(workspace, entry)).roadmap?.path
+          : entry.dir;
+        if (!target) {
+          response.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Roadmap is no longer available. Refresh and try again.' }));
+          return;
+        }
+        await launch(input['editor'] as Editor, target);
         response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ opened: true }));
       } catch (error) {
         response.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }));
