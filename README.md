@@ -33,8 +33,10 @@ loading; it is disabled by default. Oversized contexts produce only an associati
 notice and a command to load the full context if needed.
 
 Say "let's work on init X" or run `/grind:start X`: the agent loads the init's
-context and works in its worktree at `.worktrees/<repository>/<init>`, leaving your
-canonical checkout alone. From an initiative folder or a checkout of one of its
+context and finds the init's working checkout. It normally uses a worktree at
+`.worktrees/<repository>/<init>`; if the branch is already in your canonical checkout,
+the agent follows your existing authorization and checks for unrelated edits before
+working there. From an initiative folder or a checkout of one of its
 branches, Grind resolves the init automatically; elsewhere, invoke `/grind:context`
 or `/grind:start` without an argument to choose one.
 

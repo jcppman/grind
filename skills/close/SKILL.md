@@ -8,7 +8,11 @@ in the [shared operating protocol](../../docs/protocol.md). Confirm the outcome 
 result location from the work itself. Complete the protocol's asset review and any
 resulting repository documentation work before final closure checks. Prepare a valid
 checkpoint and decide whether all review notes in `notes.md` are handled or stay
-there as parked notes.
+there as parked notes. For delivered code, verify the resulting changes in each
+remote default branch, or the final branch explicitly chosen by the user, and record
+that branch and revision. An intermediate-branch merge or PR handoff leaves the init
+open. Research and deliberate abandonment follow their distinct outcome criteria
+in the protocol; closure does not authorize merges or releases.
 
 Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs close [initiative] --outcome <delivered|abandoned> --result <location-or-summary> --notes <handled|parked> --json`,
