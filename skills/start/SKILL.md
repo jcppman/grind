@@ -15,8 +15,11 @@ branch, run
 `node <plugin-root>/scripts/grind.mjs worktree <init> [--repo <repository>] --json`,
 adding `--workspace <directory>` when needed. It prints the path where the init's
 work lives and creates the standard worktree when the branch is not checked out.
-`CHECKOUT_HELD` means the branch is in the user's canonical checkout: say so and ask
-whether to work there or wait. Do not switch or stash the canonical checkout. An
+`CHECKOUT_HELD` reports the canonical path holding the branch. Check its current
+branch and dirty/staged state. When the user's instructions already authorize work
+there and any existing edits belong to this task, use that path without asking
+again. If unrelated edits or missing authorization prevent this, ask how to proceed;
+do not switch, stash, or create a detached substitute for the held branch. An
 init with no recorded branch gets no branch or worktree until implementation needs
 one; then run `worktree` with `--repo`, which records a branch named after the init.
 

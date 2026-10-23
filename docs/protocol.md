@@ -86,17 +86,22 @@ ledger body. Update the entry whenever a layer is added on top.
 ### Checkouts and worktrees
 
 The canonical checkout of a repository belongs to the user. Agents do not change
-its branch unless the user asks. Agents work in worktrees at
+its branch unless the user asks. Unless the user already authorizes work on the
+target branch in the canonical checkout, agents work in worktrees at
 `<workspace>/.worktrees/<repository path>/<init name>`, where the init name is the
 last segment of its ID.
 
 An init's work lives wherever its recorded branch is checked out: the canonical
 checkout, a Grind worktree, an app-managed worktree, or nowhere. Run
 `grind worktree <init> [--repo <repository>]` to get that path; it creates the
-standard worktree when the branch is not checked out, and stops when the branch is
-in the canonical checkout, because the user holds it. Ask the user whether to work
-there or wait. Look the path up again before resuming after any pause, because the
-user may have moved the work.
+standard worktree when the branch is not checked out. When the branch is in the
+canonical checkout, the command returns `CHECKOUT_HELD` with its path. Check the
+current branch and dirty/staged state there. If the user's instructions already
+authorize work there and existing edits belong to the task, continue at that path.
+Otherwise ask how to proceed, preserving unrelated edits. Do not create a detached
+substitute, switch branches, or stash the user's work to bypass the held branch.
+Look the path up again before resuming after any pause, because the user may have
+moved the work.
 
 `grind worktree` also links each `CLAUDE.md` and `AGENTS.md` between the
 workspace root and the canonical checkout into the matching folder under
@@ -584,9 +589,9 @@ unique fragment of the init ID and offers a choice of open inits without one.
    from `grind.resume`, remove `grind.closed`, `grind.result`, and `grind.resume`,
    and record the reopening under Lifecycle history. Save validates the result.
 3. For each repository with a recorded branch, get the working path from
-   `grind worktree`. If the user holds the branch in the canonical checkout, say so
-   and ask whether to work there or wait. An init with no recorded branch gets no
-   branch or worktree until implementation needs one.
+   `grind worktree`. Handle `CHECKOUT_HELD` under Checkouts and worktrees: inspect
+   the returned path and existing authorization before asking again. An init with
+   no recorded branch gets no branch or worktree until implementation needs one.
 4. Report the working path, the branch's state against its remote, review notes,
    discrepancies, and the next action.
 5. Carry out an accompanying task in the worktree. Otherwise ask what the user
@@ -653,11 +658,23 @@ When the outcome is delivered, or the work is deliberately dropped:
    as current guidance. If nothing qualifies, no documentation change is needed.
    Deliver any documentation changes through the repository's normal workflow before
    finalizing closure, respecting existing authorization for external actions.
-2. Confirm every pull request in `grind.repositories` is merged or abandoned, and say
-   which in the ledger.
-3. Prepare a valid checkpoint. Handle every review note, or choose the explicit
+2. For a delivered code outcome, verify that all required changes, including any
+   closeout documentation, are integrated into each repository's remote default
+   branch. Use a different final branch only when the user explicitly chose it.
+   Check the actual resulting code and PR destination, accounting for squash or
+   rebase merges; merged status or commit ancestry alone may be insufficient.
+   Record the verified target branch and revision in the ledger. A merge into an
+   intermediate epic or feature branch leaves the init open, even when another
+   init owns final integration. An approved PR handoff may finish a run without
+   closing the init. Keep release claims separate from source integration.
+3. Confirm each tracked PR is merged or abandoned and record its disposition in
+   the ledger. Abandoned required work cannot satisfy
+   delivered closure; deliberate abandonment requires the user's decision and the
+   abandoned outcome. Research-only inits close against their agreed non-code
+   outcome. These checks do not authorize merging, publishing, or changing scope.
+4. Prepare a valid checkpoint. Handle every review note, or choose the explicit
    parked disposition to keep the remaining notes in `notes.md`.
-4. Run `grind close` with delivered or abandoned outcome, result location, and note
+5. Run `grind close` with delivered or abandoned outcome, result location, and note
    disposition. The CLI records the prior execution checkpoint in lifecycle history
    and commits only the initiative state.
 
