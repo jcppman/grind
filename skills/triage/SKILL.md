@@ -24,11 +24,17 @@ Resolve incomplete required context before proposing changes to an affected init
 
 Match intended outcomes, scope, constraints, and acceptance criteria, not just
 keywords. Distinguish conceptual fit from whether the work should join the current
-execution. Prefer an existing owner when the addition fits its outcome; propose a
-new init for a separate outcome or a follow-up whose inclusion would disrupt
-current delivery. Explain that tradeoff. Avoid duplicate inits and unnecessary
-tracking for trivial work; if no init is warranted, explain why and let the user
-decide whether to track it anyway.
+execution. Prefer an existing owner when the addition fits its outcome and current
+execution scope. When an init is already being implemented, especially by another
+session or an active /goal run, prefer a separate follow-up for newly discovered
+issues that are not required to complete its agreed outcome. A broad feedback or
+backlog remit alone does not justify expanding an active run. Keep the issue in
+the current init when it is a regression or blocker within the agreed scope, or
+when the user explicitly chooses to expand that scope; explain any coordination
+and acceptance changes before proposing it. Propose a new init for a separate
+outcome or a follow-up whose inclusion would disrupt current delivery. Avoid
+duplicate inits and unnecessary tracking for trivial work; if no init is warranted,
+explain why and let the user decide whether to track it anyway.
 
 Inspect relevant roadmaps and project navigation in the configured state directory;
 a null association does not establish that no roadmap exists. Propose an existing
