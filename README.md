@@ -97,3 +97,18 @@ Use `$grind:coordinate` in Codex or `/grind:coordinate` in Claude Code to add a
 coordination note to another init’s ledger and get a prompt to relay to its working
 session. The note links to the source design and preserves the receiving init’s
 current work. The skill does not send the prompt or start work in another session.
+
+### Batch workspace inspection
+
+`grind inspect [scope] --json` collects recorded state, observed checkouts and heads,
+index-link diagnostics, review-note counts, and pending lifecycle operations without
+fetching or modifying anything. `--open` and `--closed` use the list command's filters;
+unfiltered inspection includes malformed unarchived records. This is a factual snapshot,
+not a readiness or completion verdict. Load context to judge the actual outcome.
+
+Add `--remote` to read recorded GitHub PRs once per URL, after verifying the active
+identity is `jcppman`. Authentication and access failures remain explicit while local
+inspection continues. PR observations include revisions, checks and review state;
+they do not prove acceptance or integration into the intended final branch. Index
+links are checked locally, not recursively or over the network. Snapshot diagnostics
+and unavailable observations must be inspected even when the command exits zero.
