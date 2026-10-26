@@ -4,7 +4,7 @@ description: Close or archive a Grind init (initiative) after verifying its outc
 ---
 
 Load the [context workflow](../context/SKILL.md), then follow Closing an initiative
-in the [shared operating protocol](../../docs/protocol.md). Confirm the outcome and
+in [closing and archiving](../../docs/protocol/lifecycle.md). Confirm the outcome and
 result location from the work itself. Complete the protocol's asset review and any
 resulting repository documentation work before final closure checks. Prepare a valid
 checkpoint and decide whether all review notes in `notes.md` are handled or stay

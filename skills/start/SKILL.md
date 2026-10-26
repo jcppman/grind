@@ -4,7 +4,7 @@ description: Start or resume work on a Grind init (initiative) — the entry for
 ---
 
 Load the [context workflow](../context/SKILL.md) for the init, then follow Prepare an
-initiative in the [shared operating protocol](../../docs/protocol.md). Pass the user's
+initiative in [execution](../../docs/protocol/execution.md#prepare-an-initiative). Pass the user's
 fragment as the identifier; the CLI resolves a unique fragment and reports ambiguity.
 
 If the init is closed, ask whether to reopen it before anything else, and reopen it

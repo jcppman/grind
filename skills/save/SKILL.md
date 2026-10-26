@@ -3,8 +3,7 @@ name: save
 description: Prepare and persist a resumable Grind init (initiative) checkpoint after meaningful work or on explicit request. Use for initiative records, not automatic commits of application code.
 ---
 
-Read Choosing what to preserve, Verification records and external workflows, the ledger,
-During-work update, and Session-end sections of the [shared operating protocol](../../docs/protocol.md). Inspect current repository state and
+Read [checkpoint preparation](../../docs/protocol/checkpoints.md). Inspect current repository state and
 validation evidence. Rewrite current state, remove superseded observations and
 duplicate history, and retain relevant verification references and open questions.
 Reconcile frontmatter, working state, and verification as one checkpoint; identify
@@ -16,7 +15,7 @@ Preserve lifecycle recovery records; leave `grind.updated_at` alone, because sav
 sets it to the time of the save. Record a concrete candidate
 next task, not routine workflow instructions;
 update other artifacts only when their corresponding facts changed. Preserve
-Reference snapshots and follow the protocol’s Reference documents section for
+Reference snapshots and follow the protocol’s [Reference documents](../../docs/protocol/artifacts.md#reference-documents) for
 corrections or successors. Keep artifact content paths workspace-relative. Reading context alone earns no checkpoint.
 
 Resolve the plugin root from this SKILL.md and run

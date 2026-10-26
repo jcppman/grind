@@ -18,7 +18,7 @@ and resolve missing required context before substantive work. Observations do no
 verify arbitrary claims in ledger prose.
 
 When the user requests roadmap authoring or reorganization, read the Roadmaps
-section of the [shared protocol](../../docs/protocol.md). Keep product direction
+[reference](../../docs/protocol/roadmaps.md). Keep product direction
 and cross-initiative priorities in the roadmap; route detailed decisions and
 next actions to the initiative that owns the outcome.
 

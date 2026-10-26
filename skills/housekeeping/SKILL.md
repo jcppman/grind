@@ -3,8 +3,9 @@ name: housekeeping
 description: Reconcile Grind roadmaps and inits, audit stale status and completed work, and organize milestone contributions. Use for requested Grind housekeeping, roadmap/init consistency checks, or initiative cleanup. An audit-only request produces findings without changing records.
 ---
 
-Read the Roadmaps, Choosing what to preserve, and Execution authorization and
-verification sections of the [shared protocol](../../docs/protocol.md). Use the
+Read [Roadmaps](../../docs/protocol/roadmaps.md),
+[Choosing what to preserve](../../docs/protocol/checkpoints.md#choosing-what-to-preserve),
+and [Execution authorization and verification](../../docs/protocol/artifacts.md#execution-authorization-and-verification). Use the
 [context workflow](../context/SKILL.md) to inspect inits and the
 [save workflow](../save/SKILL.md) for meaningful record changes.
 
