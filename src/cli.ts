@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { inspectWorkspace } from './workspace-inspect.ts';
 import { contextCommand, formatContext } from './context.ts';
 import { createCommand, saveCommand } from './writes.ts';
 import { listCommand, statusCommand } from './commands.ts';
@@ -31,6 +32,7 @@ Commands:
   dashboard           serve the local initiative dashboard
   list [scope]        list initiatives and their recorded state
   context [initiative] load complete read-only initiative context
+  inspect [scope]    batch local initiative facts; --remote adds PR observations
   status [initiative] inspect an initiative; without one inside a repository,
                       show the owning init and where the repository's inits live
 
@@ -47,6 +49,7 @@ Options:
   --result <text>     result location or summary for close
   --notes <value>     handled or parked for close
   --date <YYYY-MM-DD> closure date override
+  --remote            read PR facts as jcppman (inspect only; no fetch)
   --json              emit one JSON envelope on stdout
   --help              show this help
 
@@ -60,6 +63,7 @@ export interface ParsedArgs {
   command: string | null;
   positional: string[];
   json: boolean;
+  remote: boolean;
   help: boolean;
   open: boolean;
   closed: boolean;
@@ -76,10 +80,11 @@ export interface ParsedArgs {
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: null, positional: [], json: false, help: false, open: false, closed: false, force: false };
+  const parsed: ParsedArgs = { command: null, positional: [], json: false, remote: false, help: false, open: false, closed: false, force: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
     if (arg === '--json') parsed.json = true;
+    else if (arg === '--remote') parsed.remote = true;
     else if (arg === '--help' || arg === '-h') parsed.help = true;
     else if (arg === '--open') parsed.open = true;
     else if (arg === '--closed') parsed.closed = true;
@@ -122,7 +127,7 @@ export async function run(argv: readonly string[]): Promise<number> {
     if (args.command === 'start') {
       throw new GrindError('USAGE', '"grind start" was removed; use /grind:start, or grind worktree <initiative> for the working path');
     }
-    if (!['list', 'status', 'context', 'create', 'worktree', 'switch', 'note', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
+    if (!['inspect', 'list', 'status', 'context', 'create', 'worktree', 'switch', 'note', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
     if (args.command !== 'note' && args.positional.length > (args.command === 'dashboard' ? 0 : 1)) {
@@ -132,7 +137,8 @@ export async function run(argv: readonly string[]): Promise<number> {
       if (args[option] !== undefined && args[option] !== false && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
     if (args.command === 'worktree' && args.positional.length !== 1) throw new GrindError('USAGE', 'worktree requires an initiative');
-    if ((args.open || args.closed) && args.command !== 'list') throw new GrindError('USAGE', '--open and --closed are only supported by list');
+    if (args.remote && args.command !== 'inspect') throw new GrindError('USAGE', '--remote is only supported by inspect');
+    if ((args.open || args.closed) && !['list', 'inspect'].includes(args.command)) throw new GrindError('USAGE', '--open and --closed are only supported by list or inspect');
     if (args.open && args.closed) throw new GrindError('USAGE', '--open and --closed cannot be combined');
     if (args.command === 'create' && args.positional.length !== 1) throw new GrindError('USAGE', 'create requires an argument');
     if (args.command === 'save' && !args.message?.trim()) throw new GrindError('USAGE', 'save requires --message');
@@ -182,6 +188,9 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'archive') {
       const result = await archiveCommand(context, identifier);
       emit(json, { ok: true, data: result }, `Archived ${result.id} as ${result.archivedId}`);
+    } else if (args.command === 'inspect') {
+      const result = await inspectWorkspace(context, { ...(identifier === undefined ? {} : { scope: identifier }), ...(args.open ? { status: 'open' as const } : args.closed ? { status: 'closed' as const } : {}), remote: args.remote });
+      emit(json, { ok: true, data: result }, JSON.stringify(result, null, 2));
     } else if (args.command === 'list') {
       const result = await listCommand(context, {
         ...(identifier === undefined ? {} : { scope: identifier }),

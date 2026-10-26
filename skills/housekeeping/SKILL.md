@@ -16,8 +16,10 @@ scope. Inspect the state repository's instructions and dirty/staged state before
 editing, and preserve unrelated changes.
 
 Resolve the plugin root from this file. Run
-`node <plugin-root>/scripts/grind.mjs list [scope] --workspace <directory> --json`
-to inventory open and closed inits. Read the roadmap, linked inits, and relevant
+`node <plugin-root>/scripts/grind.mjs inspect [scope] --workspace <directory> --json`
+to inventory local facts, link diagnostics and pending operations. Add `--remote`
+when PR observations are needed; it verifies jcppman and never fetches or writes.
+Read diagnostics and unavailable observations even on exit zero. Read the roadmap, linked inits, and relevant
 unlinked inits in the chosen scope. A null roadmap association does not establish
 that no roadmap exists: inspect the configured state directory for Roadmap
 documents and project navigation. Use full scoped IDs for context calls; resolve

@@ -27,6 +27,7 @@ test('parseArgs separates command, positionals, and options', () => {
     open: false,
     closed: false,
     force: false,
+    remote: false,
     workspace: '/w',
   });
   assert.throws(() => parseArgs(['--workspace']), { code: 'USAGE' });
@@ -42,6 +43,7 @@ test('parseArgs accepts list scope and status filters', () => {
     open: false,
     closed: true,
     force: false,
+    remote: false,
   });
 });
 
@@ -159,4 +161,10 @@ test('note add reads a comment from stdin and worktree prints the working path',
   } finally {
     await ws.cleanup();
   }
+});
+
+test('inspect remote access is explicit and unavailable on other commands', async () => {
+  const wrong = await runCli('list', '--remote', '--json');
+  assert.equal(wrong.code, 2);
+  assert.match(wrong.stderr, /only supported by inspect/);
 });

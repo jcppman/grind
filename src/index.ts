@@ -16,3 +16,4 @@ export * from './resolve.ts';
 export * from './transitions.ts';
 export * from './workspace.ts';
 export * from './worktree.ts';
+export * from './workspace-inspect.ts';
