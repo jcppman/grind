@@ -3,8 +3,10 @@ name: triage
 description: Assess a project idea or request against open Grind inits and their actual progress, then propose placement and roadmap changes for user confirmation. Use when the user wants to capture work but has not decided which init should own it.
 ---
 
-Read Creating an initiative, Choosing what to preserve, Roadmaps, and Execution
-authorization and verification in the [shared protocol](../../docs/protocol.md).
+Read [creation](../../docs/protocol/create.md),
+[Choosing what to preserve](../../docs/protocol/checkpoints.md#choosing-what-to-preserve),
+[Roadmaps](../../docs/protocol/roadmaps.md), and
+[Execution authorization and verification](../../docs/protocol/artifacts.md#execution-authorization-and-verification).
 Triage is read-only until the user confirms a concrete placement proposal. Invoking
 this skill alone does not authorize adding to an init or creating one.
 

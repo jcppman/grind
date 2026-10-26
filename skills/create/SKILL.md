@@ -3,8 +3,8 @@ name: create
 description: Create a Grind init (initiative) for a coherent development outcome and clarify its intent. Use when the user asks to create an init or initiative, or start tracking substantial work.
 ---
 
-Read the [shared operating protocol](../../docs/protocol.md), especially Creating
-an initiative. Clarify material uncertainty about intent before writing it; defer
+Read [creation](../../docs/protocol/create.md) and
+[artifact contracts](../../docs/protocol/artifacts.md). Clarify material uncertainty about intent before writing it; defer
 unresolved design and execution choices as open questions rather than assumed
 requirements. Follow the protocol's placement rule: unless the user explicitly
 chooses another location, pass the target repository's workspace-relative folder
@@ -22,8 +22,8 @@ ownership, create branches, or commit. Elaborate intent from the user's actual
 request and keep the ledger resumable. Track only established initiative branches;
 otherwise leave `grind.repositories` empty and name candidate repositories in the
 working state. Defer new branches and worktrees until execution needs them.
-Use Choosing what to preserve in the protocol before adding specifications or
-plans; small decisions can remain in the ledger.
+Use [Choosing what to preserve](../../docs/protocol/checkpoints.md#choosing-what-to-preserve)
+before adding specifications or plans; small decisions can remain in the ledger.
 Use the [save workflow](../save/SKILL.md) for the resulting checkpoint.
 
 On a collision or incomplete creation, inspect the reported destination and preserve
