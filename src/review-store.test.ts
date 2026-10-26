@@ -27,7 +27,7 @@ test('concurrent writers keep every comment, and a stale revision changes nothin
   assert.equal(draft?.revision, 12);
   assert.deepEqual(new Set(draft?.comments.map((comment) => comment.id)).size, 12);
 
-  await assert.rejects(changeComment(store, 's1', 'c1', { kind: 'edit', body: 'late' }, 3), { code: 'REVIEW_STALE' });
+  await assert.rejects(changeComment(store, 's1', 'c1', { kind: 'edit', body: 'late' }, { revision: 3 }), { code: 'REVIEW_STALE' });
   assert.equal((await readDraft(store, 's1'))?.comments[0]?.body, '');
 });
 
@@ -35,9 +35,9 @@ test('delete and restore are revisions of the same draft, and a deleted comment 
   const store = await tempStore(t);
   const first = await addComment(store, 's1', { source: REPLY, quote: 'keep', body: 'one', association: INIT });
   await addComment(store, 's1', { source: REPLY, quote: 'drop', body: 'two', association: INIT });
-  await changeComment(store, 's1', 'c2', { kind: 'delete' }, 2);
-  await changeComment(store, 's1', 'c1', { kind: 'delete' }, 3);
-  const restored = await changeComment(store, 's1', 'c1', { kind: 'restore' }, 4);
+  await changeComment(store, 's1', 'c2', { kind: 'delete' }, { revision: 2 });
+  await changeComment(store, 's1', 'c1', { kind: 'delete' }, { revision: 3 });
+  const restored = await changeComment(store, 's1', 'c1', { kind: 'restore' }, { revision: 4 });
   assert.deepEqual(restored.comments.map((comment) => [comment.id, comment.deletedAt === null]), [['c1', true], ['c2', false]]);
   const { submission } = await submitDraft(store, 's1', first.draft.id, restored.revision);
   assert.deepEqual(submission.comments.map((comment) => comment.quote), ['keep']);
@@ -183,4 +183,29 @@ test('a lock left by a dead writer or without an owner does not block later writ
   const old = new Date(Date.now() - 60_000);
   await utimes(lock, old, old);
   assert.equal((await addComment(store, 's1', { source: REPLY, quote: 'after an ownerless lock', association: INIT })).draft.revision, 2);
+});
+
+test('a mutation based on an earlier draft is refused even when the revision and comment id repeat', async (t) => {
+  const store = await tempStore(t);
+  const first = await addComment(store, 's1', { source: REPLY, quote: 'old passage', association: INIT });
+  await submitDraft(store, 's1', first.draft.id, 1);
+  const second = await addComment(store, 's1', { source: REPLY, quote: 'new passage', association: INIT });
+  assert.deepEqual([second.comment.id, second.draft.revision], ['c1', 1]);
+  for (const change of [{ kind: 'edit', body: 'meant for the old one' }, { kind: 'delete' }] as const) {
+    await assert.rejects(changeComment(store, 's1', 'c1', change, { draftId: first.draft.id, revision: 1 }), { code: 'REVIEW_STALE' });
+  }
+  const kept = await readDraft(store, 's1');
+  assert.deepEqual([kept?.comments[0]?.body, kept?.comments[0]?.deletedAt], ['', null]);
+  assert.equal((await changeComment(store, 's1', 'c1', { kind: 'edit', body: 'ok' }, { draftId: second.draft.id, revision: 1 })).comments[0]?.body, 'ok');
+});
+
+test('a later outcome reported for a received attempt keeps the receipt', async (t) => {
+  const store = await tempStore(t);
+  const { draft } = await addComment(store, 's1', { source: REPLY, quote: 'x', association: INIT });
+  const { submission } = await submitDraft(store, 's1', draft.id, 1);
+  const { attempt } = await startAttempt(store, submission.id);
+  await finishAttempt(store, submission.id, attempt.id, { status: 'received', rowUuid: 'row-1' });
+  const late = await finishAttempt(store, submission.id, attempt.id, { status: 'failed', reason: 'late' });
+  assert.deepEqual([late.state, late.rowUuid, late.attempts[0]?.status], ['received', 'row-1', 'received']);
+  await assert.rejects(startAttempt(store, submission.id, { afterUnknown: true }), { code: 'REVIEW_DELIVERY_BUSY' });
 });

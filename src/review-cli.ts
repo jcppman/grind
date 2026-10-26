@@ -9,7 +9,7 @@ import { formatBatch, promptPayload } from './review-payload.ts';
 import {
   addComment, associateDraft, bindSession, changeComment, changePath, endSession, finishAttempt, listBatches, liveSessions, readDelivery, readDraft,
   readSession, readSubmission, registerSession, resolveBatch, reviewStore, startAttempt, submitDraft,
-  type ReviewSource, type ReviewStore, type ReviewSubmission,
+  type DraftExpectation, type ReviewSource, type ReviewStore, type ReviewSubmission,
 } from './review-store.ts';
 import { reconcileBatch } from './review-transcript.ts';
 import { loadWorkspace } from './workspace.ts';
@@ -22,10 +22,11 @@ Claude Code mod drives these actions; cmux shortcuts use capture-cmux.
 
   current --session <id> [--cwd <dir>]        the init the session concerns
   show --session <id>                         the session's draft and recent batches
-  add --session <id> [--expect-revision <n>]  add a comment; JSON {source, quote, body?} on stdin
-  edit|delete|restore --session <id> --comment <id> [--expect-revision <n>]
+  add --session <id> [--draft <id>] [--expect-revision <n>]
+                                              add a comment; JSON {source, quote, body?} on stdin
+  edit|delete|restore --session <id> --comment <id> [--draft <id>] [--expect-revision <n>]
                                               edit takes the new comment text on stdin
-  associate --session <id> (--init <id> | --none) [--expect-revision <n>]
+  associate --session <id> (--init <id> | --none) [--draft <id>] [--expect-revision <n>]
   bind --session <id> (--init <id> | --none)  choose the session's init explicitly
   submit --session <id> --draft <id> --revision <n>
   attempt --batch <id> [--resend-unknown]     start delivering a batch
@@ -75,6 +76,11 @@ function revision(args: ReviewArgs, option: '--expect-revision' | '--revision' =
   if (value === undefined) return undefined;
   if (!/^\d+$/.test(value)) throw new GrindError('USAGE', `${option} must be a nonnegative integer`);
   return Number(value);
+}
+
+function expectation(args: ReviewArgs): DraftExpectation {
+  const expectRevision = revision(args);
+  return { ...(args.values['--draft'] ? { draftId: args.values['--draft'] } : {}), ...(expectRevision === undefined ? {} : { revision: expectRevision }) };
 }
 
 async function readStdin(): Promise<string> {
@@ -141,14 +147,13 @@ export async function runReview(argv: readonly string[], cwd: string, emitLine: 
       const existing = await readDraft(store, sessionId);
       const registration = existing === null ? await readSession(store, sessionId) : null;
       const association = existing?.association ?? associationFor(await currentInit(registration?.cwd ?? sessionCwd, registration?.binding ? { binding: registration.binding } : {}));
-      const expectRevision = revision(args);
-      return addComment(store, sessionId, { ...input, association, ...(expectRevision === undefined ? {} : { expectRevision }) });
+      return addComment(store, sessionId, { ...input, association, expected: expectation(args) });
     }
     case 'edit':
-      return changeComment(store, session(), required(args, '--comment'), { kind: 'edit', body: await readStdin() }, revision(args));
+      return changeComment(store, session(), required(args, '--comment'), { kind: 'edit', body: await readStdin() }, expectation(args));
     case 'delete':
     case 'restore':
-      return changeComment(store, session(), required(args, '--comment'), { kind: args.action }, revision(args));
+      return changeComment(store, session(), required(args, '--comment'), { kind: args.action }, expectation(args));
     case 'associate': {
       const sessionId = session();
       const workspace = (await currentInit(sessionCwd)).workspace;
@@ -156,7 +161,7 @@ export async function runReview(argv: readonly string[], cwd: string, emitLine: 
       const association = args.flags.has('--none')
         ? { workspace, initiative: null, source: 'explicit' as const }
         : await explicitAssociation(sessionCwd, required(args, '--init'));
-      return associateDraft(store, sessionId, association, revision(args));
+      return associateDraft(store, sessionId, association, expectation(args));
     }
     case 'bind': {
       const sessionId = session();
@@ -226,6 +231,24 @@ async function explicitAssociation(cwd: string, identifier: string) {
 }
 
 /**
+ * Watches the store directory for prompt refreshes. The caller polls as well,
+ * so a watcher that cannot start or later fails is closed and ignored.
+ */
+export function watchStore(root: string, onChange: () => void, watch: typeof watchFiles = watchFiles): { close: () => void } {
+  let watcher: ReturnType<typeof watchFiles> | null = null;
+  try {
+    watcher = watch(root, onChange);
+    watcher.on('error', () => {
+      watcher?.close();
+      watcher = null;
+    });
+  } catch {
+    watcher = null;
+  }
+  return { close: () => watcher?.close() };
+}
+
+/**
  * Registers the session for routing and streams a snapshot line whenever the
  * store changes. Ends when the parent process is gone or on a signal.
  */
@@ -259,20 +282,14 @@ async function watchSession(store: ReviewStore, sessionId: string, cwd: string, 
   };
   await tick();
   return new Promise((resolve) => {
-    const watcher = (() => {
-      try {
-        return watchFiles(store.root, () => void tick());
-      } catch {
-        return null;
-      }
-    })();
+    const watcher = watchStore(store.root, () => void tick());
     const timer = setInterval(() => {
       if (process.ppid !== parent) void stop();
       else void tick();
     }, 1000);
     const stop = async () => {
       clearInterval(timer);
-      watcher?.close();
+      watcher.close();
       process.off('SIGTERM', stop);
       process.off('SIGINT', stop);
       await endSession(store, sessionId, process.pid).catch(() => undefined);

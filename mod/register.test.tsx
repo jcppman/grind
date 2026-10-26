@@ -63,7 +63,7 @@ const PANE = {
   props: { title: 'Grind review', isFocused: false, bodyColumns: 50, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
-test('the pane shows quotes safely and counts only comments that will be sent', async ($, on) => {
+test('the pane shows quotes safely, counts only comments that will be sent, and can send a frozen batch left pending', async ($, on) => {
   const draft = {
     id: 'd-1', revision: 3, association: { workspace: '/w', initiative: 'demo', source: 'inferred' },
     comments: [
@@ -74,7 +74,7 @@ test('the pane shows quotes safely and counts only comments that will be sent', 
   }
   on('state.get', (_: unknown, e: { key: string }) => ({
     value: e.key === 'view'
-      ? { value: { shape: 'review-view-1', value: { sessionId: 's', draft, batches: [] } }, version: 1 }
+      ? { value: { shape: 'review-view-1', value: { sessionId: 's', draft, batches: [{ id: 'b-1-pending', submittedAt: '', comments: 1, delivery: { state: 'pending', rowUuid: null, resolution: { state: 'open' } } }] } }, version: 1 }
       : e.key === 'current'
         ? { value: { shape: 'current-init-1', value: { state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'Review' } }, version: 1 }
         : { value: { shape: 'notice-1', value: '' }, version: 1 },
@@ -85,6 +85,7 @@ test('the pane shows quotes safely and counts only comments that will be sent', 
     expect((await ui.find({ type: 'Text', text: /plan\.md \(repeated passage\)/ }))).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /\u001b|\u0007/ }))).toBeUndefined()
     expect((await ui.find({ type: 'Button', key: 'restore:c3' }))).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'send:b-1-pending' }))).toBeDefined()
     await ui.unmount()
   }
 })

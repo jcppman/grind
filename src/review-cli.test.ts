@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { test } from 'node:test';
+import { EventEmitter } from 'node:events';
+import { watchStore } from './review-cli.ts';
 import { commitState, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 
 const CLI = path.join(import.meta.dirname, 'cli.ts');
@@ -90,4 +92,14 @@ test('watch registers the session and streams a snapshot after another process c
   child.kill('SIGTERM');
   await new Promise((resolve) => child.on('close', resolve));
   assert.deepEqual((await grind({ GRIND_REVIEW_HOME: home }, home, ['review', 'sessions'])).json.data, []);
+});
+
+test('a store watcher that fails later is closed instead of ending the stream', () => {
+  const fake = Object.assign(new EventEmitter(), { closed: 0, close() { this.closed += 1; } });
+  const handle = watchStore('/nowhere', () => undefined, (() => fake) as never);
+  fake.emit('error', Object.assign(new Error('EMFILE: too many open files, watch'), { code: 'EMFILE' }));
+  assert.equal(fake.closed, 1);
+  handle.close();
+  assert.equal(fake.closed, 1);
+  assert.doesNotThrow(() => watchStore('/nowhere', () => undefined, (() => { throw new Error('ENOSPC'); }) as never).close());
 });

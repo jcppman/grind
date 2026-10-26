@@ -47,6 +47,8 @@ send the batch. Comments you add afterwards start a new draft.
 
 Claude reads a batch when it is idle. The pane shows each sent batch's state:
 
+- **not sent yet**: the batch was frozen but delivery never started, for example
+  because Claude Code reloaded in between. Press **Send**.
 - **received by Claude**: the transcript stored the prompt that carried it.
 - **not delivered**: Claude Code removed it from its queue, for example after you
   pressed Esc or Ctrl+C. After a Stop, Claude Code holds plugin prompts until you

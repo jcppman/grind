@@ -226,11 +226,16 @@ export async function readDraft(store: ReviewStore, sessionId: string): Promise<
   return readJson<ReviewDraft>(draftPath(store, sessionId));
 }
 
-function checkRevision(draft: ReviewDraft | null, expected: number | undefined): void {
-  if (expected === undefined) return;
-  const actual = draft?.revision ?? 0;
-  if (actual !== expected) {
-    throw new GrindError('REVIEW_STALE', `The draft is at revision ${actual}, not ${expected}; reload it and retry`, { expected, actual });
+/** What a mutation was based on: the draft and revision the caller last read. */
+export interface DraftExpectation {
+  draftId?: string;
+  revision?: number;
+}
+
+function checkExpected(draft: ReviewDraft | null, expected: DraftExpectation): void {
+  const actual = { draftId: draft?.id ?? null, revision: draft?.revision ?? 0 };
+  if ((expected.draftId !== undefined && expected.draftId !== actual.draftId) || (expected.revision !== undefined && expected.revision !== actual.revision)) {
+    throw new GrindError('REVIEW_STALE', 'The draft changed since it was read; reload it and retry', { expected, actual });
   }
 }
 
@@ -245,7 +250,7 @@ export interface AddCommentInput {
   body?: string;
   /** The association a new draft takes; an existing draft keeps its own. */
   association: ReviewAssociation;
-  expectRevision?: number;
+  expected?: DraftExpectation;
 }
 
 /** Adds a comment to the session's draft, starting a draft when there is none. */
@@ -256,7 +261,7 @@ export async function addComment(store: ReviewStore, sessionId: string, input: A
   checkText(input.quote, body);
   return withReviewLock(store, async () => {
     const existing = await readDraft(store, sessionId);
-    checkRevision(existing, input.expectRevision);
+    checkExpected(existing, input.expected ?? {});
     const draft = existing ?? emptyDraft(sessionId, input.association);
     const at = now();
     const comment: ReviewComment = { id: `c${draft.nextComment}`, source: input.source, quote: input.quote, body, capturedAt: at, updatedAt: at, deletedAt: null };
@@ -268,12 +273,12 @@ export async function addComment(store: ReviewStore, sessionId: string, input: A
 
 export type CommentChange = { kind: 'edit'; body: string } | { kind: 'delete' } | { kind: 'restore' };
 
-export async function changeComment(store: ReviewStore, sessionId: string, commentId: string, change: CommentChange, expectRevision?: number): Promise<ReviewDraft> {
+export async function changeComment(store: ReviewStore, sessionId: string, commentId: string, change: CommentChange, expected: DraftExpectation = {}): Promise<ReviewDraft> {
   assertSessionId(sessionId);
   if (change.kind === 'edit') checkText('', change.body);
   return withReviewLock(store, async () => {
     const draft = await readDraft(store, sessionId);
-    checkRevision(draft, expectRevision);
+    checkExpected(draft, expected);
     const target = draft?.comments.find((comment) => comment.id === commentId);
     if (draft === null || target === undefined) throw new GrindError('REVIEW_INVALID', `The draft has no comment ${commentId}`, { commentId });
     const at = now();
@@ -286,11 +291,11 @@ export async function changeComment(store: ReviewStore, sessionId: string, comme
 }
 
 /** Changes the init a draft belongs to; only an explicit request does this. */
-export async function associateDraft(store: ReviewStore, sessionId: string, association: ReviewAssociation, expectRevision?: number): Promise<ReviewDraft> {
+export async function associateDraft(store: ReviewStore, sessionId: string, association: ReviewAssociation, expected: DraftExpectation = {}): Promise<ReviewDraft> {
   assertSessionId(sessionId);
   return withReviewLock(store, async () => {
     const existing = await readDraft(store, sessionId);
-    checkRevision(existing, expectRevision);
+    checkExpected(existing, expected);
     const draft = existing ?? emptyDraft(sessionId, association);
     const next = { ...draft, association, revision: draft.revision + 1, updatedAt: now() };
     await writeJson(draftPath(store, sessionId), next);
@@ -395,6 +400,7 @@ export async function finishAttempt(store: ReviewStore, batchId: string, attempt
     const delivery = await readDelivery(store, batchId);
     const attempt = attemptId === 'latest' ? delivery.attempts.at(-1) : delivery.attempts.find((item) => item.id === attemptId);
     if (attempt === undefined) throw new GrindError('REVIEW_INVALID', `Batch ${batchId} has no attempt ${attemptId}`, { batchId, attemptId });
+    if (attempt.status === 'received') return delivery;
     const updated: DeliveryAttempt = { ...attempt, status: outcome.status, rowUuid: outcome.rowUuid ?? attempt.rowUuid, reason: outcome.reason ?? null, updatedAt: now() };
     const attempts = delivery.attempts.map((item) => (item.id === attempt.id ? updated : item));
     const received = attempts.find((item) => item.status === 'received');

@@ -150,7 +150,7 @@ async function recordReceipt($: EngineInterface, batchId: string, rowUuid: strin
 async function editComment($: EngineInterface, comment: ReviewComment, action: 'edit' | 'delete' | 'restore', body?: string): Promise<void> {
   const snapshot = await read($, view)
   if (session === null || snapshot?.draft == null) return
-  const result = await grind($, ['review', action, '--session', session.id, '--comment', comment.id, '--expect-revision', String(snapshot.draft.revision)], body)
+  const result = await grind($, ['review', action, '--session', session.id, '--comment', comment.id, '--draft', snapshot.draft.id, '--expect-revision', String(snapshot.draft.revision)], body)
   await say($, result.ok ? '' : result.message)
 }
 
@@ -175,6 +175,7 @@ function batchRow($: EngineInterface, batch: BatchView, elements: { Box: any; Te
   return (
     <Box flexDirection="column">
       <Text dimColor>Sent {batch.comments} comment(s): {deliveryLabel(state)}</Text>
+      {state === 'pending' && <Button key={`send:${batch.id}`} label="Send" onPress={() => { void deliver($, batch.id, false) }} />}
       {(state === 'dropped' || state === 'failed') && (
         <Box flexDirection="row" gap={1}>
           <Button key={`retry:${batch.id}`} label="Send again" onPress={() => { void deliver($, batch.id, false) }} />
