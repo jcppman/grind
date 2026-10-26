@@ -9,7 +9,7 @@ releases.
 
 Every push to `main` runs the tests, packages the plugin, and force-pushes the
 package to the `plugin` branch of `jcppman/grind`. That branch holds the compiled
-CLI, shared protocol and skills, hooks, platform manifests, and runtime
+CLI, shared protocol and skills, platform manifests, and runtime
 dependencies, so hosts install it without a build step. Both hosts install from
 it as a Git marketplace named `grind`.
 
@@ -49,10 +49,7 @@ codex plugin add grind@grind
 Start a fresh Codex session after installation; existing sessions do not acquire
 the newly installed skills.
 
-Use the [workspace opt-in](#automatic-context-loading) for automatic loading.
-Review and trust the bundled hook through the host's hook controls when required;
-installing a plugin does not bypass host trust. Explicit Grind context remains
-available with hooks disabled.
+Use `/grind:context [initiative]` to load context explicitly.
 
 Skill helpers run `node <installed-plugin-root>/scripts/grind.mjs ...`; locate the
 root relative to the installed SKILL.md, never by assuming a global CLI or the
@@ -70,8 +67,7 @@ Claude Code leaves auto-update off for third-party marketplaces. Enable it once 
 the background after a session starts and load on the next launch or
 `/reload-plugins`. Start a fresh Claude Code session after installation.
 
-Use the [workspace opt-in](#automatic-context-loading) for automatic loading, or
-invoke `/grind:context [initiative]` explicitly. `/grind:start <initiative> [task]`
+Invoke `/grind:context [initiative]` explicitly. `/grind:start <initiative> [task]`
 loads the init, finds or creates its worktree, and then asks what you want to do
 unless you also gave a task. Both accept a unique fragment of the init ID and offer
 available inits for selection when none is given.
@@ -125,32 +121,12 @@ Version 0.5 removes `.grind.md` sidecars and `agent-note`. Delete leftover
 
 ## Automatic context loading
 
-The plugin bundles a `SessionStart` hook for Codex and Claude Code. Opt in for a
-workspace by adding the boolean setting to its existing `grind-workspace.json`:
-
-```json
-{
-  "stateRepository": "./private-state",
-  "contextOnSessionStart": true
-}
-```
-
-Preserve your actual stateRepository and other settings. Omitted or false disables
-loading; non-boolean values are errors. The hook checks this flag before inspecting
-inits or repositories. The host must also allow/trust the plugin hook. Setting the
-flag does not grant that trust. No global settings are edited by Grind.
-
-Start a new host session after installing an updated plugin. With the hook enabled,
-small contexts are injected in full; output exceeding 6,000 UTF-8 bytes becomes
-only an association notice with an explicit command to load context if needed.
-No partial documents, temporary output files, or per-session selection records are
-created. An explicit init selected in the conversation takes precedence over the
-checkout's association. Disabled hooks do not affect `grind context` or the skill.
-
-Remove any older automatic-entry paragraph copied from the adapter docs if you
-want this setting to be the sole automatic-loading control. Those instructions
-can independently cause an agent to invoke the skill even when the hook is disabled.
-Do not register a second copy of the bundled hook in user settings.
+Automatic SessionStart loading is deprecated and the plugin no longer registers a
+hook. Use `/grind:context [initiative]` or `/grind:start <initiative> [task]`. The
+legacy `contextOnSessionStart` configuration key is accepted but ignored; it can
+be removed. Restart existing host sessions after updating to unload the old hook.
+Remove any manually registered Grind startup hooks or automatic-entry instructions
+copied from older adapter docs.
 
 `grind context [full/scoped-id]` prints full Markdown; `--json` provides a versioned
 payload with `complete`, source bodies/metadata, required excerpts, recorded state,
@@ -226,5 +202,4 @@ root marker. Nested roots are invalid. Read-only commands never migrate records.
 - `ARCHIVE_BLOCKED`: retain the closed initiative until it is old enough, every
   owned branch is absent from all linked worktrees, and all notes are resolved.
 
-The CLI never pushes. Automatic context discovery without an initiative is quiet;
-explicit unresolved or ambiguous requests report a usable error.
+The CLI never pushes. Unresolved or ambiguous context requests report a usable error.

@@ -115,9 +115,8 @@ artifacts; it does not automatically commit unfinished application code.
 ## Session-start protocol
 
 Use `/grind:context` when the user requests context or a task needs initiative
-context that is not already loaded. Optional plugin hooks run only when the nearest
-workspace sets `contextOnSessionStart: true`; host trust is a separate prerequisite.
-Automatic discovery describes directory association, not conversation selection.
+context that is not already loaded. Context loading is explicit; the plugin has no
+SessionStart hook. Directory association does not select the conversation’s init.
 An explicit user selection takes precedence. Do not reload every turn.
 
 ### Context loading
@@ -137,13 +136,7 @@ Closed inits remain readable. Their repository tracking is historical and does n
 block an open init using the same branch. Reopening requires that no open init owns
 the tracked branches.
 
-A hook supplies complete context when it fits its output budget; otherwise it
-supplies only the init's actual status and a command to load context if needed.
-It writes no temporary context or session-tracking files. A notice is not loaded
-context. Hooks do not override the user's selected init on resume or compaction.
-The host retains conversation selection; Grind maintains no separate session state.
-
-Absent automatic discovery is quiet. Ambiguity and malformed state are surfaced
+Ambiguity and malformed state are surfaced
 rather than guessed. Explicit invocation
 without a resolvable init lists candidates and lets the user choose; when exactly
 one candidate exists the skill may select it. No records are migrated during reads.

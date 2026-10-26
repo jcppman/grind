@@ -25,12 +25,10 @@ compiled CLI and shared skills run in Codex and Claude Code from the same
 relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
-setup, terminal use, and opt-in session hooks.
+setup and terminal use.
 
-`grind context [initiative]` assembles read-only context in one call. Enable
-`contextOnSessionStart: true` in the workspace configuration for automatic hook
-loading; it is disabled by default. Oversized contexts produce only an association
-notice and a command to load the full context if needed.
+`grind context [initiative]` assembles read-only context in one call. Automatic
+SessionStart loading is deprecated; use `/grind:context` or `/grind:start` explicitly.
 
 Say "let's work on init X" or run `/grind:start X`: the agent loads the init's
 context and finds the init's working checkout. It normally uses a worktree at

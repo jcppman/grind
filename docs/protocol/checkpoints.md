@@ -98,8 +98,8 @@ session, and cannot hand work to a different agent or a future one. The ledger
 is inspectable, editable, portable, and versioned.
 
 The ledger is also the handoff. Because the protocol is the same for every
-session, context can be loaded with `/grind:context` or automatically from an
-initiative folder or a checkout of one of its branches. Accompany it with the current
+session, context is loaded with `/grind:context`, which can resolve an init from its
+folder or a checkout of one of its branches. Accompany it with the current
 request; use `/grind:start` to prepare the initiative and choose what to do next. No per-session handoff
 document is written.
 

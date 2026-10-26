@@ -13,8 +13,7 @@
     "skills",
     ".codex-plugin",
     ".claude-plugin",
-    "scripts/grind.mjs",
-    "hooks"
+    "scripts/grind.mjs"
   ],
   "engines": {
     "node": ">=24"

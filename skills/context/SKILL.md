@@ -1,6 +1,6 @@
 ---
 name: context
-description: Load or refresh a Grind init (initiative) from its identifier or a unique fragment of it, its folder, a checkout of one of its branches, or a choice list when omitted. Use at session entry when Grind is configured or when the user requests init or initiative context; context alone is read-only.
+description: Load or refresh a Grind init (initiative) from its identifier or a unique fragment of it, its folder, a checkout of one of its branches, or a choice list when omitted. Use when the user requests init or initiative context or the chosen task needs it; context alone is read-only.
 ---
 
 Resolve the plugin root from this SKILL.md's location. Run
@@ -23,19 +23,16 @@ and cross-initiative priorities in the roadmap; route detailed decisions and
 next actions to the initiative that owns the outcome.
 
 Give a concise orientation naming the selected init and workspace, discrepancies,
-candidate next action, and unresolved decisions. An automatic hook describes
-directory association only; an init explicitly chosen by the user takes precedence.
-When the hook already supplied complete context for the requested init, use it
-without another call unless a refresh is needed. A notice alone is not loaded
-context: run this command for the user's task when needed.
+candidate next action, and unresolved decisions. An init explicitly chosen by the
+user takes precedence over directory or branch association. Reuse already loaded
+context for that init unless a refresh is needed.
 
 Load detailed specifications, plans, references, and operation-specific guidance
 only when needed for the chosen task. The next action alone does not trigger those reads.
 Treat Reference documents as dated evidence, not current requirements or execution
 authorization. Use **init** as the conversational short name for initiative.
 
-On automatic discovery, WORKSPACE_NOT_FOUND or INITIATIVE_UNRESOLVED is quiet and
-leaves ordinary work alone. When the user explicitly invokes
+When the user explicitly invokes
 this skill without an identifier, first try folder or checkout discovery. If no
 initiative resolves, run `list --json`. Select the sole available initiative
 directly; when several are available, show their identifiers and current tasks and
