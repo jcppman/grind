@@ -7,6 +7,7 @@ function recordRuns(on: any): Array<{ argv: readonly string[]; stdin?: string }>
   on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
     runs.push({ argv: e.argv, ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }) })
     if (e.argv.includes('current')) return OK({ state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'Review' })
+    if (e.argv.includes('submit')) return { value: { exitCode: 1, stdout: JSON.stringify({ ok: false, error: { code: 'REVIEW_STALE', message: 'stale' } }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     return OK({})
   })
   on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
@@ -88,4 +89,26 @@ test('the pane shows quotes safely, counts only comments that will be sent, and 
     expect((await ui.find({ type: 'Button', key: 'send:b-1-pending' }))).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('a control pressed after the draft changed acts on the draft it showed', async ($, on) => {
+  const runs = recordRuns(on)
+  const comment = { id: 'c1', source: { kind: 'claude-reply', sessionId: 's', messageId: null }, quote: 'old passage', body: '', deletedAt: null }
+  let draft = { id: 'd-old', revision: 3, association: { workspace: '/w', initiative: null, source: 'none' }, comments: [comment] }
+  on('state.get', (_: unknown, e: { key: string }) => ({
+    value: e.key === 'view'
+      ? { value: { shape: 'review-view-1', value: { sessionId: 's', draft, batches: [] } }, version: 1 }
+      : { value: { shape: e.key === 'current' ? 'current-init-1' : 'notice-1', value: e.key === 'current' ? null : '' }, version: 1 },
+  }))
+  on('state.set', () => ({ value: { isSet: true, version: 2 } }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  draft = { ...draft, id: 'd-new', revision: 1, comments: [{ ...comment, quote: 'new passage' }] }
+
+  await ui.press({ key: 'delete:c1' })
+  await ui.press({ key: 'send' })
+  const deleted = runs.find(run => run.argv.includes('delete'))?.argv ?? []
+  const submitted = runs.find(run => run.argv.includes('submit'))?.argv ?? []
+  expect(deleted.slice(deleted.indexOf('--draft'), deleted.indexOf('--draft') + 4)).toEqual(['--draft', 'd-old', '--expect-revision', '3'])
+  expect(submitted.slice(submitted.indexOf('--draft'), submitted.indexOf('--draft') + 4)).toEqual(['--draft', 'd-old', '--revision', '3'])
+  await ui.unmount()
 })

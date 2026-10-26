@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import { batchIdIn, deliveryLabel, excerpt, liveComments, sourceLabel, splitLines, statusLine } from './model.ts'
-import type { BatchView, CurrentInit, ReviewComment, ReviewView } from './types/index.d.ts'
+import type { BatchView, CurrentInit, ReviewView } from './types/index.d.ts'
 
 const PANE = 'grind-review'
 const view = atom({ plugin: 'grind', key: 'view' } as const, null, { shape: 'review-view-1' })
@@ -53,7 +53,7 @@ async function applySnapshot($: EngineInterface, snapshot: ReviewView): Promise<
   knownComments = new Set(comments.map((comment) => comment.id))
   await update($, view, () => snapshot)
   await showStatus($)
-  if (!isFirst && added.length > 0) void $.ui.open({ id: PANE, title: 'Grind review' })
+  if (!isFirst && added.length > 0) void $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
   for (const batch of snapshot.batches) {
     if (batch.delivery.state === 'sending' && !inFlight.has(batch.id)) void reconcile($, batch.id)
   }
@@ -122,10 +122,11 @@ async function deliver($: EngineInterface, batchId: string, resendUnknown: boole
   }
 }
 
-async function sendDraft($: EngineInterface): Promise<void> {
-  const snapshot = await read($, view)
-  if (session === null || snapshot?.draft == null) return
-  const submitted = await grind($, ['review', 'submit', '--session', session.id, '--draft', snapshot.draft.id, '--revision', String(snapshot.draft.revision)])
+// What the person saw when they acted: a press applies to that draft revision, never a newer one.
+type Rendered = { sessionId: string; draftId: string; revision: number }
+
+async function sendDraft($: EngineInterface, rendered: Rendered): Promise<void> {
+  const submitted = await grind($, ['review', 'submit', '--session', rendered.sessionId, '--draft', rendered.draftId, '--revision', String(rendered.revision)])
   if (!submitted.ok) return say($, submitted.message)
   await deliver($, submitted.data.submission.id, false)
 }
@@ -147,10 +148,8 @@ async function recordReceipt($: EngineInterface, batchId: string, rowUuid: strin
   await grind($, ['review', 'finish', '--batch', batchId, '--attempt', 'latest', '--status', 'received', '--row', rowUuid])
 }
 
-async function editComment($: EngineInterface, comment: ReviewComment, action: 'edit' | 'delete' | 'restore', body?: string): Promise<void> {
-  const snapshot = await read($, view)
-  if (session === null || snapshot?.draft == null) return
-  const result = await grind($, ['review', action, '--session', session.id, '--comment', comment.id, '--draft', snapshot.draft.id, '--expect-revision', String(snapshot.draft.revision)], body)
+async function editComment($: EngineInterface, rendered: Rendered, commentId: string, action: 'edit' | 'delete' | 'restore', body?: string): Promise<void> {
+  const result = await grind($, ['review', action, '--session', rendered.sessionId, '--comment', commentId, '--draft', rendered.draftId, '--expect-revision', String(rendered.revision)], body)
   await say($, result.ok ? '' : result.message)
 }
 
@@ -165,7 +164,7 @@ async function addSelection($: EngineInterface): Promise<string> {
     : await grind($, ['review', 'capture-cmux', '--session', session.id])
   if (!result.ok && /CMUX_WORKSPACE_ID/.test(result.message)) return 'Nothing is selected. Select text in the fullscreen transcript, or run Claude Code inside cmux to add document selections.'
   if (!result.ok) return `Not added: ${result.message}`
-  void $.ui.open({ id: PANE, title: 'Grind review' })
+  void $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
   return 'Added to the review draft.'
 }
 
@@ -222,7 +221,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'grind-review' }, async $ => {
     void refreshCurrent($)
-    await $.ui.open({ id: PANE, title: 'Grind review' })
+    await $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
     return {}
   })
 
@@ -254,6 +253,7 @@ export const register: Register = on => {
     const draft = snapshot?.draft ?? null
     const comments = draft?.comments ?? []
     const live = liveComments(draft)
+    const rendered: Rendered | null = snapshot !== null && draft !== null ? { sessionId: snapshot.sessionId, draftId: draft.id, revision: draft.revision } : null
     const association = draft?.association.initiative ?? (init?.state === 'resolved' ? init.initiative : null)
     return (
       <Box flexDirection="column">
@@ -270,16 +270,16 @@ export const register: Register = on => {
               ? (
                 <Box flexDirection="column">
                   <Input key={`body:${comment.id}`} placeholder="Your comment (Enter saves)" value={comment.body} rows={2} autoFocus={comment.body === '' ? true : undefined}
-                    onSubmit={(value: string) => { void editComment($, comment, 'edit', value) }} />
-                  <Button key={`delete:${comment.id}`} label="Delete" plain onPress={() => { void editComment($, comment, 'delete') }} />
+                    onSubmit={(value: string) => { void editComment($, rendered as Rendered, comment.id, 'edit', value) }} />
+                  <Button key={`delete:${comment.id}`} label="Delete" plain onPress={() => { void editComment($, rendered as Rendered, comment.id, 'delete') }} />
                 </Box>
               )
-              : <Button key={`restore:${comment.id}`} label="Restore" plain onPress={() => { void editComment($, comment, 'restore') }} />}
+              : <Button key={`restore:${comment.id}`} label="Restore" plain onPress={() => { void editComment($, rendered as Rendered, comment.id, 'restore') }} />}
           </Box>
         ))}
         {live.length > 0 && (
           <Box marginTop={1}>
-            <Button key="send" variant="primary" label={`Send review · ${live.length}`} onPress={() => { void sendDraft($) }} />
+            <Button key="send" variant="primary" label={`Send review · ${live.length}`} onPress={() => { void sendDraft($, rendered as Rendered) }} />
           </Box>
         )}
         {(snapshot?.batches ?? []).slice(0, 3).map(batch => batchRow($, batch, { Box, Text, Button }))}
