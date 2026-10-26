@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { GrindError } from './errors.ts';
@@ -9,6 +9,8 @@ export const REVIEW_SCHEMA_VERSION = 1;
 export const MAX_QUOTE_LENGTH = 20_000;
 export const MAX_BODY_LENGTH = 20_000;
 const LOCK_WAIT_MS = 5_000;
+// A lock is written with its owner at once, so one without an owner this old was abandoned.
+const STALE_OWNERLESS_MS = 30_000;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RECORD_ID = /^[a-z]-[A-Za-z0-9-]{1,80}$/;
 
@@ -185,7 +187,8 @@ export async function withReviewLock<T>(store: ReviewStore, action: () => Promis
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const owner = await readFile(path.join(lock, 'owner.json'), 'utf8').then((text) => JSON.parse(text) as { pid: number; host: string }).catch(() => null);
-      if (owner !== null && owner.host === os.hostname() && !processAlive(owner.pid)) {
+      const ownerless = owner === null && Date.now() - ((await stat(lock).catch(() => null))?.mtimeMs ?? Date.now()) > STALE_OWNERLESS_MS;
+      if (ownerless || (owner !== null && owner.host === os.hostname() && !processAlive(owner.pid))) {
         await rm(lock, { recursive: true, force: true });
         continue;
       }
@@ -438,7 +441,7 @@ export async function listBatches(store: ReviewStore, filter: { sessionId?: stri
   return batches.sort((a, b) => b.submission.submittedAt.localeCompare(a.submission.submittedAt));
 }
 
-/** Submitted, unresolved batches of an init: the reviews its context and closure must account for. */
+/** Submitted batches of an init that are not yet marked resolved. */
 export async function openInitiativeBatches(store: ReviewStore, workspace: string, initiative: string): Promise<BatchSummary[]> {
   return (await listBatches(store, { workspace, initiative })).filter((batch) => batch.delivery.resolution.state === 'open');
 }

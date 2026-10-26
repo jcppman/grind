@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -170,4 +170,17 @@ test('invalid input is refused before anything is written', async (t) => {
   await assert.rejects(addComment(store, 's1', { source: REPLY, quote: 'x'.repeat(20_001), association: INIT }), { code: 'REVIEW_INVALID' });
   assert.deepEqual((await readdir(store.root).catch(() => [])).filter((name) => name !== 'change'), []);
   assert.equal((await readDelivery(store, 'b-missing').catch((error: { code: string }) => error.code)), 'REVIEW_INVALID');
+});
+
+test('a lock left by a dead writer or without an owner does not block later writes', async (t) => {
+  const store = await tempStore(t);
+  const lock = path.join(store.root, '.lock');
+  await mkdir(lock, { recursive: true });
+  await writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: 2 ** 22 + 12345, host: os.hostname() }));
+  assert.equal((await addComment(store, 's1', { source: REPLY, quote: 'after a crash', association: INIT })).draft.revision, 1);
+
+  await mkdir(lock);
+  const old = new Date(Date.now() - 60_000);
+  await utimes(lock, old, old);
+  assert.equal((await addComment(store, 's1', { source: REPLY, quote: 'after an ownerless lock', association: INIT })).draft.revision, 2);
 });
