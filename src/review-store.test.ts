@@ -134,6 +134,9 @@ test('reconcile accepts only this session’s row carrying the marker from the p
 
   await writeFile(transcript, `${row({ uuid: 'u-blocks', message: { role: 'user', content: [{ type: 'text', text }] } })}\n`, { flag: 'a' });
   assert.equal(await findDeliveredRow(transcript, 's1', submission.id, 'grind'), 'u-blocks');
+  await writeFile(transcript, `${row({ uuid: 'u-typed', origin: { kind: 'human' } })}\n`);
+  assert.equal(await findDeliveredRow(transcript, 's1', submission.id, 'grind'), 'u-typed');
+  await writeFile(transcript, `${row({ uuid: 'u-blocks', message: { role: 'user', content: [{ type: 'text', text }] } })}\n`);
   const found = await reconcileBatch(store, submission.id, { transcript });
   assert.deepEqual([found.delivery.state, found.delivery.rowUuid], ['received', 'u-blocks']);
 

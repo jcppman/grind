@@ -30,9 +30,10 @@ It refreshes when the session starts, after each Claude turn, and on
   a reply with the mouse and run `/add-to-review`. The command works while Claude
   is still answering. The comment records the reply's message id when the
   selection lies in one message.
-- Without the fullscreen renderer, Claude Code cannot read the selection. Inside
-  cmux, `/add-to-review` then reads the terminal selection through cmux; that
-  quote has no message id.
+- Without the fullscreen renderer, Claude Code cannot read the selection, and
+  typing a command in the same terminal clears the terminal's selection. Inside
+  cmux, select the text and press the cmux action's shortcut below instead; the
+  quote is the terminal selection, without a message id.
 - Markdown documents in cmux: select text in the cmux Markdown viewer, then run
   `/add-to-review` in the Claude session of the same cmux workspace, or use the
   cmux action below. The quote gets a file and line range only when the passage
@@ -81,6 +82,7 @@ replacing `<plugin-root>` with the installed plugin's folder:
 
 Run `cmux reload-config`. The action opens a terminal tab in the focused pane,
 adds the selection to the Claude session running in the same cmux workspace, and
-ends the tab's shell. It never types into the Claude terminal or sends a cmux agent
+closes the tab. The selection survives the focus change. cmux asks for
+confirmation before it runs an action from a project's `.cmux/cmux.json`. It never types into the Claude terminal or sends a cmux agent
 message, so no Claude turn starts. When several Claude sessions with the mod run in
 the workspace, it refuses and lists them; run the command with `--session <id>`.

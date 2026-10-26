@@ -43,7 +43,7 @@ export async function findDeliveredRow(transcript: string, sessionId: string, ba
       continue;
     }
     if (row.type !== 'user' || row.sessionId !== sessionId || typeof row.uuid !== 'string') continue;
-    const typed = row.origin === undefined || row.origin.kind === 'composer';
+    const typed = row.origin === undefined || row.origin.kind === 'human' || row.origin.kind === 'composer';
     if (!typed && (row.origin?.kind !== 'plugin' || row.origin.name !== plugin)) continue;
     if (rowText(row.message?.content).includes(marker)) return row.uuid;
   }
