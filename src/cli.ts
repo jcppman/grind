@@ -10,6 +10,7 @@ import { addNote, listNotes, resolveNote } from './notes.ts';
 import { repositoryStatus, switchCommand, worktreeCommand } from './worktree.ts';
 import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
+import { REVIEW_USAGE, runReview } from './review-cli.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
   init: 'a future release',
@@ -35,6 +36,7 @@ Commands:
   inspect [scope]    batch local initiative facts; --remote adds PR observations
   status [initiative] inspect an initiative; without one inside a repository,
                       show the owning init and where the repository's inits live
+  review <action>     private batch review drafts; see grind review help
 
 Options:
   --workspace <dir>   directory containing grind-workspace.json
@@ -110,6 +112,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export async function run(argv: readonly string[]): Promise<number> {
   let json = argv.includes('--json');
   try {
+    if (argv.filter((arg) => arg !== '--json')[0] === 'review') {
+      const rest = argv.filter((arg) => arg !== '--json').slice(1);
+      const result = await runReview(rest, process.cwd(), (value) => process.stdout.write(`${JSON.stringify(value)}\n`));
+      if (rest[0] !== 'watch') emit(json, { ok: true, data: result }, rest[0] === undefined || rest[0] === 'help' ? REVIEW_USAGE : JSON.stringify(result, null, 2));
+      return 0;
+    }
     const args = parseArgs(argv);
     json = args.json;
     if (args.help || args.command === null) {
