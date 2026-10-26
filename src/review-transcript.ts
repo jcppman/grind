@@ -27,8 +27,9 @@ function rowText(content: unknown): string {
 }
 
 /**
- * The stored user row that delivered the batch: this session's, submitted by
- * the plugin, carrying the batch marker.
+ * The stored user row that delivered the batch: this session's, carrying the
+ * batch marker, submitted by the plugin or typed by the person from the
+ * prompt box the plugin filled.
  */
 export async function findDeliveredRow(transcript: string, sessionId: string, batchId: string, plugin: string): Promise<string | null> {
   const marker = batchMarker(batchId);
@@ -42,7 +43,8 @@ export async function findDeliveredRow(transcript: string, sessionId: string, ba
       continue;
     }
     if (row.type !== 'user' || row.sessionId !== sessionId || typeof row.uuid !== 'string') continue;
-    if (row.origin?.kind !== 'plugin' || row.origin.name !== plugin) continue;
+    const typed = row.origin === undefined || row.origin.kind === 'composer';
+    if (!typed && (row.origin?.kind !== 'plugin' || row.origin.name !== plugin)) continue;
     if (rowText(row.message?.content).includes(marker)) return row.uuid;
   }
   return null;

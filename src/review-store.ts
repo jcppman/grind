@@ -385,15 +385,15 @@ export interface AttemptOutcome {
   reason?: string;
 }
 
-/** Records how an attempt ended. A received batch stays received whatever a later report says. */
+/** Records how an attempt (or `latest`) ended. A received batch stays received whatever a later report says. */
 export async function finishAttempt(store: ReviewStore, batchId: string, attemptId: string, outcome: AttemptOutcome): Promise<DeliveryRecord> {
   if (outcome.status === 'received' && !outcome.rowUuid) throw new GrindError('USAGE', 'A received attempt needs the stored row uuid');
   return withReviewLock(store, async () => {
     const delivery = await readDelivery(store, batchId);
-    const attempt = delivery.attempts.find((item) => item.id === attemptId);
+    const attempt = attemptId === 'latest' ? delivery.attempts.at(-1) : delivery.attempts.find((item) => item.id === attemptId);
     if (attempt === undefined) throw new GrindError('REVIEW_INVALID', `Batch ${batchId} has no attempt ${attemptId}`, { batchId, attemptId });
     const updated: DeliveryAttempt = { ...attempt, status: outcome.status, rowUuid: outcome.rowUuid ?? attempt.rowUuid, reason: outcome.reason ?? null, updatedAt: now() };
-    const attempts = delivery.attempts.map((item) => (item.id === attemptId ? updated : item));
+    const attempts = delivery.attempts.map((item) => (item.id === attempt.id ? updated : item));
     const received = attempts.find((item) => item.status === 'received');
     const latest = attempts.at(-1) as DeliveryAttempt;
     const next: DeliveryRecord = {

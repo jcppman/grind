@@ -13,7 +13,8 @@
     "skills",
     ".codex-plugin",
     ".claude-plugin",
-    "scripts/grind.mjs"
+    "scripts/grind.mjs",
+    "mod"
   ],
   "engines": {
     "node": ">=24"
@@ -24,7 +25,8 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "package:plugin": "npm run build && node scripts/package-plugin.mjs",
     "test:package": "npm run package:plugin && node --test scripts/package.test.mjs",
-    "update-plugin": "node scripts/update-plugin.mjs"
+    "update-plugin": "node scripts/update-plugin.mjs",
+    "test:mod": "node scripts/test-mod.mjs"
   },
   "dependencies": {
     "entities": "^8.1.0",

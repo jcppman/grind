@@ -115,7 +115,7 @@ test('delivery never enqueues a batch twice and keeps a receipt once recorded', 
   assert.equal((await openInitiativeBatches(store, '/ws', 'audio/nav')).length, 1);
 });
 
-test('reconcile accepts only this session’s plugin row carrying the marker, and absence stays unknown', async (t) => {
+test('reconcile accepts only this session’s row carrying the marker from the plugin or the person, and absence stays unknown', async (t) => {
   const store = await tempStore(t);
   const { draft } = await addComment(store, 's1', { source: REPLY, quote: 'x', association: INIT });
   const { submission } = await submitDraft(store, 's1', draft.id, draft.revision);
@@ -124,7 +124,6 @@ test('reconcile accepts only this session’s plugin row carrying the marker, an
   const text = formatBatch(submission);
   const row = (fields: Record<string, unknown>) => JSON.stringify({ type: 'user', sessionId: 's1', uuid: 'u-typed', origin: { kind: 'plugin', name: 'grind' }, message: { role: 'user', content: text }, ...fields });
   await writeFile(transcript, [
-    row({ uuid: 'u-person', origin: undefined }),
     row({ uuid: 'u-other-session', sessionId: 's2' }),
     row({ uuid: 'u-other-plugin', origin: { kind: 'plugin', name: 'elsewhere' } }),
     'not json',

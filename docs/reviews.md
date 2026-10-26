@@ -3,7 +3,7 @@
 A batch review collects comments on passages of Claude Code replies and Markdown
 documents, keeps them editable, and sends them to one Claude conversation together
 when you choose. `grind review` owns the drafts and the record of each sent batch.
-A Claude Code mod and a cmux shortcut call it.
+The [review mod](review-mod.md) and a cmux action call it.
 
 ## Where review data lives
 
