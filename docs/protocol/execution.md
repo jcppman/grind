@@ -150,6 +150,7 @@ unique fragment of the init ID and offers a choice of open inits without one.
 2. If the init is closed, ask whether to reopen it. Reopen by editing the ledger:
    set `grind.status: open`, restore `phase`, `current_task`, and `next_action`
    from `grind.resume`, remove `grind.closed`, `grind.result`, and `grind.resume`,
+   reset `grind.verified` to false when present, retain `grind.need_verify`,
    and record the reopening under Lifecycle history. Save validates the result.
 3. For each repository with a recorded branch, get the working path from
    `grind worktree`. Handle `CHECKOUT_HELD` under [Checkouts and worktrees](#checkouts-and-worktrees): inspect
@@ -157,7 +158,10 @@ unique fragment of the init ID and offers a choice of open inits without one.
    no recorded branch gets no branch or worktree until implementation needs one.
 4. Report the working path, the branch's state against its remote, review notes,
    discrepancies, and the next action.
-5. Carry out an accompanying task in the worktree. Otherwise ask what the user
+5. Before changing an outcome already marked `grind.verified: true`, reset it to
+   false and retain `grind.need_verify`. Follow the
+   [manual verification contract](lifecycle.md#manual-verification); bookkeeping
+   alone does not invalidate verification. Carry out an accompanying task in the worktree. Otherwise ask what the user
    wants to do and wait; the ledger's next action is context, not an instruction
    to execute. Do not process review notes or begin substantive work on a bare start.
 

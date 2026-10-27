@@ -18,6 +18,8 @@ export interface ClosureRecord {
 
 export interface LedgerState {
   status: 'open' | 'closed';
+  need_verify?: boolean;
+  verified?: boolean;
   updated_at: string;
   phase: string | null;
   current_task: string | null;
@@ -103,6 +105,12 @@ export function validateLedger(
     fail('INVALID_STATUS', '`grind.status` must be "open" or "closed"');
   }
 
+  for (const key of ['need_verify', 'verified']) {
+    if (key in grind && typeof grind[key] !== 'boolean') {
+      fail('INVALID_VERIFICATION', `grind.${key} must be a boolean`);
+    }
+  }
+
   const updatedAt = getString(grind, 'updated_at');
   if (updatedAt === null || !isTimestampWithOffset(updatedAt)) {
     fail('INVALID_TIMESTAMP', '`grind.updated_at` must be an ISO 8601 timestamp with a UTC offset');
@@ -141,6 +149,8 @@ export function validateLedger(
   return {
     state: {
       status: status as 'open' | 'closed',
+      ...(typeof grind['need_verify'] === 'boolean' ? { need_verify: grind['need_verify'] } : {}),
+      ...(typeof grind['verified'] === 'boolean' ? { verified: grind['verified'] } : {}),
       updated_at: updatedAt as string,
       phase,
       current_task: currentTask,

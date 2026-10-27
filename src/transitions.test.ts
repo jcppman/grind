@@ -24,3 +24,15 @@ test('close preserves the open checkpoint for a later reopen and records history
     next_action: 'Keep doing it',
   });
 });
+
+test('manual verification gates delivery but permits deliberate abandonment', () => {
+  const input = { outcome: 'delivered' as const, result: 'done', date: '2026-10-27', updatedAt: '2026-10-27T00:00:00Z' };
+  const pending = openLedger().replace('status: open', 'status: open\n  need_verify: true');
+  for (const raw of [pending, pending.replace('need_verify: true', 'need_verify: true\n  verified: false')]) {
+    assert.throws(() => closeLedger(raw, input), { code: 'VERIFICATION_REQUIRED' });
+  }
+  const verified = pending.replace('need_verify: true', 'need_verify: true\n  verified: true');
+  assert.equal(validateLedger(parseFrontmatter(closeLedger(verified, input)), 'ledger.md').state?.verified, true);
+  assert.equal(validateLedger(parseFrontmatter(closeLedger(pending, { ...input, outcome: 'abandoned' })), 'ledger.md').state?.closed?.outcome, 'abandoned');
+  assert.throws(() => closeLedger(pending.replace('need_verify: true', 'need_verify: "true"'), input), { code: 'ARTIFACT_INVALID' });
+});

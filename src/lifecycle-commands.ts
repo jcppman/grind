@@ -19,7 +19,7 @@ import {
 } from './operations.ts';
 import { toPosix } from './paths.ts';
 import { resolveIdentifier, resolveInitiative } from './resolve.ts';
-import { closeLedger, type CloseInput } from './transitions.ts';
+import { assertVerification, closeLedger, type CloseInput } from './transitions.ts';
 import { checkedGit, validateForWrite } from './writes.ts';
 import type { Workspace } from './workspace.ts';
 
@@ -82,6 +82,7 @@ export async function closeCommand(context: CommandContext, identifier: string |
   await validateForWrite(context.workspace, initiative.dir);
   const invalid = inspection.diagnostics.filter((item) => item.severity === 'error');
   if (invalid.length > 0) throw new GrindError('ARTIFACT_INVALID', 'Repair initiative and repository records before closing', { diagnostics: invalid });
+  assertVerification({ ...inspection.state }, options.outcome);
   await assertInitialIndexClean(context.workspace);
   const pendingNotes = (await readNotes(inspection.dir)).length;
   if (options.notes === 'handled' && pendingNotes > 0) {

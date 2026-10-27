@@ -60,6 +60,11 @@ Move structured facts into frontmatter rather than retaining a second authoritat
 initiative status, phase, current task, next action, and repository tracking;
 other documents must not duplicate those fields.
 
+The ledger also supports optional boolean `grind.need_verify` and `grind.verified`
+fields. Omission means false. These describe the user's local verification of the
+initiative outcome, separately from document-level OKF `verified` metadata and
+from the open/closed lifecycle. See [manual verification](lifecycle.md#manual-verification).
+
 Keep explanations and durable history in Markdown. Preserve unknown frontmatter
 keys and unrelated content during edits. Existing initiatives need an explicit root marker migration before discovery.
 Other artifacts without frontmatter remain readable during migration; report missing metadata and migrate explicitly,

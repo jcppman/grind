@@ -28,9 +28,21 @@ function appendHistory(body: string, entry: string): string {
   return `${body}${heading}\n${entry.trim()}\n`;
 }
 
+export function assertVerification(grind: Record<string, unknown>, outcome: CloseInput['outcome']): void {
+  for (const key of ['need_verify', 'verified']) {
+    if (key in grind && typeof grind[key] !== 'boolean') {
+      throw new GrindError('ARTIFACT_INVALID', `grind.${key} must be a boolean`);
+    }
+  }
+  if (outcome === 'delivered' && grind['need_verify'] === true && grind['verified'] !== true) {
+    throw new GrindError('VERIFICATION_REQUIRED', 'Local verification by the user is required before delivered closure; record their explicit confirmation in grind.verified');
+  }
+}
+
 export function closeLedger(raw: string, input: CloseInput): string {
   const { data, grind, body } = ledgerParts(raw);
   if (grind['status'] !== 'open') throw new GrindError('UNSUPPORTED_OPERATION', 'Only an open initiative can be closed');
+  assertVerification(grind, input.outcome);
   for (const key of ['phase', 'current_task', 'next_action']) {
     if (typeof grind[key] !== 'string' || (grind[key] as string).trim() === '') {
       throw new GrindError('ARTIFACT_INVALID', `Open ledger requires grind.${key} before closing`);

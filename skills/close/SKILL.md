@@ -14,6 +14,11 @@ that branch and revision. An intermediate-branch merge or PR handoff leaves the 
 open. Research and deliberate abandonment follow their distinct outcome criteria
 in the protocol; closure does not authorize merges or releases.
 
+Apply the protocol's manual verification gate before delivered closure. When
+`grind.need_verify` is true, leave the init open until the user explicitly confirms
+local verification of the current outcome. Automated checks or a request to close
+do not count as that confirmation.
+
 Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs close [initiative] --outcome <delivered|abandoned> --result <location-or-summary> --notes <handled|parked> --json`,
 adding `--workspace <directory>` when needed. Close never commits application code,

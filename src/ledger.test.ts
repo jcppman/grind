@@ -99,3 +99,14 @@ test('legacy fields alongside grind frontmatter conflict', () => {
 test('frontmatter without a grind block is an error', () => {
   assert.ok(codes('---\ntype: Initiative Ledger\n---\n').includes('MISSING_GRIND_STATE'));
 });
+
+test('verification fields are optional strict booleans and survive structured reads', () => {
+  for (const key of ['need_verify', 'verified']) {
+    for (const value of ['"true"', 'null', '1', '{}']) {
+      assert.ok(codes(openLedger().replace('status: open', `status: open\n  ${key}: ${value}`)).includes('INVALID_VERIFICATION'));
+    }
+  }
+  const state = validate(openLedger().replace('status: open', 'status: open\n  need_verify: true\n  verified: false')).state;
+  assert.equal(state?.need_verify, true);
+  assert.equal(state?.verified, false);
+});

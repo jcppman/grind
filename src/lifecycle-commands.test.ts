@@ -94,3 +94,19 @@ test('close and archive resume after state commit failures', async (t) => {
   assert.equal(result.archivedId, '_archive/work');
   assert.deepEqual(await readPendingOperations(workspace), []);
 });
+
+test('pending user verification blocks closure without leaving a journal, then confirmation allows retry', async (t) => {
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  const raw = openLedger().replace('status: open', 'status: open\n  need_verify: true\n  verified: false');
+  const dir = await writeInitiative(ws, 'app/verify', { ledger: raw });
+  await commitState(ws, 'initiative');
+  const workspace = await loadWorkspace({ cwd: ws.root });
+  const context = { workspace, cwd: ws.root };
+  const options = { outcome: 'delivered' as const, result: 'done', notes: 'handled' as const };
+  await assert.rejects(closeCommand(context, 'app/verify', options), { code: 'VERIFICATION_REQUIRED' });
+  assert.deepEqual(await readPendingOperations(workspace), []);
+  assert.equal(await readFile(path.join(dir, 'ledger.md'), 'utf8'), raw);
+  await writeFile(path.join(dir, 'ledger.md'), raw.replace('verified: false', 'verified: true'));
+  assert.equal((await closeCommand(context, 'app/verify', options)).status, 'closed');
+});
