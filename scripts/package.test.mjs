@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { chmod, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -147,4 +147,38 @@ test('relocated explicit context remains read-only with legacy hook configuratio
   assert.equal(context.data.resolution.source, 'folder');
   assert.equal(await git(ws.stateGitRoot, 'status', '--porcelain'), before);
   await assert.rejects(readFile(path.join(install, 'hooks/hooks.json')), { code: 'ENOENT' });
+});
+
+test('relocated Claude Code mod ships its module and contract without tests, and its CLI calls work from the copy', async t => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'grind-mod-package-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const install = path.join(temp, 'installed grind');
+  await cp(path.resolve('build/grind'), install, { recursive: true });
+  const manifest = JSON.parse(await readFile(path.join(install, '.claude-plugin/plugin.json'), 'utf8'));
+  const hooks = JSON.parse(await readFile(path.resolve(install, manifest.hooks), 'utf8'));
+  for (const module of hooks.modules) await readFile(path.resolve(install, path.dirname(manifest.hooks), module));
+  await readFile(path.resolve(install, manifest.types));
+  await readFile(path.join(install, 'mod/model.ts'));
+  const shipped = await readdir(path.join(install, 'mod'), { recursive: true });
+  assert.deepEqual(shipped.filter((name) => /\.test\./.test(name)), []);
+  await assert.rejects(readFile(path.join(install, '.claude-plugin/types/claude-code/index.d.ts')), { code: 'ENOENT' });
+
+  const home = path.join(temp, 'reviews');
+  const cli = path.join(install, 'scripts/grind.mjs');
+  const review = async (args, input = '') => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'review', ...args, '--json'], { cwd: temp, env: { ...process.env, GRIND_REVIEW_HOME: home } });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.on('error', reject);
+    child.on('close', () => resolve(JSON.parse(stdout)));
+    child.stdin.end(input);
+  });
+  const added = await review(['add', '--session', 's1'], JSON.stringify({ source: { kind: 'claude-reply', sessionId: 's1', messageId: null }, quote: 'q'.repeat(19000) }));
+  assert.equal(added.ok, true, JSON.stringify(added));
+  await review(['add', '--session', 's1'], JSON.stringify({ source: { kind: 'claude-reply', sessionId: 's1', messageId: null }, quote: 'r'.repeat(19000) }));
+  const submitted = await review(['submit', '--session', 's1', '--draft', added.data.draft.id, '--revision', '2']);
+  assert.equal(submitted.data.payload.inline, false);
+  assert.ok(submitted.data.payload.text.includes(JSON.stringify(cli)));
+  const shown = await review(['show-batch', submitted.data.submission.id, '--prompt']);
+  assert.ok(shown.data.prompt.includes('r'.repeat(19000)));
 });

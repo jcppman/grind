@@ -9,6 +9,7 @@ import { checkoutKind, repositoryCheckout } from './checkouts.ts';
 import { git } from './git.ts';
 import { inspectInitiative } from './inspect.ts';
 import { readNotes } from './notes.ts';
+import { initiativeReviewReferences, type ReviewReference } from './review-store.ts';
 import { pendingOperationSummaries } from './operations.ts';
 import { branchOwners, resolveInitiative } from './resolve.ts';
 import type { Workspace } from './workspace.ts';
@@ -104,6 +105,12 @@ export async function contextCommand(context: CommandContext, identifier?: strin
     diagnostics.push(diagnostic('warning', 'INVOKING_CHECKOUT_ASSOCIATION', `Invoking checkout is on a branch of ${invokingCheckout.owners.join(', ')}; selected init is ${inspection.id}.`, invokingCheckout.path));
   }
   const notes = await readNotes(inspection.dir);
+  let reviews: ReviewReference[] = [];
+  try {
+    reviews = await initiativeReviewReferences(context.workspace.root, inspection.id);
+  } catch (error) {
+    diagnostics.push(diagnostic('warning', 'REVIEWS_UNREADABLE', `Submitted reviews could not be read: ${(error as Error).message}`));
+  }
   const pendingOperations = (await pendingOperationSummaries(context.workspace)).filter(op => op.target === inspection.id || `_archive/${op.target}` === inspection.id);
   return {
     schemaVersion: 1,
@@ -117,7 +124,7 @@ export async function contextCommand(context: CommandContext, identifier?: strin
     complete: Boolean(intent && ledger && record.index && inspection.state) && !hasErrors(diagnostics),
     roadmap: inspection.roadmap,
     roadmaps: record.roadmaps,
-    intent, constraints, ledger, repositories, notes, invokingCheckout, pendingOperations,
+    intent, constraints, ledger, repositories, notes, reviews, invokingCheckout, pendingOperations,
     diagnostics, navigation: links, entryRules: ENTRY_RULES,
   };
 }
@@ -139,6 +146,7 @@ export function formatContext(result: ContextResult): string {
     '## Observed state',
     ...result.repositories.map(repo => JSON.stringify(repo, null, 2)),
     `Review notes (${result.notes.length}):\n${JSON.stringify(result.notes, null, 2)}`,
+    `Submitted reviews awaiting resolution (${result.reviews.length}):\n${JSON.stringify(result.reviews, null, 2)}`,
     `Invoking checkout (association only):\n${JSON.stringify(result.invokingCheckout, null, 2)}`,
     `Pending lifecycle operations:\n${JSON.stringify(result.pendingOperations, null, 2)}`,
     `Diagnostics:\n${JSON.stringify(result.diagnostics, null, 2)}`,

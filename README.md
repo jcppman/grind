@@ -43,7 +43,8 @@ checkout. It moves your current work to its init's worktree and brings the targe
 branch to the foreground, keeping staged, unstaged, and untracked changes. Inside a
 repository, `grind status` names the init owning the current branch and where the
 repository's other inits live. Review notes from `grind note add` go to the init
-owning the file's branch and are committed with it.
+owning the file's branch and are committed with it. Batch reviews of Claude replies
+and Markdown documents stay private to this machine; see [batch reviews](docs/reviews.md).
 
 ## Dashboard
 

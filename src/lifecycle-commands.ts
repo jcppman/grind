@@ -6,6 +6,7 @@ import { GrindError } from './errors.ts';
 import { git } from './git.ts';
 import { inspectInitiative, type InitiativeInspection } from './inspect.ts';
 import { readNotes } from './notes.ts';
+import { initiativeReviewReferences } from './review-store.ts';
 import {
   deleteOperation,
   newLifecycleOperation,
@@ -86,6 +87,10 @@ export async function closeCommand(context: CommandContext, identifier: string |
   if (options.notes === 'handled' && pendingNotes > 0) {
     throw new GrindError('PENDING_NOTES', `${pendingNotes} unresolved note(s) remain in notes.md; handle them or use --notes parked`);
   }
+  const pendingReviews = await initiativeReviewReferences(context.workspace.root, inspection.id);
+  if (options.notes === 'handled' && pendingReviews.length > 0) {
+    throw new GrindError('PENDING_NOTES', `${pendingReviews.length} submitted review batch(es) are unresolved; resolve them with grind review resolve or use --notes parked`, { reviews: pendingReviews });
+  }
   const date = options.date ?? new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new GrindError('USAGE', '--date must be YYYY-MM-DD');
   const operation = newLifecycleOperation('close', inspection.id, { outcome: options.outcome, result: options.result, notes: options.notes, date });
@@ -134,6 +139,9 @@ export async function inspectArchiveEligibility(workspace: Workspace, inspection
   const pending = (await readPendingOperations(workspace)).filter((operation) => operation.target === inspection.id);
   if (pending.length > 0) blockers.push('a lifecycle operation is pending');
   if ((await readNotes(inspection.dir)).length > 0) blockers.push('unresolved notes remain in notes.md');
+  const reviews = await initiativeReviewReferences(workspace.root, inspection.id).catch(() => null);
+  if (reviews === null) blockers.push('submitted reviews could not be read');
+  else if (reviews.length > 0) blockers.push('submitted review batches are unresolved');
   for (const repository of inspection.repositories) {
     if (repository.observed.path !== null) blockers.push(`${repository.recorded.branch} is checked out at ${repository.observed.path}`);
   }

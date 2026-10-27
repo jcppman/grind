@@ -4,5 +4,7 @@
   "description": "Resume development initiatives from private, versioned records.",
   "author": {
     "name": "Chriest Yu"
-  }
+  },
+  "hooks": "./mod/hooks.json",
+  "types": "./mod/types/index.d.ts"
 }
