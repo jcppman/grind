@@ -1,6 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
-import { batchIdIn, deliveryLabel, excerpt, liveComments, sourceLabel, splitLines, statusLine } from './model.ts'
+import { batchIdIn, deliveryLabel, excerpt, initSummary, liveComments, sourceLabel, splitLines } from './model.ts'
 import type { BatchView, CurrentInit, ReviewView } from './types/index.d.ts'
 
 const PANE = 'grind-review'
@@ -39,11 +39,6 @@ async function refreshCurrent($: EngineInterface): Promise<void> {
   const result = await grind($, ['review', 'current', '--session', session.id])
   const value: CurrentInit = result.ok ? result.data : { state: 'unavailable', reason: result.message }
   await update($, current, () => value)
-  await showStatus($)
-}
-
-async function showStatus($: EngineInterface): Promise<void> {
-  $.ui.status(statusLine(await read($, current), liveComments((await read($, view))?.draft ?? null).length))
 }
 
 async function applySnapshot($: EngineInterface, snapshot: ReviewView): Promise<void> {
@@ -52,7 +47,6 @@ async function applySnapshot($: EngineInterface, snapshot: ReviewView): Promise<
   const isFirst = knownComments.size === 0 && (await read($, view)) === null
   knownComments = new Set(comments.map((comment) => comment.id))
   await update($, view, () => snapshot)
-  await showStatus($)
   if (!isFirst && added.length > 0) void $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
   for (const batch of snapshot.batches) {
     if (batch.delivery.state === 'sending' && !inFlight.has(batch.id)) void reconcile($, batch.id)
@@ -258,7 +252,7 @@ export const register: Register = on => {
     const association = draft?.association.initiative ?? (init?.state === 'resolved' ? init.initiative : null)
     return (
       <Box flexDirection="column">
-        <Text bold>Grind: {statusLine(init, live.length)}</Text>
+        <Text bold>Grind: {initSummary(init, live.length)}</Text>
         <Text dimColor>Sends to this conversation{association === null ? '' : ` · init ${association}`}</Text>
         {message !== '' && <Text color="yellow">{message}</Text>}
         {snapshot === null && <Text dimColor>Loading the review draft…</Text>}

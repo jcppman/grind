@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { batchIdIn, excerpt, splitLines, statusLine } from './model.ts'
+import { batchIdIn, excerpt, initSummary, splitLines } from './model.ts'
 
 test('watcher output split across pieces yields whole lines only', () => {
   const first = splitLines('', '{"a":1}\n{"b"')
@@ -13,12 +13,12 @@ test('a batch id is read only from the marker', () => {
   expect(batchIdIn('grind-review batch=; rm -rf')).toBeNull()
 })
 
-test('the status line tells explicit, inferred, missing and ambiguous inits apart', () => {
-  expect(statusLine({ state: 'resolved', initiative: 'demo', source: 'explicit', currentTask: null }, 0)).toBe('demo [bound]')
-  expect(statusLine({ state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'x'.repeat(60) }, 2)).toBe(`demo [branch] · ${'x'.repeat(47)}… · review 2`)
-  expect(statusLine({ state: 'ambiguous', candidates: ['a', 'b'] }, 0)).toBe('init ambiguous (a, b)')
-  expect(statusLine({ state: 'none', reason: 'none' }, 1)).toBe('no init · review 1')
-  expect(statusLine({ state: 'unavailable', reason: 'broken' }, 0)).toBe('init unavailable')
+test('the init summary tells explicit, inferred, missing and ambiguous inits apart', () => {
+  expect(initSummary({ state: 'resolved', initiative: 'demo', source: 'explicit', currentTask: null }, 0)).toBe('demo [bound]')
+  expect(initSummary({ state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'x'.repeat(60) }, 2)).toBe(`demo [branch] · ${'x'.repeat(47)}… · review 2`)
+  expect(initSummary({ state: 'ambiguous', candidates: ['a', 'b'] }, 0)).toBe('init ambiguous (a, b)')
+  expect(initSummary({ state: 'none', reason: 'none' }, 1)).toBe('no init · review 1')
+  expect(initSummary({ state: 'unavailable', reason: 'broken' }, 0)).toBe('init unavailable')
 })
 
 test('excerpts mark what they leave out and never carry control characters', () => {

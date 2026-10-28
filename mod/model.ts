@@ -27,7 +27,7 @@ export function liveComments(draft: ReviewDraft | null): ReviewComment[] {
 }
 
 /** The compact status entry: current init, task and draft count, or why there is no init. */
-export function statusLine(current: CurrentInit | null, draftCount: number): string {
+export function initSummary(current: CurrentInit | null, draftCount: number): string {
   const count = draftCount > 0 ? ` · review ${draftCount}` : '';
   if (current === null) return `…${count}`;
   if (current.state === 'resolved') {

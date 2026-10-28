@@ -1,7 +1,7 @@
 # Review mod for Claude Code
 
-The Grind plugin includes a Claude Code mod. It shows the session's current init
-in the status line and keeps a review pane beside the conversation. You collect
+The Grind plugin includes a Claude Code mod. It keeps a review pane beside the
+conversation. You collect
 comments on passages of Claude's replies and of Markdown documents, edit them, and
 send them to the same conversation as one batch. Nothing reaches Claude until you
 press Send. Review data stays on this machine; see [batch reviews](reviews.md).
@@ -10,10 +10,10 @@ Requirements: Claude Code 2.1.287 or later with mods enabled for the plugin, and
 Node.js 24 on `PATH`. The mod is Claude Code only. The Codex plugin and the CLI
 work without it.
 
-## Status line
+## Current init
 
-The status line shows the current init and its current task, for example
-`demo [branch] · Review the plan document · review 2`:
+The first line of the review pane shows the current init and its current task,
+for example `Grind: demo [branch] · Review the plan document · review 2`:
 
 - `[bound]`: you chose the init for this session with `/grind-init <init>`.
 - `[branch]` or `[folder]`: the session's checkout or folder resolves to the init.

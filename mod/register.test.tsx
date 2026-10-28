@@ -16,7 +16,6 @@ function recordRuns(on: any): Array<{ argv: readonly string[]; stdin?: string }>
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.cwd', () => ({ value: '/w' }))
-  on('ui.status', () => ({ value: undefined }))
   return runs
 }
 
