@@ -1,0 +1,207 @@
+import assert from 'node:assert/strict';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { test, type TestContext } from 'node:test';
+import { makeTempWorkspace, openLedger, writeInitiative } from '../test-helpers.ts';
+import { attemptFiles, paths } from './runtime.ts';
+import { addInput, discussionResult, discussionStatus, resumeDiscussion, startDiscussion, stopDiscussion, systemServiceEnv } from './service.ts';
+import { discussionsRoot, isSameProcess, readJson, type ProcessIdentity } from './store.ts';
+import { makeFakes, writePersonalConfig, type Fakes } from './test-fakes.ts';
+
+const darwinOnly = { skip: process.platform !== 'darwin' ? 'discussion execution is macOS-only' : false };
+
+const roles = {
+  architect: { instructions: 'Develop a concrete design.' },
+  critic: { instructions: 'Find failure cases.' },
+  operator: { instructions: 'Evaluate operations.' },
+};
+const pair = { participants: [{ id: 'architect', engine: 'claude', model: 'opus', role: 'architect' }, { id: 'critic', engine: 'codex', model: 'gpt-x', role: 'critic' }], writer: 'architect' };
+const trio = { participants: [...pair.participants, { id: 'operator', engine: 'claude', model: 'sonnet', role: 'operator' }], writer: 'architect' };
+
+async function setup(t: TestContext, options: { cmuxMode?: 'ok' | 'denied'; defaults?: Record<string, unknown> } = {}) {
+  const fakes = await makeFakes(options.cmuxMode === undefined ? {} : { cmuxMode: options.cmuxMode });
+  t.after(async () => {
+    await stopAll(fakes);
+    await fakes.cleanup();
+  });
+  await writePersonalConfig(fakes, { roles, presets: { pair, trio }, defaults: { preset: 'pair', presentation: 'headless', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120, ...options.defaults } });
+  const work = path.join(fakes.root, 'work');
+  await mkdir(work);
+  await writeFile(path.join(work, 'brief.md'), 'Decide the plan.\n');
+  await writeFile(path.join(work, 'plan.md'), 'original plan\n');
+  return { fakes, work, service: systemServiceEnv(work, fakes.env) };
+}
+
+async function stopAll(fakes: Fakes) {
+  const root = discussionsRoot(fakes.env);
+  for (const id of await readdir(root).catch(() => [] as string[])) {
+    const state = await readJson<{ status: string }>(path.join(root, id, 'state.json'));
+    if (state && state.status === 'running') await stopDiscussion(systemServiceEnv(fakes.root, fakes.env), id).catch(() => undefined);
+  }
+}
+
+async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, ms = 30_000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (done(value)) return value;
+    if (Date.now() > deadline) throw new Error(`Timed out; last value ${JSON.stringify(value).slice(0, 2000)}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+test('two engines reach agreement on a revised candidate, apply it, and the initiator returns before completion', darwinOnly, async (t) => {
+  const { fakes, work, service } = await setup(t);
+  await fakes.setPlan({ participants: { critic: { ratify: 'object_once' } }, content: 'agreed plan' });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: ['plan.md'], noInit: true });
+  assert.equal(started.status, 'running');
+  assert.equal(started.resultAvailable, false, 'start returns while the detached runner works');
+  const status = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  assert.equal(status.outcome?.kind, 'agreed');
+  const result = await discussionResult(service, started.id) as Record<string, any>;
+  assert.equal(result['agreed'], true);
+  assert.equal(result['applied'], true);
+  assert.equal(result['proposal'].revision, 2);
+  assert.equal(await readFile(path.join(work, 'plan.md'), 'utf8'), 'agreed plan revision 2\n');
+  assert.ok(result['participants'].every((p: any) => p.decision?.decision === 'accept' && p.decision.revision === 2 && p.decision.candidateHash === result['proposal'].hash));
+
+  const calls = await fakes.invocations();
+  const claude = calls.filter((call) => call['engine'] === 'claude');
+  const codex = calls.filter((call) => call['engine'] === 'codex');
+  const claudeArgs = claude.map((call) => call['args'] as string[]);
+  assert.equal(claudeArgs[0]![claudeArgs[0]!.indexOf('--session-id') - 0], '--session-id');
+  const sessionId = claudeArgs[0]![claudeArgs[0]!.indexOf('--session-id') + 1];
+  assert.ok(claudeArgs.slice(1).every((args) => args[args.indexOf('--resume') + 1] === sessionId), 'later Claude turns resume the explicit session');
+  assert.ok(claudeArgs.every((args) => args.includes('--restricted') && args[args.indexOf('--tools') + 1] === 'Read,Grep,Glob' && args[args.indexOf('--permission-mode') + 1] === 'dontAsk'));
+  const codexArgs = codex.map((call) => call['args'] as string[]);
+  assert.deepEqual(codexArgs[0]!.slice(0, 2), ['exec', '-C']);
+  const thread = codex[0]!['sessionId'];
+  assert.ok(codexArgs.slice(1).every((args) => args[1] === 'resume' && args[2] === thread), 'later Codex turns resume the reported thread');
+  assert.ok(codexArgs.every((args) => args.includes('sandbox_mode="read-only"')));
+  assert.ok(calls.every((call) => typeof call['marker'] === 'string' && (call['marker'] as string).startsWith(`${started.id}:`)));
+  assert.ok(calls.every((call) => call['init'] === 'NONE (general discussion; no init objectives apply)'));
+});
+
+test('three participants with a one-round bound end unresolved on a user question without touching the target', darwinOnly, async (t) => {
+  const { fakes, work, service } = await setup(t);
+  await fakes.setPlan({ participants: { operator: { ratify: 'question' } } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', preset: 'trio', maxRounds: 1, targets: ['plan.md'], noInit: true });
+  await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  const result = await discussionResult(service, started.id) as Record<string, any>;
+  assert.equal(result['outcome'].kind, 'unresolved');
+  assert.equal(result['agreed'], false);
+  assert.equal(result['application'].status, 'not_applied');
+  assert.deepEqual(result['unresolvedIssues'].map((issue: any) => [issue.participant, issue.kind]), [['operator', 'user_question']]);
+  assert.equal(result['participants'].length, 3);
+  assert.equal(await readFile(path.join(work, 'plan.md'), 'utf8'), 'original plan\n');
+});
+
+test('a question with rounds left waits for user input, then the input resumes the same discussion', darwinOnly, async (t) => {
+  const { fakes, work, service } = await setup(t);
+  await fakes.setPlan({ participants: { critic: { ratify: 'question_once' } } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const waiting = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'needs_input');
+  assert.equal(waiting.questions[0]!.text, 'Which option does the user want?');
+  await writeFile(path.join(work, 'answer.md'), 'Use option A.\n');
+  const added = await addInput(service, started.id, 'Use option A.\n');
+  assert.equal(added.linked, false);
+  await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  const result = await discussionResult(service, started.id) as Record<string, any>;
+  assert.equal(result['outcome'].kind, 'agreed');
+  assert.equal(result['application'].status, 'not_requested');
+  assert.equal(result['userInput'][0].text, 'Use option A.\n');
+  assert.equal(result['proposal'].documents[0].target, 'proposal');
+});
+
+test('without cmux the start waits for an explicit presentation choice before launching anyone', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t, { defaults: { presentation: 'cmux' } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  assert.equal(started.status, 'needs_presentation_choice');
+  assert.match(started.nextCommand, /--presentation headless/);
+  assert.equal((await fakes.invocations()).length, 0);
+  await assert.rejects(resumeDiscussion(service, started.id, {}), /Choose a presentation explicitly/);
+  const resumed = await resumeDiscussion(service, started.id, { presentation: 'headless' });
+  assert.equal(resumed.resumed, true);
+  const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  assert.equal(done.presentation.kind, 'headless');
+  assert.equal(done.outcome?.kind, 'agreed');
+});
+
+test('cmux presentation opens one labelled workspace with a worker surface per participant', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t, { cmuxMode: 'ok', defaults: { presentation: 'cmux' } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  assert.equal(started.status, 'running');
+  const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  assert.equal(done.outcome?.kind, 'agreed');
+  assert.equal(done.presentation.workspace, 'workspace:1');
+  const calls = await fakes.cmuxCalls();
+  const opened = calls.filter((call) => call.args[0] === 'new-workspace' || call.args[0] === 'new-pane');
+  assert.deepEqual(opened.map((call) => call.args[0]), ['new-workspace', 'new-pane']);
+  assert.ok(opened.every((call) => /^sh '.*launch-g1\.sh'$/.test(call.args[call.args.indexOf('--command') + 1]!)), 'startup commands stay short');
+  assert.ok(opened.every((call) => call.args[call.args.indexOf('--focus') + 1] === 'false'));
+  const renames = calls.filter((call) => call.args[0] === 'rename-tab');
+  assert.deepEqual(renames.map((call) => call.surface).sort(), ['surface:1', 'surface:2']);
+  assert.ok(renames.some((call) => call.args.at(-1)!.includes('critic (critic, codex)')));
+});
+
+test('stop cancels a running discussion and terminates only its own engine processes', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t);
+  await fakes.setPlan({ participants: { architect: { assess: 'hang' }, critic: { assess: 'hang' } } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: ['plan.md'], noInit: true });
+  const dir = started.dir;
+  const running = await waitFor(async () => {
+    const state = await readJson<{ turns: Record<string, { attempt: number }> }>(paths.state(dir));
+    const files = await Promise.all(Object.entries(state?.turns ?? {}).map(([id, turn]) => readJson<{ identity: ProcessIdentity }>(attemptFiles.running(paths.attempt(dir, id, turn.attempt)))));
+    return files.filter((file) => file?.identity);
+  }, (value) => value.length === 2);
+  const stopped = await stopDiscussion(service, started.id);
+  assert.notEqual(stopped.stopped, false);
+  const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'cancelled');
+  assert.equal(done.outcome?.kind, 'cancelled');
+  for (const file of running) await waitFor(() => isSameProcess(file!.identity), (alive) => !alive, 10_000);
+  assert.equal(await readFile(path.join(fakes.root, 'work', 'plan.md'), 'utf8'), 'original plan\n');
+});
+
+test('a timed-out or malformed participant fails the discussion without an automatic resend', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t, { defaults: { turnTimeoutSeconds: 1 } });
+  await fakes.setPlan({ participants: { critic: { assess: 'hang' } } });
+  const slow = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const timedOut = await waitFor(() => discussionStatus(service, slow.id), (value) => value.status === 'completed', 20_000);
+  assert.equal(timedOut.outcome?.kind, 'failed');
+  assert.match(timedOut.outcome!.reason, /critic.*exceeded 1s/);
+
+  await fakes.setPlan({ participants: { critic: { assess: 'garbage' } } });
+  const bad = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const malformed = await waitFor(() => discussionStatus(service, bad.id), (value) => value.status === 'completed');
+  assert.equal(malformed.outcome?.kind, 'failed');
+  assert.match(malformed.outcome!.reason, /malformed response/);
+  const criticCalls = (await fakes.invocations()).filter((call) => call['participant'] === 'critic' && (call['turnId'] as string).startsWith(bad.id) === false);
+  assert.ok(criticCalls.length >= 1);
+  const badAttempts = (await discussionStatus(service, bad.id)).turns.filter((turn) => turn.participant === 'critic');
+  assert.deepEqual(badAttempts.map((turn) => turn.attempt), [1]);
+});
+
+test('start refuses unsupported platforms before creating any state', async (t) => {
+  const { fakes, service } = await setup(t);
+  await assert.rejects(startDiscussion({ ...service, platform: 'linux' }, { briefFile: 'brief.md', targets: [], noInit: true }), (error: any) => error.code === 'UNSUPPORTED_PLATFORM');
+  await assert.rejects(resumeDiscussion({ ...service, platform: 'win32' }, 'd-20261029-000000-abcdef', {}), (error: any) => error.code === 'UNSUPPORTED_PLATFORM');
+  assert.deepEqual(await readdir(discussionsRoot(fakes.env)).catch(() => []), []);
+});
+
+test('every participant receives the owning init context and the same snapshot', darwinOnly, async (t) => {
+  const { fakes } = await setup(t);
+  const ws = await makeTempWorkspace();
+  t.after(ws.cleanup);
+  await writeInitiative(ws, 'app/feature', { ledger: openLedger([], { body: '\n## Working state\n\nKeep the API stable.\n' }) });
+  const service = systemServiceEnv(ws.root, fakes.env);
+  await writeFile(path.join(ws.root, 'brief.md'), 'Review the plan.\n');
+  const started = await startDiscussion(service, { briefFile: 'brief.md', init: 'feature', targets: [] });
+  assert.equal(started.init?.id, 'app/feature');
+  assert.equal(started.init?.source, 'explicit');
+  await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
+  const calls = await fakes.invocations();
+  assert.ok(calls.every((call) => call['init'] === `app/feature (workspace ${ws.root})` && call['bundleHasIntent'] === true));
+  assert.equal(new Set(calls.map((call) => call['snapshotId'])).size, 1);
+  const result = await discussionResult(service, started.id) as Record<string, any>;
+  assert.deepEqual(result['context'].artifacts.map((item: any) => item.label).slice(0, 2), ['intent', 'ledger']);
+});
