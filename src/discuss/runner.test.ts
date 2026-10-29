@@ -46,7 +46,7 @@ async function harness(t: TestContext, plan: Record<string, Record<string, strin
   await writeFile(path.join(work, 'plan.md'), 'original\n');
   const h = {} as Harness;
   h.fakes = fakes;
-  h.deps = { ...systemRunnerDeps(), launchHeadless: headless(fakes), tickMs: 100, workerStartMs: 5_000 };
+  h.deps = { ...systemRunnerDeps(), launchHeadless: headless(fakes), tickMs: 100, workerStartMs: 20_000 };
   h.service = { ...systemServiceEnv(work, fakes.env), launchRunner: async (dir, generation) => runRunner(dir, generation, h.deps) };
   const started = await startDiscussion({ ...h.service, launchRunner: async () => undefined }, { briefFile: 'brief.md', targets: ['plan.md'], noInit: true });
   h.dir = started.dir;

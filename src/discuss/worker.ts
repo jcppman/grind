@@ -97,6 +97,7 @@ export async function runWorker(options: WorkerOptions): Promise<number> {
     while (!stopping) {
       const state = await readState(options.dir);
       if (state === null || state.generation !== options.generation || state.status !== 'running') return 0;
+      if (state.workers[options.participant]?.token !== options.token) return 0;
       const next = Object.entries(state.turns).find(([, turn]) => turn.participant === options.participant && turn.generation === options.generation && turn.status === 'assigned');
       if (next) {
         const [turnId, turn] = next;
@@ -206,11 +207,14 @@ export function workerArgs(dir: string, participant: string, generation: number,
   return ['discuss', 'worker', '--dir', dir, '--participant', participant, '--generation', String(generation), '--token', token];
 }
 
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export function launchScript(options: { node: string; cli: string; dir: string; participant: string; generation: number; token: string; env: Record<string, string | null> }): string {
-  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   const lines = ['#!/bin/sh'];
-  for (const [key, value] of Object.entries(options.env)) lines.push(value === null ? `unset ${key}` : `export ${key}=${quote(value)}`);
-  lines.push(`exec ${[options.node, options.cli, ...workerArgs(options.dir, options.participant, options.generation, options.token)].map(quote).join(' ')}`);
+  for (const [key, value] of Object.entries(options.env)) lines.push(value === null ? `unset ${key}` : `export ${key}=${shellQuote(value)}`);
+  lines.push(`exec ${[options.node, options.cli, ...workerArgs(options.dir, options.participant, options.generation, options.token)].map(shellQuote).join(' ')}`);
   return `${lines.join('\n')}\n`;
 }
 

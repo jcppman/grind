@@ -11,7 +11,7 @@ import { parseEngineOutput } from './engines.ts';
 import { advance, cancel, expire, finish, isTerminal, latestCandidate, pendingTurns, queueInput, recordFailure, recordResponse, sha256, type UserInput } from './protocol.ts';
 import { attemptFiles, paths, readRecord, readState, type Assignment, type DiscussionRecord, type RuntimeState, type TurnOutcome, type WorkerRegistration } from './runtime.ts';
 import { appendEvent, isSameProcess, readJson, terminateOwned, withLock, writeJsonAtomic, type ProcessProbe } from './store.ts';
-import { launchScript, scriptPath } from './worker.ts';
+import { launchScript, scriptPath, shellQuote } from './worker.ts';
 
 const MAX_WORKER_LAUNCHES = 2;
 
@@ -362,7 +362,10 @@ class Runner {
       const worker = this.state.workers[participant];
       if (worker && worker.generation === this.generation) {
         const registration = await readJson<WorkerRegistration>(paths.worker(this.dir, participant, this.generation));
-        if (registration && registration.token === worker.token && await isSameProcess(registration.identity, this.deps.probe)) continue;
+        if (registration && registration.token === worker.token && await isSameProcess(registration.identity, this.deps.probe)) {
+          worker.surface ??= registration.cmux.surface;
+          continue;
+        }
         if (!registration && this.deps.now().getTime() - Date.parse(worker.launchedAt) < this.deps.workerStartMs) continue;
         if (worker.launches >= MAX_WORKER_LAUNCHES) {
           this.state.status = 'needs_recovery';
@@ -392,7 +395,7 @@ class Runner {
     await chmod(script, 0o700);
     this.state.workers[participant] = { generation: this.generation, token, launchedAt: this.deps.now().toISOString(), surface: null, launches: previousLaunches + 1 };
     await this.save();
-    const command = `sh '${script}'`;
+    const command = `sh ${shellQuote(script)}`;
     try {
       if (this.state.presentation.kind === 'cmux') {
         if (this.deps.cmux === null) throw new Error('cmux adapter is unavailable');

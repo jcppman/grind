@@ -154,7 +154,6 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
   }
 }
 
-/** Read-only discuss actions a participant may still run. */
 const PARTICIPANT_SAFE_DISCUSS = new Set(['status', 'result', 'list', 'presets', 'config', 'help']);
 const PARTICIPANT_SAFE_COMMANDS = new Set(['list', 'context', 'status', 'inspect', 'help']);
 
