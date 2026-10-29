@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -82,4 +82,19 @@ test('a journal for one candidate cannot apply a different candidate', async (t)
   const journal = path.join(dir, 'journal.json');
   await applyCandidate(journal, targets, candidate([{ target: targets[0]!.path, content: 'first' }]));
   await assert.rejects(applyCandidate(journal, targets, candidate([{ target: targets[0]!.path, content: 'changed after acceptance' }])), /different candidate/);
+});
+
+test('a parent directory swapped for a symlink after authorization is a write conflict, not a redirected write', async (t) => {
+  const root = await tempDir(t);
+  await mkdir(path.join(root, 'authorized'));
+  await mkdir(path.join(root, 'other'));
+  await writeFile(path.join(root, 'authorized', 'plan.md'), 'original');
+  await writeFile(path.join(root, 'other', 'plan.md'), 'original');
+  const targets = await resolveTargets(root, ['authorized/plan.md']);
+  await rename(path.join(root, 'authorized'), path.join(root, 'moved'));
+  await symlink(path.join(root, 'other'), path.join(root, 'authorized'));
+  const result = await applyCandidate(path.join(root, 'journal.json'), targets, candidate([{ target: targets[0]!.path, content: 'candidate' }]));
+  assert.equal(result.status, 'write_conflict');
+  assert.equal(await readFile(path.join(root, 'other', 'plan.md'), 'utf8'), 'original');
+  assert.equal(await readFile(path.join(root, 'moved', 'plan.md'), 'utf8'), 'original');
 });

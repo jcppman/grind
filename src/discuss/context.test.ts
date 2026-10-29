@@ -54,9 +54,13 @@ test('the snapshot carries the init context, ignores ledger updated_at, and flag
   const target = await buildSnapshot({ workspace, cwd: ws.root, init, targets: [path.join(dir, 'plan.md')] });
   assert.equal(compareSnapshots(touched.manifest, target.manifest).kind, 'none', 'target drift is a write conflict, not context drift');
 
+  await writeFile(path.join(dir, 'notes.md'), '- n1 [plan.md:1](plan.md#L1) — keep step one\n');
+  const noted = await buildSnapshot({ workspace, cwd: ws.root, init, targets: [path.join(dir, 'plan.md')] });
+  assert.equal(compareSnapshots(target.manifest, noted.manifest).kind, 'substantive', 'a new review note changes the shared context');
+
   await writeFile(ledger, (await readFile(ledger, 'utf8')).replace('current_task: Do the thing', 'current_task: Do another thing'));
   const changed = await buildSnapshot({ workspace, cwd: ws.root, init, targets: [path.join(dir, 'plan.md')] });
-  assert.equal(compareSnapshots(touched.manifest, changed.manifest).kind, 'substantive');
+  assert.equal(compareSnapshots(noted.manifest, changed.manifest).kind, 'substantive');
   assert.notEqual(changed.id, first.id);
 });
 

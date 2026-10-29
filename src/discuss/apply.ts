@@ -42,7 +42,10 @@ export interface ApplicationJournal {
   updatedAt: string;
 }
 
+/** Hash of `file` only while it is still a regular file at its canonical path; otherwise null, which never matches a recorded hash. */
 async function currentHash(file: string): Promise<string | null> {
+  const parent = await realpath(path.dirname(file)).catch(() => null);
+  if (parent !== path.dirname(file)) return null;
   const info = await lstat(file).catch(() => null);
   if (info === null || !info.isFile()) return null;
   return sha256(await readFile(file));

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { contextCommand, type ContextResult } from '../context.ts';
 import { GrindError } from '../errors.ts';
 import { parseFrontmatter } from '../frontmatter.ts';
+import { NOTES_FILENAME } from '../notes.ts';
 import { pathExists } from '../paths.ts';
 import { resolveInitiative } from '../resolve.ts';
 import type { Workspace } from '../workspace.ts';
@@ -81,9 +82,9 @@ async function artifact(label: string, file: string, targets: ReadonlySet<string
   return { entry: { label, path: file, sha256: sha256(text), semanticSha256: sha256(semanticContent(label, text)), target: targets.has(file) }, text };
 }
 
-function hashManifest(artifacts: readonly ContextArtifact[], semantic: boolean, binding: InitBinding | null): string {
+function hashManifest(artifacts: readonly ContextArtifact[], semantic: boolean, binding: InitBinding | null, observed: unknown): string {
   const relevant = artifacts.filter((item) => !item.target).map((item) => [item.label, item.path, semantic ? item.semanticSha256 : item.sha256]);
-  return sha256(JSON.stringify({ init: binding?.id ?? null, artifacts: relevant }));
+  return sha256(JSON.stringify({ init: binding?.id ?? null, artifacts: relevant, observed }));
 }
 
 /**
@@ -138,6 +139,8 @@ export async function buildSnapshot(options: { workspace: Workspace | null; cwd:
       const file = path.join(options.workspace.root, name);
       if (await pathExists(file)) await add('instructions', await realpath(file));
     }
+    const notes = path.join(context.dir, NOTES_FILENAME);
+    if (await pathExists(notes)) await add('notes', await realpath(notes));
   }
   for (const target of options.targets) {
     if (!artifacts.some((item) => item.path === target)) {
@@ -147,14 +150,16 @@ export async function buildSnapshot(options: { workspace: Workspace | null; cwd:
     }
     readable.add(path.dirname(target));
   }
+  // Repository heads and omissions appear in the bundle, so they belong to the shared context too.
+  const observed = { omissions, repositories: context?.repositories.map((repo) => [repo.recorded.path, repo.recorded.branch, repo.observed.path, repo.head]) ?? [] };
   const manifest: ContextManifest = {
     init: options.init,
     workspace: options.workspace?.root ?? null,
     artifacts,
     omissions,
     readableRoots: [...readable].sort(),
-    rawHash: hashManifest(artifacts, false, options.init),
-    semanticHash: hashManifest(artifacts, true, options.init),
+    rawHash: hashManifest(artifacts, false, options.init, observed),
+    semanticHash: hashManifest(artifacts, true, options.init, observed),
   };
   const id = `ctx-${manifest.rawHash.slice(0, 16)}`;
   const header = options.init === null
