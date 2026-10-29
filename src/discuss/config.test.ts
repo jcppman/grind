@@ -43,6 +43,7 @@ test('workspace presets replace whole personal presets, defaults merge by field,
   assert.equal(effective.participants[1]!.instructions, 'Critique.');
   assert.equal(resolveEffective(layered, { maxRounds: 1, presentation: 'headless' }).limits.maxRounds, 1);
   assert.equal(resolveEffective(layered, { presentation: 'headless' }).presentation, 'headless');
+  assert.equal(resolveEffective(layered, { maxConcurrent: 5 }).limits.maxConcurrent, 2, 'concurrency never exceeds the participant count');
 });
 
 test('a workspace role replaces the personal role of the same name', async (t) => {
@@ -58,7 +59,6 @@ test('validation rejects bad participants, writers, roles, limits and unknown fi
     [{ roles, presets: { design: { ...pair, writer: 'zed' } } }, undefined, /writer.*not a participant/],
     [{ roles: { architect: roles.architect }, presets: { design: pair } }, undefined, /undefined role "critic"/],
     [{ roles, presets: { design: pair }, defaults: { maxRounds: 0 } }, undefined, /maxRounds: must be a positive integer/],
-    [{ roles, presets: { design: pair }, defaults: { maxConcurrent: 3 } }, undefined, /must not exceed the participant count/],
     [{ roles, presets: { design: pair }, extra: true }, undefined, /discussions\.json\.extra: unknown field/],
     [{ roles, presets: { design: pair } }, { engines: { claude: { executable: '/bin/sh' } } }, /#discussions\.engines: unknown field/],
     [{ roles, presets: { design: { participants: [{ ...pair.participants[0], engine: 'gemini' }, pair.participants[1]], writer: 'a' } } }, undefined, /engine: must be one of claude, codex/],

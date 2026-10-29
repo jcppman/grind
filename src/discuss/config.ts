@@ -258,7 +258,8 @@ export function resolveEffective(layered: LayeredConfig, overrides: Overrides = 
     return { ...participant, instructions: role.instructions };
   });
   if (!ids.has(preset.writer)) invalid(`${where}.writer`, `"${preset.writer}" is not a participant`);
-  if (limits.maxConcurrent > participants.length) invalid('defaults.maxConcurrent', 'must not exceed the participant count');
+  // A shared default may name more workers than a small preset has; never run more than one per participant.
+  limits.maxConcurrent = Math.min(limits.maxConcurrent, participants.length);
   if (limits.turnTimeoutSeconds > limits.totalTimeoutSeconds) invalid('defaults.turnTimeoutSeconds', 'must not exceed totalTimeoutSeconds');
   return {
     preset: presetName,
