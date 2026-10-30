@@ -177,7 +177,7 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
   return summary(record, state, dir);
 }
 
-function summary(record: DiscussionRecord, state: RuntimeState, dir: string, runnerAlive?: boolean) {
+function summary(record: DiscussionRecord, state: RuntimeState, dir: string, runnerAlive?: boolean | null) {
   const interrupted = state.status === 'running' && runnerAlive === false;
   return {
     id: record.id,
@@ -216,11 +216,20 @@ async function load(service: ServiceEnv, id: string) {
 
 export async function discussionStatus(service: ServiceEnv, id: string) {
   const { dir, record, state } = await load(service, id);
-  const alive = state.runner !== null && await isSameProcess(state.runner, service.probe);
+  let alive: boolean | null;
+  let inspectionError: string | null = null;
+  try {
+    alive = state.runner !== null && await isSameProcess(state.runner, service.probe);
+  } catch (error) {
+    if (!(error instanceof GrindError) || error.code !== 'PROCESS_INSPECTION_FAILED') throw error;
+    alive = null;
+    inspectionError = error.message;
+  }
   const events = await readEvents(dir);
   return {
     ...summary(record, state, dir, alive),
     runnerAlive: alive,
+    inspectionError,
     turns: Object.entries(state.protocol.turns).map(([turnId, turn]) => ({ id: turnId, participant: turn.participant, kind: turn.kind, revision: turn.revision, status: turn.status, runtime: state.turns[turnId]?.status ?? null, attempt: state.turns[turnId]?.attempt ?? null })),
     recentEvents: events.slice(-10),
   };

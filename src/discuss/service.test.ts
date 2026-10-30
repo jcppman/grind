@@ -205,3 +205,39 @@ test('every participant receives the owning init context and the same snapshot',
   const result = await discussionResult(service, started.id) as Record<string, any>;
   assert.deepEqual(result['context'].artifacts.map((item: any) => item.label).slice(0, 2), ['intent', 'ledger']);
 });
+
+test('denied process inspection preserves status and prevents recovery; confirmed exit allows recovery', darwinOnly, async (t) => {
+  const { service } = await setup(t);
+  let launches = 0;
+  service.launchRunner = async () => { launches += 1; };
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const stateFile = paths.state(started.dir);
+  const state = JSON.parse(await readFile(stateFile, 'utf8'));
+  state.runner = { pid: 123, started: 'original' };
+  await writeFile(stateFile, JSON.stringify(state));
+  const before = await readFile(stateFile, 'utf8');
+  const { createProcessProbe } = await import('./store.ts');
+  service.probe = createProcessProbe(async () => { throw { code: 'EPERM' }; });
+  const unknown = await discussionStatus(service, started.id);
+  assert.equal(unknown.status, 'running');
+  assert.equal(unknown.runnerAlive, null);
+  assert.match(unknown.inspectionError!, /permission/);
+  assert.match(unknown.nextCommand, /discuss status/);
+  await assert.rejects(resumeDiscussion(service, started.id, {}), { code: 'PROCESS_INSPECTION_FAILED' });
+  assert.equal(await readFile(stateFile, 'utf8'), before);
+  assert.equal(launches, 1);
+
+  service.probe = createProcessProbe(async () => 'original');
+  assert.equal((await discussionStatus(service, started.id)).runnerAlive, true);
+  assert.equal((await resumeDiscussion(service, started.id, {})).resumed, false);
+  assert.equal(launches, 1);
+
+  service.probe = createProcessProbe(async () => '');
+  const exited = await discussionStatus(service, started.id);
+  assert.equal(exited.status, 'interrupted');
+  assert.equal(exited.runnerAlive, false);
+  assert.equal(exited.inspectionError, null);
+  assert.match(exited.nextCommand, /discuss resume/);
+  assert.equal((await resumeDiscussion(service, started.id, {})).resumed, true);
+  assert.equal(launches, 2);
+});

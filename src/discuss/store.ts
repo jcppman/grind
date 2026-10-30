@@ -98,18 +98,26 @@ export interface ProcessProbe {
   identify(pid: number): Promise<ProcessIdentity | null>;
 }
 
-export const systemProbe: ProcessProbe = {
-  async identify(pid) {
-    if (!Number.isSafeInteger(pid) || pid <= 0) return null;
-    try {
-      const { stdout } = await exec('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C' } });
-      const started = stdout.trim();
-      return started ? { pid, started } : null;
-    } catch {
-      return null;
-    }
-  },
-};
+export function createProcessProbe(readStartTime = async (pid: number): Promise<string> => {
+  const { stdout } = await exec('ps', ['-o', 'lstart=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C' } });
+  return stdout;
+}): ProcessProbe {
+  return {
+    async identify(pid) {
+      if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+      try {
+        const started = (await readStartTime(pid)).trim();
+        return started ? { pid, started } : null;
+      } catch (error) {
+        const failure = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
+        if (failure.code === 1 && failure.stdout === '' && failure.stderr === '') return null;
+        throw new GrindError('PROCESS_INSPECTION_FAILED', 'Cannot inspect discussion processes. Retry with process-inspection permission before deciding whether recovery is needed.', { pid });
+      }
+    },
+  };
+}
+
+export const systemProbe = createProcessProbe();
 
 export async function isSameProcess(identity: ProcessIdentity | null | undefined, probe: ProcessProbe = systemProbe): Promise<boolean> {
   if (!identity) return false;

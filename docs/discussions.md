@@ -129,6 +129,11 @@ snapshot, context snapshots, turn briefs and output, an append-only event journa
 and the result. It is never committed. Remove old discussions by deleting their
 directories when no runner or worker is active.
 
+Status preserves the recorded state when process inspection fails: `runnerAlive` is
+`null` and `inspectionError` explains how to retry with inspection permission. This
+is not evidence of interruption. Recovery refuses to replace a runner whose
+identity cannot be checked. A resume response with `resumed: false` is a no-op.
+
 Before each engine starts, Grind records the turn, attempt, runner generation and
 session ID. Only the current generation's runner accepts results. After a crash,
 `resume` reconciles the record:

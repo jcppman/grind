@@ -37,7 +37,11 @@ whole run; do not ask again. Never choose headless for the user.
 
 - `discuss status <id> --json` reports phase, round, turns and `nextCommand`.
   Status and result are read-only. Do not poll in a loop; check when the user
-  asks or at a natural pause.
+  asks or at a natural pause. If `runnerAlive` is null, process inspection failed;
+  report liveness as unknown and show `inspectionError`. Retry status with the
+  environment’s normal process-inspection permission before proposing recovery.
+  On older versions, verify an `interrupted` result outside a sandbox that denies
+  process inspection before claiming the runner stopped.
 - `discuss result <id> --json` returns the outcome (`agreed`, `unresolved`,
   `failed`, `cancelled`), the proposal and its hash, every participant's decision
   on that revision, unresolved issues, questions, evidence and the application
@@ -49,7 +53,8 @@ whole run; do not ask again. Never choose headless for the user.
 - `needs_recovery` or `interrupted`: show the error. `discuss resume <id> --json`
   continues safely. When a turn's execution is uncertain, explain that it may
   already have run, and resume with `--resubmit-uncertain` only on the user's
-  explicit choice.
+  explicit choice. A resume response with `resumed: false` means no restart
+  occurred; do not report that work was restarted or resubmitted.
 - `discuss stop <id> --json` cancels and stops only this discussion's workers.
 
 Agreement is not permission to implement, commit, push or publish. Participants
