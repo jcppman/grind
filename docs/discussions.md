@@ -115,11 +115,29 @@ settings above are the actual boundary.
 |---|---|
 | `start --brief-file <f> [--preset <p>] [--init <id> \| --no-init] [--update-plan <f>]... [--presentation cmux\|headless] [--max-rounds <n>]` | create a discussion and start its detached runner |
 | `status <id>` | phase, round, turns, recent events and the next command |
+| `wait <id> [--timeout <seconds>]` | wait until the discussion finishes or needs the caller (default 600 seconds) |
 | `result <id>` | outcome, proposal, decisions, issues, evidence, application |
 | `input <id> --brief-file <f>` | queue user input; on a finished run, start a linked discussion |
 | `resume <id> [--presentation <p>] [--resubmit-uncertain]` | continue an interrupted, recoverable or undecided run |
 | `stop <id>` | cancel and stop this discussion's workers |
 | `list`, `presets`, `config validate` | inspect discussions and configuration |
+
+## Waiting
+
+`wait` is read-only and bounded. It returns `reason`:
+
+- `final` with `result` once the stored result and the recorded state agree;
+- `attention` with `nextCommand` for `needs_input`, `needs_presentation_choice`,
+  `needs_recovery`, or `interrupted` after a confirmed runner exit;
+- `timeout` when `--timeout` ends first, or `caller_cancelled` on `SIGINT` or
+  `SIGTERM`.
+
+It wakes on changes to the discussion directory and also rereads the state every
+two seconds, so a missed file event only delays it. Ending a wait never stops,
+resumes or relaunches the discussion. A running discussion whose runner has not
+registered within 30 seconds of its last state change is `interrupted`; before
+that, `status` reports `runnerStarting: true`. Denied process inspection keeps
+the wait running and does not count as an exit.
 
 ## Recovery
 

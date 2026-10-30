@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { makeTempWorkspace, openLedger, writeInitiative } from '../test-helpers.ts';
 import { attemptFiles, paths } from './runtime.ts';
-import { addInput, discussionResult, discussionStatus, resumeDiscussion, startDiscussion, stopDiscussion, systemServiceEnv } from './service.ts';
+import { addInput, discussionResult, discussionStatus, resumeDiscussion, startDiscussion, stopDiscussion, systemServiceEnv, waitDiscussion } from './service.ts';
 import { discussionsRoot, isSameProcess, readJson, type ProcessIdentity } from './store.ts';
 import { makeFakes, writePersonalConfig, type Fakes } from './test-fakes.ts';
 
@@ -240,4 +240,143 @@ test('denied process inspection preserves status and prevents recovery; confirme
   assert.match(exited.nextCommand, /discuss resume/);
   assert.equal((await resumeDiscussion(service, started.id, {})).resumed, true);
   assert.equal(launches, 2);
+});
+
+async function generation(dir: string): Promise<number> {
+  return (await readJson<{ generation: number }>(paths.state(dir)))!.generation;
+}
+
+test('wait returns the final result once, and an already-finished discussion returns at once without new work', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t);
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: ['plan.md'], noInit: true });
+  const waited = await waitDiscussion(service, started.id, { timeoutSeconds: 60 });
+  assert.equal(waited.reason, 'final');
+  assert.equal(waited.discussion.status, 'completed');
+  assert.equal(waited.result?.['agreed'], true);
+  assert.equal(waited.nextCommand, null);
+  assert.deepEqual(waited.result, await discussionResult(service, started.id));
+
+  const calls = (await fakes.invocations()).length;
+  const before = await generation(started.dir);
+  const again = await waitDiscussion(service, started.id, { timeoutSeconds: 1 });
+  assert.equal(again.reason, 'final');
+  assert.equal((await fakes.invocations()).length, calls);
+  assert.equal(await generation(started.dir), before);
+});
+
+test('wait returns promptly when the discussion needs input or a presentation choice, without resuming it', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t);
+  await fakes.setPlan({ participants: { critic: { ratify: 'question_once' } } });
+  const asking = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const waited = await waitDiscussion(service, asking.id, { timeoutSeconds: 60 });
+  assert.equal(waited.reason, 'attention');
+  assert.equal(waited.discussion.status, 'needs_input');
+  assert.equal(waited.discussion.questions[0]!.text, 'Which option does the user want?');
+  assert.match(waited.nextCommand!, /discuss input/);
+  assert.equal(waited.result, null);
+  const calls = (await fakes.invocations()).length;
+  const before = await generation(asking.dir);
+  assert.equal((await waitDiscussion(service, asking.id, { timeoutSeconds: 1 })).reason, 'attention');
+  assert.equal((await fakes.invocations()).length, calls);
+  assert.equal(await generation(asking.dir), before);
+
+  const { service: cmuxService } = await setup(t, { defaults: { presentation: 'cmux' } });
+  const choosing = await startDiscussion(cmuxService, { briefFile: 'brief.md', targets: [], noInit: true });
+  const choice = await waitDiscussion(cmuxService, choosing.id, { timeoutSeconds: 60 });
+  assert.equal(choice.reason, 'attention');
+  assert.match(choice.nextCommand!, /--presentation headless/);
+});
+
+test('timeout and caller cancellation end only the wait; the discussion keeps its runner and turns', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t);
+  await fakes.setPlan({ participants: { architect: { assess: 'hang' }, critic: { assess: 'hang' } } });
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  await waitFor(() => discussionStatus(service, started.id), (value) => value.runnerAlive === true && value.turns.length === 2);
+  const timedOut = await waitDiscussion(service, started.id, { timeoutSeconds: 1, pollMs: 100 });
+  assert.equal(timedOut.reason, 'timeout');
+  assert.equal(timedOut.discussion.status, 'running');
+  assert.match(timedOut.nextCommand!, /discuss status/);
+
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 200);
+  const cancelled = await waitDiscussion(service, started.id, { timeoutSeconds: 60, signal: controller.signal });
+  assert.equal(cancelled.reason, 'caller_cancelled');
+  assert.ok(cancelled.waitedSeconds < 5);
+
+  const status = await discussionStatus(service, started.id);
+  assert.equal(status.status, 'running');
+  assert.equal(status.runnerAlive, true);
+  assert.deepEqual(status.turns.map((turn) => turn.attempt), [1, 1]);
+  assert.equal(await generation(started.dir), 1);
+  assert.equal((await fakes.invocations()).length, 2);
+  await stopDiscussion(service, started.id);
+  await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'cancelled');
+});
+
+test('wait settles on the result file whichever of state and result is written first', darwinOnly, async (t) => {
+  const { service } = await setup(t);
+  service.launchRunner = async () => undefined;
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const stateFile = paths.state(started.dir);
+  const state = JSON.parse(await readFile(stateFile, 'utf8'));
+  state.runner = { pid: process.pid, started: 'self' };
+  service.probe = { identify: async (pid) => ({ pid, started: 'self' }) };
+
+  state.status = 'cancelled';
+  await writeFile(stateFile, JSON.stringify(state));
+  const unstored = await waitDiscussion(service, started.id, { timeoutSeconds: 1, pollMs: 100 });
+  assert.equal(unstored.reason, 'final', 'a final state whose result was never stored still ends as final');
+  assert.equal(unstored.result?.['final'], false);
+  const pending = waitDiscussion(service, started.id, { timeoutSeconds: 30, pollMs: 5_000 });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const result = { id: started.id, outcome: { kind: 'cancelled' }, agreed: false };
+  await writeFile(paths.result(started.dir), JSON.stringify(result));
+  const settled = await pending;
+  assert.equal(settled.reason, 'final');
+  assert.deepEqual(settled.result, result);
+  assert.ok(settled.waitedSeconds < 5, 'the directory change wakes the wait before its poll interval');
+
+  state.status = 'running';
+  await writeFile(stateFile, JSON.stringify(state));
+  assert.equal((await waitDiscussion(service, started.id, { timeoutSeconds: 1 })).reason, 'final');
+});
+
+test('wait treats denied inspection and a starting runner as running, and reports only a confirmed exit', darwinOnly, async (t) => {
+  const { service } = await setup(t);
+  let launches = 0;
+  service.launchRunner = async () => { launches += 1; };
+  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
+  const stateFile = paths.state(started.dir);
+
+  const starting = await waitDiscussion(service, started.id, { timeoutSeconds: 1, pollMs: 100 });
+  assert.equal(starting.reason, 'timeout', 'a runner that has not registered yet is not an interruption');
+  assert.equal(starting.discussion.runnerStarting, true);
+
+  const state = JSON.parse(await readFile(stateFile, 'utf8'));
+  state.updatedAt = new Date(Date.now() - 60_000).toISOString();
+  await writeFile(stateFile, JSON.stringify(state));
+  const neverStarted = await waitDiscussion(service, started.id, { timeoutSeconds: 1 });
+  assert.equal(neverStarted.reason, 'attention');
+  assert.equal(neverStarted.discussion.status, 'interrupted');
+
+  state.runner = { pid: 123, started: 'original' };
+  await writeFile(stateFile, JSON.stringify(state));
+  const before = await readFile(stateFile, 'utf8');
+  const { createProcessProbe } = await import('./store.ts');
+  service.probe = createProcessProbe(async () => { throw { code: 'EPERM' }; });
+  const denied = await waitDiscussion(service, started.id, { timeoutSeconds: 1, pollMs: 100 });
+  assert.equal(denied.reason, 'timeout');
+  assert.equal(denied.discussion.status, 'running');
+  assert.equal(denied.discussion.runnerAlive, null);
+  assert.match(denied.discussion.inspectionError!, /permission/);
+  assert.match(denied.nextCommand!, /discuss status/);
+  assert.equal(await readFile(stateFile, 'utf8'), before);
+
+  service.probe = createProcessProbe(async () => '');
+  const exited = await waitDiscussion(service, started.id, { timeoutSeconds: 60 });
+  assert.equal(exited.reason, 'attention');
+  assert.equal(exited.discussion.status, 'interrupted');
+  assert.match(exited.nextCommand!, /discuss resume/);
+  assert.equal(await readFile(stateFile, 'utf8'), before);
+  assert.equal(launches, 1);
 });

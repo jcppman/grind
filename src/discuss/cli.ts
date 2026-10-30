@@ -5,9 +5,12 @@ import { PRESENTATIONS, type Presentation } from './config.ts';
 import { runWorker } from './worker.ts';
 import { systemCmux } from './cmux.ts';
 import {
-  addInput, discussionResult, discussionStatus, listDiscussions, listPresets, resumeDiscussion, runnerMain, startDiscussion, stopDiscussion, validateConfig,
+  addInput, discussionResult, discussionStatus, listDiscussions, listPresets, resumeDiscussion, runnerMain, startDiscussion, stopDiscussion, validateConfig, waitDiscussion,
   type ServiceEnv,
 } from './service.ts';
+
+const DEFAULT_WAIT_SECONDS = 600;
+const MAX_WAIT_SECONDS = 86_400;
 
 export const DISCUSS_USAGE = `Usage: grind discuss <action> [options] --json
 
@@ -18,6 +21,9 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
         [--update-plan <file>]... [--presentation cmux|headless] [--max-rounds <n>]
                                      start a detached discussion and print its ID
   status <id>                        progress, phase and what to do next (read-only)
+  wait <id> [--timeout <seconds>]    wait until it finishes or needs you, at most --timeout
+                                     (default ${DEFAULT_WAIT_SECONDS}); read-only, and stopping
+                                     the wait never stops the discussion
   result <id>                        outcome, proposal, decisions and application (read-only)
   input <id> --brief-file <file>     add user input; a finished discussion starts a linked one
   resume <id> [--presentation headless|cmux] [--resubmit-uncertain]
@@ -31,7 +37,7 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
 every participant accepted the same candidate and each file still matches its
 starting content. It does not authorize implementation, commits or publication.`;
 
-const VALUE_OPTIONS = ['--brief-file', '--preset', '--init', '--update-plan', '--presentation', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token'] as const;
+const VALUE_OPTIONS = ['--brief-file', '--preset', '--init', '--update-plan', '--presentation', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token', '--timeout'] as const;
 const FLAGS = ['--json', '--no-init', '--resubmit-uncertain', '--help', '-h'] as const;
 type ValueOption = (typeof VALUE_OPTIONS)[number];
 
@@ -107,6 +113,21 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
     case 'status':
       only(args, []);
       return discussionStatus(service, id(args));
+    case 'wait': {
+      only(args, ['--timeout']);
+      const timeoutSeconds = integer(args.values['--timeout'], '--timeout') ?? DEFAULT_WAIT_SECONDS;
+      if (timeoutSeconds > MAX_WAIT_SECONDS) throw new GrindError('USAGE', `--timeout must be at most ${MAX_WAIT_SECONDS}`);
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      process.once('SIGINT', abort);
+      process.once('SIGTERM', abort);
+      try {
+        return await waitDiscussion(service, id(args), { timeoutSeconds, signal: controller.signal });
+      } finally {
+        process.off('SIGINT', abort);
+        process.off('SIGTERM', abort);
+      }
+    }
     case 'result':
       only(args, []);
       return discussionResult(service, id(args));
@@ -154,7 +175,7 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
   }
 }
 
-const PARTICIPANT_SAFE_DISCUSS = new Set(['status', 'result', 'list', 'presets', 'config', 'help']);
+const PARTICIPANT_SAFE_DISCUSS = new Set(['status', 'wait', 'result', 'list', 'presets', 'config', 'help']);
 const PARTICIPANT_SAFE_COMMANDS = new Set(['list', 'context', 'status', 'inspect', 'help']);
 
 /** Mutating Grind commands refuse to run inside a discussion participant; read-only inspection stays available. */
