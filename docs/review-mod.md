@@ -12,17 +12,21 @@ work without it.
 
 ## Current init
 
-The first line of the review pane shows the current init and its current task,
-for example `Grind: demo [branch] · Review the plan document · review 2`:
+The first line of the review pane shows the init this session works on and its
+current task, for example `Grind: demo [agent] · Review the plan document · review 2`.
+The init is a state of the session. The session's folder and branch never select it:
 
-- `[bound]`: you chose the init for this session with `/grind-init <init>`.
-- `[branch]` or `[folder]`: the session's checkout or folder resolves to the init.
-- `no init`, `init ambiguous (a, b)` or `init unavailable` when there is no single
-  answer. The mod never creates an init or switches a branch.
+- `[agent]`: Claude set the init with the `mcp__grind__set-init` tool. The
+  `grind:start` skill does this, and `grind:close` clears it.
+- `[you]`: you set the init with `/grind-init <init>`. `/grind-init none` clears it.
+- `no init` when nothing set one, or `init unavailable` when the set init cannot
+  be read.
 - `review N` is the number of comments in the draft.
 
-It refreshes when the session starts, after each Claude turn, and on
-`/grind-review`. `/grind-init none` returns to branch and folder resolution.
+Claude and you write the same state; the last one to set it wins. A new review draft
+belongs to the session's init, or to no init when none is set. The pane refreshes
+when the init is set, when the session starts, after each Claude turn, and on
+`/grind-review`. The mod never creates an init or switches a branch.
 
 ## Collecting comments
 

@@ -32,9 +32,9 @@ reads your home directory directly.
 
 ## Init association
 
-A draft takes the session's current init when it starts: the init you bound the
-session to with `grind review bind`, otherwise the init the session's folder or
-branch resolves to, otherwise none. The association does not change when the
+A draft takes the session's current init when it starts: the init that the agent or
+you set with `grind review bind`, otherwise none. The session's folder and branch
+never select it. The association does not change when the
 branch changes. Only `grind review associate` changes it.
 
 ## Sending and delivery

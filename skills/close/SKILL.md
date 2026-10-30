@@ -25,6 +25,9 @@ adding `--workspace <directory>` when needed. Close never commits application co
 switches branches, or deletes checkouts. If a close operation is pending, retry the
 same command after resolving the reported failure so its journal can finish.
 
+After a successful close, when the `mcp__grind__set-init` tool is available and
+this session set the closed init, call it with `null`.
+
 For retention archival, run
 `node <plugin-root>/scripts/grind.mjs archive [initiative] --json`. Archive is allowed
 only after more than 60 days, with no unresolved notes or pending operation, and when

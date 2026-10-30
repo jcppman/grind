@@ -2,17 +2,22 @@ import { expect, test } from 'claude-code/testing'
 
 const OK = (data: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify({ ok: true, data }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
-function recordRuns(on: any): Array<{ argv: readonly string[]; stdin?: string }> {
+function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean }) => void = () => undefined): Array<{ argv: readonly string[]; stdin?: string }> {
   const runs: Array<{ argv: readonly string[]; stdin?: string }> = []
   on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
     runs.push({ argv: e.argv, ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }) })
-    if (e.argv.includes('current')) return OK({ state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'Review' })
+    if (e.argv.includes('current')) return OK({ state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'Review' })
+    if (e.argv.includes('bind')) return OK({ binding: e.argv.includes('--none') ? null : { initiative: 'demo', workspace: '/w', setBy: 'agent' } })
     if (e.argv.includes('submit')) return { value: { exitCode: 1, stdout: JSON.stringify({ ok: false, error: { code: 'REVIEW_STALE', message: 'stale' } }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     return OK({})
   })
   on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
   on('command.register', (_: unknown, e: { name: string }) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('tool.register', (_: unknown, e: { name: string; isDeferred?: boolean }) => {
+    onTool(e)
+    return { value: { tool: `mcp__grind__${e.name}` } }
+  })
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.cwd', () => ({ value: '/w' }))
@@ -76,7 +81,7 @@ test('the pane shows quotes safely, counts only comments that will be sent, and 
     value: e.key === 'view'
       ? { value: { shape: 'review-view-1', value: { sessionId: 's', draft, batches: [{ id: 'b-1-pending', submittedAt: '', comments: 1, delivery: { state: 'pending', rowUuid: null, resolution: { state: 'open' } } }] } }, version: 1 }
       : e.key === 'current'
-        ? { value: { shape: 'current-init-1', value: { state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'Review' } }, version: 1 }
+        ? { value: { shape: 'current-init-2', value: { state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'Review' } }, version: 1 }
         : { value: { shape: 'notice-1', value: '' }, version: 1 },
   }))
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -97,7 +102,7 @@ test('a control pressed after the draft changed acts on the draft it showed', as
   on('state.get', (_: unknown, e: { key: string }) => ({
     value: e.key === 'view'
       ? { value: { shape: 'review-view-1', value: { sessionId: 's', draft, batches: [] } }, version: 1 }
-      : { value: { shape: e.key === 'current' ? 'current-init-1' : 'notice-1', value: e.key === 'current' ? null : '' }, version: 1 },
+      : { value: { shape: e.key === 'current' ? 'current-init-2' : 'notice-1', value: e.key === 'current' ? null : '' }, version: 1 },
   }))
   on('state.set', () => ({ value: { isSet: true, version: 2 } }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -110,4 +115,18 @@ test('a control pressed after the draft changed acts on the draft it showed', as
   expect(deleted.slice(deleted.indexOf('--draft'), deleted.indexOf('--draft') + 4)).toEqual(['--draft', 'd-old', '--expect-revision', '3'])
   expect(submitted.slice(submitted.indexOf('--draft'), submitted.indexOf('--draft') + 4)).toEqual(['--draft', 'd-old', '--revision', '3'])
   await ui.unmount()
+})
+
+test('the agent sets and clears the session init through its tool, and a malformed init is refused', async ($, on) => {
+  const registered: Array<{ name: string; isDeferred?: boolean }> = []
+  const runs = recordRuns(on, spec => registered.push(spec))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  expect(registered.map(spec => [spec.name, spec.isDeferred])).toEqual([['set-init', false]])
+
+  const set = await $.tool.call({ tool: 'mcp__grind__set-init', init: ' dem ' } as any)
+  const cleared = await $.tool.call({ tool: 'mcp__grind__set-init', init: null } as any)
+  const refused = await $.tool.call({ tool: 'mcp__grind__set-init', init: '' } as any)
+  const binds = runs.filter(run => run.argv.includes('bind')).map(run => run.argv.slice(run.argv.indexOf('--by')))
+  expect(binds).toEqual([['--by', 'agent', '--init', 'dem', '--json'], ['--by', 'agent', '--none', '--json']])
+  expect([set.result, cleared.result, refused.deny]).toEqual(['This session works on demo.', 'No init is set for this session.', 'init must be an init id or null'])
 })

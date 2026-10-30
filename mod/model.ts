@@ -26,15 +26,14 @@ export function liveComments(draft: ReviewDraft | null): ReviewComment[] {
   return draft?.comments.filter((comment) => comment.deletedAt === null) ?? [];
 }
 
-/** The compact status entry: current init, task and draft count, or why there is no init. */
+/** The compact status entry: current init, who set it, task and draft count. */
 export function initSummary(current: CurrentInit | null, draftCount: number): string {
   const count = draftCount > 0 ? ` · review ${draftCount}` : '';
   if (current === null) return `…${count}`;
   if (current.state === 'resolved') {
     const task = current.currentTask === null ? '' : ` · ${current.currentTask.length > 48 ? `${current.currentTask.slice(0, 47)}…` : current.currentTask}`;
-    return `${current.initiative} [${current.source === 'explicit' ? 'bound' : current.source}]${task}${count}`;
+    return `${current.initiative} [${current.setBy === 'agent' ? 'agent' : 'you'}]${task}${count}`;
   }
-  if (current.state === 'ambiguous') return `init ambiguous (${current.candidates.join(', ')})${count}`;
   if (current.state === 'none') return `no init${count}`;
   return `init unavailable${count}`;
 }

@@ -25,9 +25,8 @@ export type BatchView = {
 export type ReviewView = { sessionId: string; draft: ReviewDraft | null; batches: BatchView[] };
 
 export type CurrentInit =
-  | { state: 'resolved'; initiative: string; source: string; currentTask: string | null }
+  | { state: 'resolved'; initiative: string; setBy: 'agent' | 'user'; currentTask: string | null }
   | { state: 'none'; reason: string }
-  | { state: 'ambiguous'; candidates: string[] }
   | { state: 'unavailable'; reason: string };
 
 declare module 'claude-code' {
