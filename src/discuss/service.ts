@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { closeSync, openSync } from 'node:fs';
+import { watch } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,9 @@ import { buildResult, runRunner, spawnDetachedScript, type RunnerDeps } from './
 import { isFinal, paths, readRecord, readState, writeState, type DiscussionRecord, type RuntimeState } from './runtime.ts';
 import { appendEvent, discussionDir, ensurePrivateDir, isSameProcess, listDiscussionIds, newDiscussionId, readEvents, readJson, systemProbe, terminateOwned, withLock, writeJsonAtomic, writeJsonExclusive, type ProcessProbe } from './store.ts';
 import { PARTICIPANT_ENV } from './worker.ts';
+
+const RUNNER_START_GRACE_MS = 30_000;
+const ATTENTION = new Set(['needs_input', 'needs_presentation_choice', 'needs_recovery', 'interrupted']);
 
 export interface ServiceEnv {
   cwd: string;
@@ -214,21 +218,32 @@ async function load(service: ServiceEnv, id: string) {
   return { dir, record, state };
 }
 
-export async function discussionStatus(service: ServiceEnv, id: string) {
+/**
+ * Liveness of the discussion's runner: false only when a recorded runner is confirmed gone, or no
+ * runner registered within the startup grace after the last state change; null when unknown.
+ */
+async function observe(service: ServiceEnv, id: string) {
   const { dir, record, state } = await load(service, id);
   let alive: boolean | null;
   let inspectionError: string | null = null;
+  const starting = state.status === 'running' && state.runner === null && Date.now() - Date.parse(state.updatedAt) < RUNNER_START_GRACE_MS;
   try {
-    alive = state.runner !== null && await isSameProcess(state.runner, service.probe);
+    alive = starting ? null : state.runner !== null && await isSameProcess(state.runner, service.probe);
   } catch (error) {
     if (!(error instanceof GrindError) || error.code !== 'PROCESS_INSPECTION_FAILED') throw error;
     alive = null;
     inspectionError = error.message;
   }
+  return { dir, record, state, alive, starting, inspectionError };
+}
+
+export async function discussionStatus(service: ServiceEnv, id: string) {
+  const { dir, record, state, alive, starting, inspectionError } = await observe(service, id);
   const events = await readEvents(dir);
   return {
     ...summary(record, state, dir, alive),
     runnerAlive: alive,
+    runnerStarting: starting,
     inspectionError,
     turns: Object.entries(state.protocol.turns).map(([turnId, turn]) => ({ id: turnId, participant: turn.participant, kind: turn.kind, revision: turn.revision, status: turn.status, runtime: state.turns[turnId]?.status ?? null, attempt: state.turns[turnId]?.attempt ?? null })),
     recentEvents: events.slice(-10),
@@ -240,6 +255,61 @@ export async function discussionResult(service: ServiceEnv, id: string) {
   const stored = await readJson<Record<string, unknown>>(paths.result(dir));
   if (stored !== null) return stored;
   return { ...buildResult(record, state), final: false, status: state.status };
+}
+
+export interface WaitOptions {
+  timeoutSeconds: number;
+  /** Ends the wait early as `caller_cancelled`; the discussion itself is never touched. */
+  signal?: AbortSignal;
+  pollMs?: number;
+}
+
+/**
+ * Waits without changing anything until the discussion finishes or needs the caller: user input,
+ * a presentation choice, recovery, or a confirmed runner exit. Returns `timeout` or
+ * `caller_cancelled` otherwise. Unknown runner liveness keeps waiting and never counts as an exit.
+ */
+export async function waitDiscussion(service: ServiceEnv, id: string, options: WaitOptions) {
+  const started = Date.now();
+  const deadline = started + options.timeoutSeconds * 1000;
+  const dir = (await load(service, id)).dir;
+  let wake: (() => void) | null = null;
+  const watcher = watch(dir, () => wake?.());
+  watcher.on('error', () => undefined);
+  try {
+    for (;;) {
+      const changed = new Promise<void>((resolve) => { wake = resolve; });
+      const status = await discussionStatus(service, id);
+      const stored = await readJson<Record<string, unknown>>(paths.result(dir));
+      const finish = (reason: 'final' | 'attention' | 'timeout' | 'caller_cancelled') => ({
+        id,
+        reason,
+        waitedSeconds: Math.round((Date.now() - started) / 1000),
+        discussion: status,
+        result: stored,
+        nextCommand: stored !== null ? null : status.nextCommand,
+      });
+      const remaining = deadline - Date.now();
+      // The runner writes the result before its final state; a result is authoritative once the
+      // state agrees, the runner is gone, or the wait runs out.
+      if (stored !== null && (status.resultAvailable || status.status === 'interrupted' || remaining <= 0)) return finish('final');
+      if (stored === null && ATTENTION.has(status.status)) return finish('attention');
+      if (options.signal?.aborted) return finish('caller_cancelled');
+      if (remaining <= 0 && status.resultAvailable) return { ...finish('final'), result: await discussionResult(service, id) };
+      if (remaining <= 0) return finish('timeout');
+      let timer: NodeJS.Timeout | undefined;
+      let onAbort: (() => void) | undefined;
+      await Promise.race([
+        changed,
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, Math.min(remaining, options.pollMs ?? 2_000)); }),
+        new Promise<void>((resolve) => { onAbort = resolve; options.signal?.addEventListener('abort', onAbort, { once: true }); }),
+      ]);
+      clearTimeout(timer);
+      if (onAbort) options.signal?.removeEventListener('abort', onAbort);
+    }
+  } finally {
+    watcher.close();
+  }
 }
 
 export async function listDiscussions(service: ServiceEnv) {

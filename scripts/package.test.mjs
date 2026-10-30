@@ -205,15 +205,26 @@ test('relocated discuss runs a headless discussion from the copy with fake engin
   const started = (await discuss('start', '--brief-file', 'brief.md', '--no-init', '--update-plan', 'plan.md')).data;
   const record = JSON.parse(await readFile(path.join(started.dir, 'discussion.json'), 'utf8'));
   assert.equal(record.launcher.cli, path.join(install, 'dist', 'cli.js'), 'workers run the relocated CLI');
-  let status;
-  for (let i = 0; i < 300; i += 1) {
-    status = (await discuss('status', started.id)).data;
-    if (status.status === 'completed') break;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  assert.equal(status.status, 'completed', JSON.stringify(status));
-  const result = (await discuss('result', started.id)).data;
-  assert.equal(result.agreed, true);
-  assert.equal(result.applied, true);
+  const waited = (await discuss('wait', started.id, '--timeout', '60')).data;
+  assert.equal(waited.reason, 'final', JSON.stringify(waited.discussion));
+  assert.equal(waited.discussion.status, 'completed');
+  assert.equal(waited.result.agreed, true);
+  assert.equal(waited.result.applied, true);
+  assert.deepEqual((await discuss('result', started.id)).data, waited.result);
   assert.equal(await readFile(path.join(temp, 'plan.md'), 'utf8'), 'fake plan revision 1\n');
+
+  await fakes.setPlan({ participants: { a: { assess: 'hang' }, b: { assess: 'hang' } } });
+  const slow = (await discuss('start', '--brief-file', 'brief.md', '--no-init')).data;
+  const waiter = spawn(process.execPath, [cli, 'discuss', 'wait', slow.id, '--timeout', '60', '--json'], { cwd: temp, env: fakes.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  waiter.stdout.on('data', (chunk) => { output += chunk; });
+  const exited = new Promise((resolve) => waiter.on('exit', resolve));
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  waiter.kill('SIGTERM');
+  assert.equal(await exited, 0);
+  assert.equal(JSON.parse(output).data.reason, 'caller_cancelled');
+  const after = (await discuss('status', slow.id)).data;
+  assert.equal(after.status, 'running', 'ending the wait leaves the discussion running');
+  assert.equal(after.runnerAlive, true);
+  await discuss('stop', slow.id);
 });
