@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
 import { watchStore } from './review-cli.ts';
+import { registerSession } from './review-store.ts';
 import { commitState, git, makeCheckout, makeTempWorkspace, openLedger, writeInitiative } from './test-helpers.ts';
 
 const CLI = path.join(import.meta.dirname, 'cli.ts');
@@ -36,9 +37,17 @@ test('a session drafts, submits and delivers one batch; the init sees a referenc
   const secret = 'PRIVATE-QUOTE-7c1f';
   const source = { kind: 'claude-reply', sessionId: 'sess-1', messageId: 'row-9' };
 
+  const unbound = await grind(env, app, ['review', 'add', '--session', 'sess-0'], JSON.stringify({ source: { ...source, sessionId: 'sess-0' }, quote: 'x' }));
+  assert.deepEqual(unbound.json.data.draft.association, { workspace: ws.root, initiative: null, source: 'none' });
+  await registerSession({ root: home }, { sessionId: 'sess-1', cwd: app, workspace: ws.root, cmux: { workspaceId: null, surfaceId: null }, pid: process.pid, host: os.hostname() });
+  assert.equal((await grind(env, app, ['review', 'bind', '--session', 'sess-1', '--init', 'alpha', '--by', 'robot'])).json.error?.code, 'USAGE');
+  assert.equal((await grind(env, app, ['review', 'bind', '--session', 'sess-1', '--init', 'alp', '--by', 'agent'])).code, 0);
+  const current = await grind(env, app, ['review', 'current', '--session', 'sess-1']);
+  assert.deepEqual([current.json.data.initiative, current.json.data.setBy], ['alpha', 'agent']);
+
   const added = await grind(env, app, ['review', 'add', '--session', 'sess-1', '--expect-revision', '0'], JSON.stringify({ source, quote: secret, body: 'first' }));
   assert.equal(added.code, 0);
-  assert.deepEqual(added.json.data.draft.association, { workspace: ws.root, initiative: 'alpha', source: 'inferred' });
+  assert.deepEqual(added.json.data.draft.association, { workspace: ws.root, initiative: 'alpha', source: 'explicit' });
   const stale = await grind(env, app, ['review', 'add', '--session', 'sess-1', '--expect-revision', '0'], JSON.stringify({ source, quote: 'x' }));
   assert.deepEqual([stale.code, stale.json.error?.code], [1, 'REVIEW_STALE']);
   const edited = await grind(env, app, ['review', 'edit', '--session', 'sess-1', '--comment', 'c1', '--expect-revision', '1'], 'reworded');

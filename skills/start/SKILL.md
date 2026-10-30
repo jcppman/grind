@@ -23,6 +23,10 @@ do not switch, stash, or create a detached substitute for the held branch. An
 init with no recorded branch gets no branch or worktree until implementation needs
 one; then run `worktree` with `--repo`, which records a branch named after the init.
 
+When the `mcp__grind__set-init` tool is available, call it with the resolved init
+so the session records the init it works on. Call it again if the work moves to
+another init.
+
 Report the working path, the branch's state against its remote (`git status -sb`
 there), review notes, discrepancies, and the recorded next action. Do the work in the
 reported path. If the user gave a task, carry it out within the current

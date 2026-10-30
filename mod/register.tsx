@@ -4,8 +4,9 @@ import { batchIdIn, deliveryLabel, excerpt, initSummary, liveComments, sourceLab
 import type { BatchView, CurrentInit, ReviewView } from './types/index.d.ts'
 
 const PANE = 'grind-review'
+const SET_INIT = 'set-init'
 const view = atom({ plugin: 'grind', key: 'view' } as const, null, { shape: 'review-view-1' })
-const current = atom({ plugin: 'grind', key: 'current' } as const, null, { shape: 'current-init-1' })
+const current = atom({ plugin: 'grind', key: 'current' } as const, null, { shape: 'current-init-2' })
 const notice = atom({ plugin: 'grind', key: 'notice' } as const, '', { shape: 'notice-1' })
 
 type CliResult = { ok: true; data: any } | { ok: false; code: string; message: string }
@@ -39,6 +40,13 @@ async function refreshCurrent($: EngineInterface): Promise<void> {
   const result = await grind($, ['review', 'current', '--session', session.id])
   const value: CurrentInit = result.ok ? result.data : { state: 'unavailable', reason: result.message }
   await update($, current, () => value)
+}
+
+async function bind($: EngineInterface, target: string | null, by: 'agent' | 'user'): Promise<CliResult> {
+  if (session === null) return { ok: false, code: 'NOT_READY', message: 'Grind review is not ready yet.' }
+  const result = await grind($, ['review', 'bind', '--session', session.id, '--by', by, ...(target === null ? ['--none'] : ['--init', target])])
+  await refreshCurrent($)
+  return result
 }
 
 async function applySnapshot($: EngineInterface, snapshot: ReviewView): Promise<void> {
@@ -191,7 +199,17 @@ export const register: Register = on => {
     const started = await next(e)
     await $.command.register({ name: 'add-to-review', description: 'Add the selected text to the Grind review draft', immediate: true })
     await $.command.register({ name: 'grind-review', description: 'Show the Grind review draft and current init', immediate: true })
-    await $.command.register({ name: 'grind-init', description: 'Bind this session to an init, or "none" to follow the branch', argumentHint: '<init|none>', immediate: true })
+    await $.command.register({ name: 'grind-init', description: 'Set the init this session works on, or "none" to clear it', argumentHint: '<init|none>', immediate: true })
+    await $.tool.register({
+      name: SET_INIT,
+      description: 'Declare the Grind init (initiative) this session is working on, or clear it with null. Call it when you start or resume work on an init, switch to another init, or close the one you declared. The Grind review pane shows it, and new review drafts belong to it.',
+      inputSchema: {
+        type: 'object',
+        properties: { init: { type: ['string', 'null'], description: 'The init id or a unique fragment of it; null when the session no longer works on an init.' } },
+        required: ['init'],
+      },
+      isDeferred: false,
+    })
     await startSession($)
     return started
   })
@@ -221,12 +239,18 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'grind-init' }, async ($, e) => {
-    if (session === null) return { text: 'Grind review is not ready yet.' }
     const target = e.args.trim()
     if (target === '') return { text: 'Usage: /grind-init <init|none>' }
-    const result = await grind($, ['review', 'bind', '--session', session.id, ...(target === 'none' ? ['--none'] : ['--init', target])])
-    await refreshCurrent($)
-    return { text: result.ok ? `This session now ${target === 'none' ? 'follows its folder and branch' : `is bound to ${result.data.binding.initiative}`}.` : result.message }
+    const result = await bind($, target === 'none' ? null : target, 'user')
+    return { text: result.ok ? (target === 'none' ? 'This session has no init set.' : `This session works on ${result.data.binding.initiative}.`) : result.message }
+  })
+
+  on('tool.call', { tool: `mcp__grind__${SET_INIT}` }, async ($, e) => {
+    const target = (e as { init?: unknown }).init
+    if (target !== null && (typeof target !== 'string' || target.trim() === '')) return { deny: 'init must be an init id or null' }
+    const result = await bind($, target === null ? null : target.trim(), 'agent')
+    if (!result.ok) return { deny: result.message }
+    return { result: target === null ? 'No init is set for this session.' : `This session works on ${result.data.binding.initiative}.` }
   })
 
   on('session.append', { door: 'prompt' }, async ($, e, next) => {

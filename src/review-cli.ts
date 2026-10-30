@@ -27,7 +27,8 @@ Claude Code mod drives these actions; cmux shortcuts use capture-cmux.
   edit|delete|restore --session <id> --comment <id> [--draft <id>] [--expect-revision <n>]
                                               edit takes the new comment text on stdin
   associate --session <id> (--init <id> | --none) [--draft <id>] [--expect-revision <n>]
-  bind --session <id> (--init <id> | --none)  choose the session's init explicitly
+  bind --session <id> (--init <id> | --none) [--by agent|user]
+                                              set the init the session works on
   submit --session <id> --draft <id> --revision <n>
   attempt --batch <id> [--resend-unknown]     start delivering a batch
   finish --batch <id> --attempt <id> --status received|dropped|failed|unknown [--row <uuid>] [--reason <text>]
@@ -39,7 +40,7 @@ Claude Code mod drives these actions; cmux shortcuts use capture-cmux.
   capture-cmux [--session <id>] [--comment <text>]  add the focused cmux selection
   sessions                                    registered live sessions`;
 
-const VALUE_OPTIONS = ['--session', '--cwd', '--expect-revision', '--comment', '--init', '--draft', '--revision', '--batch', '--attempt', '--status', '--row', '--reason', '--transcript', '--note', '--workspace'] as const;
+const VALUE_OPTIONS = ['--session', '--cwd', '--expect-revision', '--comment', '--init', '--draft', '--revision', '--batch', '--attempt', '--status', '--row', '--reason', '--transcript', '--note', '--workspace', '--by'] as const;
 const FLAGS = ['--json', '--none', '--prompt', '--resend-unknown'] as const;
 
 interface ReviewArgs {
@@ -166,9 +167,11 @@ export async function runReview(argv: readonly string[], cwd: string, emitLine: 
     case 'bind': {
       const sessionId = session();
       if (args.flags.has('--none') === (args.values['--init'] !== undefined)) throw new GrindError('USAGE', 'review bind takes exactly one of --init or --none');
+      const setBy = args.values['--by'] ?? 'user';
+      if (setBy !== 'agent' && setBy !== 'user') throw new GrindError('USAGE', '--by must be agent or user');
       if (args.flags.has('--none')) return bindSession(store, sessionId, null);
       const association = await explicitAssociation(sessionCwd, required(args, '--init'));
-      return bindSession(store, sessionId, { workspace: association.workspace as string, initiative: association.initiative as string });
+      return bindSession(store, sessionId, { workspace: association.workspace as string, initiative: association.initiative as string, setBy });
     }
     case 'submit': {
       required(args, '--revision');

@@ -92,24 +92,20 @@ test('a cmux capture adds the document selection to the workspace’s session wi
   await assert.rejects(captureFromCmux(store, { env: {}, runner }), { code: 'REVIEW_CAPTURE_FAILED' });
 });
 
-test('the current init is the explicit binding, else what the checkout resolves to, else an honest state', async (t) => {
+test('the current init is only the bound init, never the checkout it runs in', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(ws.cleanup);
   const app = await makeCheckout(ws, 'app', 'feature');
   await writeInitiative(ws, 'alpha', { ledger: openLedger([{ path: 'app', branch: 'feature' }]) });
   await writeInitiative(ws, 'beta', { ledger: openLedger() });
 
-  const inferred = await currentInit(app);
-  assert.deepEqual([inferred.state, inferred.state === 'resolved' && inferred.initiative, inferred.state === 'resolved' && inferred.source, inferred.state === 'resolved' && inferred.currentTask], ['resolved', 'alpha', 'branch', 'Do the thing']);
-  const bound = await currentInit(app, { binding: { workspace: ws.root, initiative: 'beta' } });
-  assert.deepEqual([bound.state, bound.state === 'resolved' && bound.initiative, bound.state === 'resolved' && bound.source], ['resolved', 'beta', 'explicit']);
+  const unbound = await currentInit(app);
+  assert.deepEqual([unbound.state, unbound.workspace], ['none', ws.root]);
+  const byAgent = await currentInit(app, { binding: { workspace: ws.root, initiative: 'beta', setBy: 'agent' } });
+  assert.deepEqual([byAgent.state, byAgent.state === 'resolved' && byAgent.initiative, byAgent.state === 'resolved' && byAgent.setBy], ['resolved', 'beta', 'agent']);
+  const legacy = await currentInit(app, { binding: { workspace: ws.root, initiative: 'alpha' } });
+  assert.deepEqual([legacy.state === 'resolved' && legacy.setBy, legacy.state === 'resolved' && legacy.currentTask], ['user', 'Do the thing']);
 
-  await git(app, 'checkout', '-q', '-b', 'loose');
-  assert.equal((await currentInit(app)).state, 'none');
-  await writeInitiative(ws, 'gamma', { ledger: openLedger([{ path: 'app', branch: 'loose' }]) });
-  await writeInitiative(ws, 'delta', { ledger: openLedger([{ path: 'app', branch: 'loose' }]) });
-  const ambiguous = await currentInit(app);
-  assert.deepEqual([ambiguous.state, ambiguous.state === 'ambiguous' && [...ambiguous.candidates].sort()], ['ambiguous', ['delta', 'gamma']]);
   assert.equal((await currentInit(os.tmpdir())).state, 'none');
   const broken = await currentInit(app, { binding: { workspace: ws.root, initiative: 'missing' } });
   assert.equal(broken.state, 'unavailable');

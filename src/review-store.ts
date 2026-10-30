@@ -108,8 +108,11 @@ export interface SessionRegistration {
   host: string;
   registeredAt: string;
   endedAt: string | null;
-  binding: { initiative: string; workspace: string } | null;
+  /** A binding without `setBy` was set by the person. */
+  binding: { initiative: string; workspace: string; setBy?: BindingSetter } | null;
 }
+
+export type BindingSetter = 'agent' | 'user';
 
 export interface ReviewStore {
   root: string;

@@ -13,10 +13,9 @@ test('a batch id is read only from the marker', () => {
   expect(batchIdIn('grind-review batch=; rm -rf')).toBeNull()
 })
 
-test('the init summary tells explicit, inferred, missing and ambiguous inits apart', () => {
-  expect(initSummary({ state: 'resolved', initiative: 'demo', source: 'explicit', currentTask: null }, 0)).toBe('demo [bound]')
-  expect(initSummary({ state: 'resolved', initiative: 'demo', source: 'branch', currentTask: 'x'.repeat(60) }, 2)).toBe(`demo [branch] · ${'x'.repeat(47)}… · review 2`)
-  expect(initSummary({ state: 'ambiguous', candidates: ['a', 'b'] }, 0)).toBe('init ambiguous (a, b)')
+test('the init summary tells who set the init, and a missing init apart', () => {
+  expect(initSummary({ state: 'resolved', initiative: 'demo', setBy: 'user', currentTask: null }, 0)).toBe('demo [you]')
+  expect(initSummary({ state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'x'.repeat(60) }, 2)).toBe(`demo [agent] · ${'x'.repeat(47)}… · review 2`)
   expect(initSummary({ state: 'none', reason: 'none' }, 1)).toBe('no init · review 1')
   expect(initSummary({ state: 'unavailable', reason: 'broken' }, 0)).toBe('init unavailable')
 })
