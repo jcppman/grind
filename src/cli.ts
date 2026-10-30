@@ -11,6 +11,8 @@ import { repositoryStatus, switchCommand, worktreeCommand } from './worktree.ts'
 import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
 import { REVIEW_USAGE, runReview } from './review-cli.ts';
+import { assertParticipantMayRun, runDiscuss } from './discuss/cli.ts';
+import { participantGuard, systemServiceEnv } from './discuss/service.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
   init: 'a future release',
@@ -37,6 +39,7 @@ Commands:
   status [initiative] inspect an initiative; without one inside a repository,
                       show the owning init and where the repository's inits live
   review <action>     private batch review drafts; see grind review help
+  discuss <action>    bounded multi-agent discussions; see grind discuss help
 
 Options:
   --workspace <dir>   directory containing grind-workspace.json
@@ -112,6 +115,16 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export async function run(argv: readonly string[]): Promise<number> {
   let json = argv.includes('--json');
   try {
+    assertParticipantMayRun(argv, participantGuard(process.env));
+    if (argv.filter((arg) => arg !== '--json')[0] === 'discuss') {
+      const rest = argv.filter((arg) => arg !== '--json').slice(1);
+      const result = await runDiscuss(rest, systemServiceEnv(process.cwd()));
+      if (rest[0] !== 'run' && rest[0] !== 'worker') {
+        const usage = (result as { usage?: string }).usage;
+        emit(json, { ok: true, data: result }, usage ?? JSON.stringify(result, null, 2));
+      }
+      return 0;
+    }
     if (argv.filter((arg) => arg !== '--json')[0] === 'review') {
       const rest = argv.filter((arg) => arg !== '--json').slice(1);
       const result = await runReview(rest, process.cwd(), (value) => process.stdout.write(`${JSON.stringify(value)}\n`));

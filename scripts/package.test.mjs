@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { chmod, cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { commitState, git, makeTempWorkspace, writeInitiative, closedLedger, makeCheckout, openLedger } from '../src/test-helpers.ts';
+import { makeFakes, writePersonalConfig } from '../src/discuss/test-fakes.ts';
 
 const exec = promisify(execFile);
 
@@ -21,7 +22,7 @@ test('relocated plugin runs all commands with bundled dependencies and no global
   assert.equal(pkg.version, codexManifest.version);
   assert.equal(pkg.version, claudeManifest.version);
   assert.ok(marketplace.plugins.some((plugin) => plugin.name === 'grind' && plugin.source === './'));
-  for (const skill of ['context', 'triage', 'coordinate', 'create', 'start', 'save', 'close', 'housekeeping']) {
+  for (const skill of ['context', 'triage', 'coordinate', 'create', 'start', 'save', 'close', 'housekeeping', 'discuss']) {
     const text = await readFile(path.join(install, 'skills', skill, 'SKILL.md'), 'utf8');
     for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {
       await readFile(path.resolve(install, 'skills', skill, target.split('#')[0]));
@@ -181,4 +182,38 @@ test('relocated Claude Code mod ships its module and contract without tests, and
   assert.ok(submitted.data.payload.text.includes(JSON.stringify(cli)));
   const shown = await review(['show-batch', submitted.data.submission.id, '--prompt']);
   assert.ok(shown.data.prompt.includes('r'.repeat(19000)));
+});
+
+test('relocated discuss runs a headless discussion from the copy with fake engines', { skip: process.platform !== 'darwin' ? 'discussion execution is macOS-only' : false }, async (t) => {
+  const temp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'grind-discuss-package-')));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const install = path.join(temp, "installed grind's copy");
+  await cp(path.resolve('build/grind'), install, { recursive: true });
+  const fakes = await makeFakes();
+  t.after(fakes.cleanup);
+  await writePersonalConfig(fakes, {
+    roles: { a: { instructions: 'Design.' }, b: { instructions: 'Critique.' } },
+    presets: { pair: { participants: [{ id: 'a', engine: 'claude', model: 'm', role: 'a' }, { id: 'b', engine: 'codex', model: 'm', role: 'b' }], writer: 'a' } },
+    defaults: { preset: 'pair', presentation: 'headless', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120 },
+  });
+  await writeFile(path.join(temp, 'brief.md'), 'Decide.\n');
+  await writeFile(path.join(temp, 'plan.md'), 'original\n');
+  const cli = path.join(install, 'scripts/grind.mjs');
+  const discuss = async (...args) => JSON.parse((await exec(process.execPath, [cli, 'discuss', ...args, '--json'], { cwd: temp, env: fakes.env })).stdout);
+  assert.equal((await discuss('config', 'validate')).data.valid, true);
+  assert.equal((await discuss('presets')).data.presets[0].name, 'pair');
+  const started = (await discuss('start', '--brief-file', 'brief.md', '--no-init', '--update-plan', 'plan.md')).data;
+  const record = JSON.parse(await readFile(path.join(started.dir, 'discussion.json'), 'utf8'));
+  assert.equal(record.launcher.cli, path.join(install, 'dist', 'cli.js'), 'workers run the relocated CLI');
+  let status;
+  for (let i = 0; i < 300; i += 1) {
+    status = (await discuss('status', started.id)).data;
+    if (status.status === 'completed') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(status.status, 'completed', JSON.stringify(status));
+  const result = (await discuss('result', started.id)).data;
+  assert.equal(result.agreed, true);
+  assert.equal(result.applied, true);
+  assert.equal(await readFile(path.join(temp, 'plan.md'), 'utf8'), 'fake plan revision 1\n');
 });

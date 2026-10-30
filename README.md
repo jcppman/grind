@@ -46,6 +46,11 @@ repository's other inits live. Review notes from `grind note add` go to the init
 owning the file's branch and are committed with it. Batch reviews of Claude replies
 and Markdown documents stay private to this machine; see [batch reviews](docs/reviews.md).
 
+On macOS, `grind discuss` (skill `/grind:discuss`) runs a bounded discussion between
+configured Codex and Claude CLI agents that sees the owning init's context and
+applies a plan change only when every participant accepts the same revision; see
+[discussions](docs/discussions.md).
+
 ## Dashboard
 
 Run `grind dashboard` and open the printed local URL to see initiatives, their
