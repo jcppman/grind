@@ -5,7 +5,7 @@ import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { applyCandidate } from './apply.ts';
 import { composeBrief } from './brief.ts';
-import type { CmuxAdapter } from './cmux.ts';
+import { closeDiscussionWorkspace, type CmuxAdapter } from './cmux.ts';
 import { compareSnapshots, writeSnapshot, type ContextSnapshot } from './context.ts';
 import { parseEngineOutput } from './engines.ts';
 import { advance, cancel, expire, finish, isTerminal, latestCandidate, pendingTurns, queueInput, recordFailure, recordResponse, sha256, type UserInput } from './protocol.ts';
@@ -453,6 +453,9 @@ class Runner {
     await writeJsonAtomic(paths.result(this.dir), buildResult(this.record, this.state));
     await this.event({ type: 'finished', outcome: protocol.outcome });
     await this.save();
+    await closeDiscussionWorkspace(this.deps.cmux, this.state.presentation)
+      .then((closed) => closed ? this.event({ type: 'workspace_closed', workspace: this.state.presentation.workspace }) : undefined)
+      .catch((error: Error) => this.event({ type: 'workspace_close_failed', workspace: this.state.presentation.workspace, error: error.message }));
   }
 }
 

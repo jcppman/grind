@@ -9,6 +9,19 @@ export interface CmuxAdapter {
   openWorkspace(options: { name: string; description: string; cwd: string; command: string }): Promise<{ workspace: string; surface: string | null }>;
   addPane(options: { workspace: string; cwd: string; command: string }): Promise<{ surface: string | null }>;
   renameOwnTab(title: string): Promise<void>;
+  closeWorkspace(workspace: string): Promise<void>;
+}
+
+const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+/**
+ * Closes the workspace of a final discussion. Only a UUID is closed, because
+ * cmux can reassign a short ref such as `workspace:3` to another workspace.
+ */
+export async function closeDiscussionWorkspace(cmux: CmuxAdapter | null, presentation: { kind: string | null; workspace: string | null }): Promise<boolean> {
+  if (cmux === null || presentation.kind !== 'cmux' || presentation.workspace === null || !UUID.test(presentation.workspace)) return false;
+  await cmux.closeWorkspace(presentation.workspace);
+  return true;
 }
 
 function refs(output: string): Record<string, string | undefined> {
@@ -37,8 +50,12 @@ export function systemCmux(bin: string, env: NodeJS.ProcessEnv = process.env): C
     },
     async openWorkspace({ name, description, cwd, command }) {
       const out = refs(await run(['new-workspace', '--name', name, '--description', description, '--cwd', cwd, '--command', command, '--focus', 'false']));
-      if (!out['workspace_ref']) throw new Error('cmux did not report the new workspace');
-      return { workspace: out['workspace_ref'], surface: out['surface_ref'] ?? null };
+      const ref = out['workspace_ref'];
+      if (!ref) throw new Error('cmux did not report the new workspace');
+      const id = await run(['--id-format', 'both', 'list-workspaces'])
+        .then((listed) => (JSON.parse(listed) as { workspaces?: Array<{ id?: string; ref?: string }> }).workspaces?.find((item) => item.ref === ref)?.id)
+        .catch(() => undefined);
+      return { workspace: id ?? ref, surface: out['surface_ref'] ?? null };
     },
     async addPane({ workspace, command }) {
       const out = refs(await run(['new-pane', '--workspace', workspace, '--direction', 'right', '--command', command, '--focus', 'false']));
@@ -46,6 +63,9 @@ export function systemCmux(bin: string, env: NodeJS.ProcessEnv = process.env): C
     },
     async renameOwnTab(title) {
       await run(['rename-tab', '--', title]);
+    },
+    async closeWorkspace(workspace) {
+      await run(['close-workspace', '--workspace', workspace]);
     },
   };
 }

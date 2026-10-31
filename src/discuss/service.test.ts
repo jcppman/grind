@@ -127,14 +127,18 @@ test('without cmux the start waits for an explicit presentation choice before la
   assert.equal(done.outcome?.kind, 'agreed');
 });
 
-test('cmux presentation opens one labelled workspace with a worker surface per participant', darwinOnly, async (t) => {
+test('cmux presentation opens one labelled workspace with a worker surface per participant and closes it when final', darwinOnly, async (t) => {
   const { fakes, service } = await setup(t, { cmuxMode: 'ok', defaults: { presentation: 'cmux' } });
   const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
   assert.equal(started.status, 'running');
   const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
   assert.equal(done.outcome?.kind, 'agreed');
-  assert.equal(done.presentation.workspace, 'workspace:1');
-  const calls = await fakes.cmuxCalls();
+  const workspace = '00000000-0000-4000-8000-000000000001';
+  assert.equal(done.presentation.workspace, workspace);
+  const calls = await waitFor(() => fakes.cmuxCalls(), (value) => value.some((call) => call.args[0] === 'close-workspace'));
+  assert.deepEqual(calls.filter((call) => call.args[0] === 'close-workspace').map((call) => call.args), [['close-workspace', '--workspace', workspace]]);
+  const pane = calls.find((call) => call.args[0] === 'new-pane')!.args;
+  assert.equal(pane[pane.indexOf('--workspace') + 1], workspace);
   const opened = calls.filter((call) => call.args[0] === 'new-workspace' || call.args[0] === 'new-pane');
   assert.deepEqual(opened.map((call) => call.args[0]), ['new-workspace', 'new-pane']);
   assert.ok(opened.every((call) => /^sh '.*launch-g1\.sh'$/.test(call.args[call.args.indexOf('--command') + 1]!)), 'startup commands stay short');

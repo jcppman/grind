@@ -55,7 +55,7 @@ if (engine === 'claude') {
 const FAKE_CMUX = String.raw`
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const args = process.argv.slice(2).filter((arg) => arg !== '--json');
+const args = process.argv.slice(2).filter((arg, i, all) => arg !== '--json' && arg !== '--id-format' && all[i - 1] !== '--id-format');
 const log = process.env.FAKE_CMUX_LOG;
 fs.appendFileSync(log, JSON.stringify({ args, surface: process.env.CMUX_SURFACE_ID || null }) + '\n');
 if (process.env.FAKE_CMUX_MODE !== 'ok') { process.stderr.write('Error: ERROR: Access denied - only processes started inside cmux can connect\n'); process.exit(1); }
@@ -72,7 +72,12 @@ if (args[0] === 'new-workspace' || args[0] === 'new-pane') {
   console.log(JSON.stringify({ workspace_ref: workspace, surface_ref: surface }));
   process.exit(0);
 }
-if (args[0] === 'rename-tab') { console.log('{}'); process.exit(0); }
+if (args[0] === 'list-workspaces') {
+  const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0;
+  console.log(JSON.stringify({ workspaces: Array.from({ length: n }, (_, i) => ({ id: '00000000-0000-4000-8000-' + String(i + 1).padStart(12, '0'), ref: 'workspace:' + (i + 1) })) }));
+  process.exit(0);
+}
+if (args[0] === 'rename-tab' || args[0] === 'close-workspace') { console.log('{}'); process.exit(0); }
 process.stderr.write('unsupported fake cmux command ' + args[0] + '\n');
 process.exit(2);
 `;

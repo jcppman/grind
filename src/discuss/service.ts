@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { GrindError } from '../errors.ts';
 import { findWorkspaceConfig, loadWorkspace, type Workspace } from '../workspace.ts';
 import { resolveTargets } from './apply.ts';
-import { systemCmux, type CmuxAdapter } from './cmux.ts';
+import { closeDiscussionWorkspace, systemCmux, type CmuxAdapter } from './cmux.ts';
 import { loadLayeredConfig, resolveEffective, type Engine, type Overrides, type Presentation } from './config.ts';
 import { buildSnapshot, resolveOwningInit, writeSnapshot } from './context.ts';
 import { resolveExecutable, type ResolvedExecutable } from './engines.ts';
@@ -421,6 +421,9 @@ export async function stopDiscussion(service: ServiceEnv, id: string) {
     return current;
   }, service.probe);
   await appendEvent(dir, { type: 'finished', outcome: final.protocol.outcome });
+  await closeDiscussionWorkspace(service.cmux, final.presentation)
+    .then((closed) => closed ? appendEvent(dir, { type: 'workspace_closed', workspace: final.presentation.workspace }) : undefined)
+    .catch((error: Error) => appendEvent(dir, { type: 'workspace_close_failed', workspace: final.presentation.workspace, error: error.message }));
   return { ...summary(record, final, dir), stopped: true };
 }
 
