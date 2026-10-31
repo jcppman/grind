@@ -82,7 +82,10 @@ With `cmux`, the runner opens one workspace named after the init and discussion,
 with one terminal per participant, without taking focus. Each terminal runs the
 Grind worker, which shows that participant's turns. Grind drives every turn; typing
 into a worker terminal does nothing for the protocol. Closing a terminal interrupts
-that worker and leaves the discussion `needs_recovery`.
+that worker and leaves the discussion `needs_recovery`. When the discussion reaches
+a final outcome, Grind closes its workspace; the turns stay in `discuss result` and
+the discussion folder. A discussion that waits for input or recovery keeps its
+workspace, because resuming adds its new workers there.
 
 cmux only accepts commands from processes started inside cmux. If `start` cannot
 reach it, the discussion waits as `needs_presentation_choice` and launches nothing.
