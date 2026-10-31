@@ -40,6 +40,11 @@ async function refreshCurrent($: EngineInterface): Promise<void> {
   const result = await grind($, ['review', 'current', '--session', session.id])
   const value: CurrentInit = result.ok ? result.data : { state: 'unavailable', reason: result.message }
   await update($, current, () => value)
+  await showStatus($)
+}
+
+async function showStatus($: EngineInterface): Promise<void> {
+  $.ui.status(initSummary(await read($, current), liveComments((await read($, view))?.draft ?? null).length))
 }
 
 async function bind($: EngineInterface, target: string | null, by: 'agent' | 'user'): Promise<CliResult> {
@@ -55,6 +60,7 @@ async function applySnapshot($: EngineInterface, snapshot: ReviewView): Promise<
   const isFirst = knownComments.size === 0 && (await read($, view)) === null
   knownComments = new Set(comments.map((comment) => comment.id))
   await update($, view, () => snapshot)
+  await showStatus($)
   if (!isFirst && added.length > 0) void $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
   for (const batch of snapshot.batches) {
     if (batch.delivery.state === 'sending' && !inFlight.has(batch.id)) void reconcile($, batch.id)

@@ -2,11 +2,13 @@ import { expect, test } from 'claude-code/testing'
 
 const OK = (data: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify({ ok: true, data }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
-function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean }) => void = () => undefined): Array<{ argv: readonly string[]; stdin?: string }> {
+const DEMO = { state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'Review' }
+
+function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean }) => void = () => undefined, currentInit: () => unknown = () => DEMO): Array<{ argv: readonly string[]; stdin?: string }> {
   const runs: Array<{ argv: readonly string[]; stdin?: string }> = []
   on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
     runs.push({ argv: e.argv, ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }) })
-    if (e.argv.includes('current')) return OK({ state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'Review' })
+    if (e.argv.includes('current')) return OK(currentInit())
     if (e.argv.includes('bind')) return OK({ binding: e.argv.includes('--none') ? null : { initiative: 'demo', workspace: '/w', setBy: 'agent' } })
     if (e.argv.includes('submit')) return { value: { exitCode: 1, stdout: JSON.stringify({ ok: false, error: { code: 'REVIEW_STALE', message: 'stale' } }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     return OK({})
@@ -129,4 +131,24 @@ test('the agent sets and clears the session init through its tool, and a malform
   const binds = runs.filter(run => run.argv.includes('bind')).map(run => run.argv.slice(run.argv.indexOf('--by')))
   expect(binds).toEqual([['--by', 'agent', '--init', 'dem', '--json'], ['--by', 'agent', '--none', '--json']])
   expect([set.result, cleared.result, refused.deny]).toEqual(['This session works on demo.', 'No init is set for this session.', 'init must be an init id or null'])
+})
+
+test('the status line follows the init the agent sets and clears', async ($, on) => {
+  let init: unknown = { state: 'none', reason: 'No init is set for this session' }
+  recordRuns(on, undefined, () => init)
+  const shown: Array<string | undefined> = []
+  on('ui.status', (_: unknown, e: { text: string | undefined }) => {
+    shown.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  expect(shown.at(-1)).toBe('no init')
+
+  init = DEMO
+  await $.tool.call({ tool: 'mcp__grind__set-init', init: 'demo' } as any)
+  expect(shown.at(-1)).toBe('demo [agent] · Review')
+
+  init = { state: 'none', reason: 'No init is set for this session' }
+  await $.tool.call({ tool: 'mcp__grind__set-init', init: null } as any)
+  expect(shown.at(-1)).toBe('no init')
 })
