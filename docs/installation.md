@@ -67,7 +67,8 @@ Claude Code leaves auto-update off for third-party marketplaces. Enable it once 
 the background after a session starts and load on the next launch or
 `/reload-plugins`. Start a fresh Claude Code session after installation.
 
-The plugin includes the [review mod](review-mod.md): a pane for batch reviews. Mod changes run their tests with
+The plugin includes the [review mod](review-mod.md): a status line naming the
+session's init and a pane for batch reviews. Mod changes run their tests with
 `npm run test:mod`, which needs the `claude` CLI.
 
 Invoke `/grind:context [initiative]` explicitly. `/grind:start <initiative> [task]`

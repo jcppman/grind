@@ -1,7 +1,7 @@
 # Review mod for Claude Code
 
-The Grind plugin includes a Claude Code mod. It keeps a review pane beside the
-conversation. You collect
+The Grind plugin includes a Claude Code mod. It shows the session's current init
+in the status line and keeps a review pane beside the conversation. You collect
 comments on passages of Claude's replies and of Markdown documents, edit them, and
 send them to the same conversation as one batch. Nothing reaches Claude until you
 press Send. Review data stays on this machine; see [batch reviews](reviews.md).
@@ -12,8 +12,9 @@ work without it.
 
 ## Current init
 
-The first line of the review pane shows the init this session works on and its
-current task, for example `Grind: demo [agent] · Review the plan document · review 2`.
+The status line under the prompt shows the init this session works on and its
+current task, for example `demo [agent] · Review the plan document · review 2`.
+The first line of the review pane shows the same summary.
 The init is a state of the session. The session's folder and branch never select it:
 
 - `[agent]`: Claude set the init with the `mcp__grind__set-init` tool. The
@@ -24,7 +25,7 @@ The init is a state of the session. The session's folder and branch never select
 - `review N` is the number of comments in the draft.
 
 Claude and you write the same state; the last one to set it wins. A new review draft
-belongs to the session's init, or to no init when none is set. The pane refreshes
+belongs to the session's init, or to no init when none is set. The summary refreshes
 when the init is set, when the session starts, after each Claude turn, and on
 `/grind-review`. The mod never creates an init or switches a branch.
 
