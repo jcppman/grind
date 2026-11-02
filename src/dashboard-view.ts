@@ -42,6 +42,7 @@ h2{font-size:18px;letter-spacing:-.3px;margin:9px 0;overflow-wrap:anywhere}
 .repos{border-top:1px solid #eef0ea;padding:17px 25px;background:#fbfcf9}
 .sectionlabel{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:#81907c;font-weight:700}
 .repo{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:14px}
+.repoactions{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .reponame{font-size:13px;font-weight:650}
 .branch{font-family:ui-monospace,monospace;font-size:11px;color:#788575;margin-left:12px}
 .path{font-family:ui-monospace,monospace;font-size:11px;color:#7c897b;overflow-wrap:anywhere;margin-top:6px}
@@ -182,11 +183,13 @@ function nameButton(id, text) {
   return button;
 }
 
-function openButton(initiative) {
-  const button = element('button', 'open-editor', 'Open in editor');
+function openButton(initiative, target = 'init') {
+  const roadmap = target === 'roadmap';
+  const label = roadmap ? 'Roadmap' : 'init folder';
+  const button = element('button', 'open-editor', roadmap ? 'open Roadmap' : 'Open in editor');
   button.type = 'button';
-  button.title = 'Open init folder: ' + initiative.directory;
-  button.setAttribute('aria-label', 'Open init folder for ' + initiative.id);
+  button.title = 'Open ' + label + ': ' + (roadmap ? initiative.roadmap.path : initiative.directory);
+  button.setAttribute('aria-label', 'Open ' + label + ' for ' + initiative.id);
   button.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -198,11 +201,41 @@ function openButton(initiative) {
       const response = await fetch('open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: initiative.id, editor }),
+        body: JSON.stringify({ id: initiative.id, editor, target }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not open init folder');
-      $('notice').textContent = 'Opened ' + initiative.id + ' in ' + (editor === 'vscode' ? 'VS Code' : 'WebStorm');
+      if (!response.ok) throw new Error(result.error || 'Could not open ' + label);
+      $('notice').textContent = 'Opened ' + (roadmap ? initiative.roadmap.id : initiative.id) + ' in ' + (editor === 'vscode' ? 'VS Code' : 'WebStorm');
+    } catch (error) {
+      $('error').textContent = error.message;
+    } finally { button.disabled = false; }
+  });
+  return button;
+}
+
+function switchButton(initiative, repo) {
+  const button = element('button', 'open-editor', 'Switch to foreground');
+  button.type = 'button';
+  button.title = 'Check out ' + repo.branch + ' in the canonical checkout of ' + repo.name + ', moving its current work to a worktree';
+  button.setAttribute('aria-label', 'Switch ' + initiative.id + ' to the foreground in ' + repo.name);
+  async function request(force) {
+    const response = await fetch('switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: initiative.id, repository: repo.name, force }),
+    });
+    return { ok: response.ok, result: await response.json() };
+  }
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    $('error').textContent = '';
+    $('notice').textContent = '';
+    try {
+      let { ok, result } = await request(false);
+      if (!ok && result.canForce && window.confirm(result.error + ' Switch anyway?')) ({ ok, result } = await request(true));
+      if (!ok) throw new Error(result.error || 'Could not switch');
+      $('notice').textContent = result.message;
+      await refresh();
     } catch (error) {
       $('error').textContent = error.message;
     } finally { button.disabled = false; }
@@ -260,7 +293,11 @@ function render() {
     rowBadges.append(element('span', 'badge ' + (initiative.status || 'unavailable'), initiative.status || 'Status unavailable'));
     if (initiative.archived) rowBadges.append(element('span', 'badge archived', 'Archived'));
     if (initiative.diagnostics.length) rowBadges.append(element('span', 'badge unavailable', 'Needs attention'));
-    row.append(rowBadges, openButton(initiative));
+    row.append(rowBadges);
+    const editorActions = element('span', 'repoactions');
+    if (initiative.roadmap) editorActions.append(openButton(initiative, 'roadmap'));
+    editorActions.append(openButton(initiative));
+    row.append(editorActions);
     card.append(row);
     const head = element('div', 'cardhead');
     const summary = element('div', '');
@@ -284,11 +321,15 @@ function render() {
       const name = element('div', 'reponame', repo.name);
       name.append(element('span', 'branch', 'Recorded: ' + repo.branch));
       info.append(name, element('div', 'path', repo.directory));
-      if (!repo.available) info.append(element('div', 'warning', 'Checkout unavailable'));
+      if (!repo.available) info.append(element('div', 'warning', 'Repository unavailable'));
       else {
-        info.append(element('div', repo.onRecordedBranch ? 'muted' : 'warning', 'Current: ' + (repo.actualBranch || 'detached HEAD') + ' · ' + repo.changes + ' changed files'));
+        const where = { canonical: 'Canonical checkout', grind: 'Worktree', app: 'App worktree', other: 'Worktree' }[repo.location];
+        info.append(element('div', 'muted', where ? where + ' · ' + repo.changes + ' changed files' : 'Branch not checked out'));
       }
-      row.append(info, copyButton(repo.command, 'Copy cd command for repository ' + repo.name));
+      const actions = element('div', 'repoactions');
+      if (repo.available && repo.location !== 'canonical' && initiative.status === 'open' && !initiative.archived) actions.append(switchButton(initiative, repo));
+      actions.append(copyButton(repo.command, 'Copy cd command for repository ' + repo.name));
+      row.append(info, actions);
       repos.append(row);
     }
     card.append(head, repos);

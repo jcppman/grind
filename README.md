@@ -9,8 +9,8 @@ init,” or “save this init.” Both names select the same workflows. For an e
 command, use `/grind:create xxx`.
 
 Read [the operating protocol](docs/protocol.md) for the workflow. Grind will ship
-shared context, create, start, save, close, and housekeeping skills with Codex and Claude Code plugin
-manifests. The CLI will own deterministic filesystem and Git mechanics.
+shared context, triage, coordinate, create, start, save, close, and housekeeping
+skills with Codex and Claude Code plugin manifests. The CLI will own deterministic filesystem and Git mechanics.
 
 Initiative artifacts belong in the workspace's configured private state repository,
 not in this implementation repository. Find `grind-workspace.json` by walking
@@ -18,23 +18,38 @@ upward to the nearest enclosing workspace boundary.
 
 ## Status
 
-Milestone 2 provides recoverable branch switching and note transfer, closure and
-reopening, retention archival, `agent-note`, and scoped checkpoint saves. The matching
-compiled CLI and shared context/create/start/save/close/housekeeping skills run in Codex and
-Claude Code from the same relocatable package.
+Grind provides per-init worktrees, foreground switching of the canonical checkout,
+review notes kept with each init, closure, retention archival, and scoped
+checkpoint saves. The matching
+compiled CLI and shared skills run in Codex and Claude Code from the same
+relocatable package.
 
 See [installation and recovery](docs/installation.md) for packaging, workspace
-setup, terminal use, and opt-in session hooks.
+setup and terminal use.
 
-`grind context [initiative]` assembles read-only context in one call. Enable
-`contextOnSessionStart: true` in the workspace configuration for automatic hook
-loading; it is disabled by default. Oversized contexts produce only an association
-notice and a command to load the full context if needed.
+`grind context [initiative]` assembles read-only context in one call. Automatic
+SessionStart loading is deprecated; use `/grind:context` or `/grind:start` explicitly.
 
-The initiative argument is optional for context and start. From an initiative folder
-or associated checkout, Grind resolves it automatically. Elsewhere, invoke
-`/grind:context` or `/grind:start` without an argument to choose from the initiatives
-in the current workspace.
+Say "let's work on init X" or run `/grind:start X`: the agent loads the init's
+context and finds the init's working checkout. It normally uses a worktree at
+`.worktrees/<repository>/<init>`; if the branch is already in your canonical checkout,
+the agent follows your existing authorization and checks for unrelated edits before
+working there. From an initiative folder or a checkout of one of its
+branches, Grind resolves the init automatically; elsewhere, invoke `/grind:context`
+or `/grind:start` without an argument to choose one.
+
+To take over an agent's work yourself, run `grind switch <init>` in the canonical
+checkout. It moves your current work to its init's worktree and brings the target
+branch to the foreground, keeping staged, unstaged, and untracked changes. Inside a
+repository, `grind status` names the init owning the current branch and where the
+repository's other inits live. Review notes from `grind note add` go to the init
+owning the file's branch and are committed with it. Batch reviews of Claude replies
+and Markdown documents stay private to this machine; see [batch reviews](docs/reviews.md).
+
+On macOS, `grind discuss` (skill `/grind:discuss`) runs a bounded discussion between
+configured Codex and Claude CLI agents that sees the owning init's context and
+applies a plan change only when every participant accepts the same revision; see
+[discussions](docs/discussions.md).
 
 ## Dashboard
 
@@ -74,3 +89,30 @@ Use `/grind:housekeeping` for a project or roadmap to reconcile milestone
 contributions, init scope, stale checkpoints, and completed work. The skill checks
 delivery evidence and raises unresolved conflicts in intent or priorities with
 the user. Ask for an audit only when you want findings without record changes.
+
+Use `$grind:triage` in Codex or `/grind:triage` in Claude Code to bring up work
+without choosing an init first. The skill checks relevant open inits and actual
+implementation progress, including whether the addition requires revisiting work
+already completed. It proposes an existing or new init, needed record changes,
+and suitable roadmap placement, then waits for your confirmation before writing.
+Confirming placement does not itself start implementation.
+
+Use `$grind:coordinate` in Codex or `/grind:coordinate` in Claude Code to add a
+coordination note to another init’s ledger and get a prompt to relay to its working
+session. The note links to the source design and preserves the receiving init’s
+current work. The skill does not send the prompt or start work in another session.
+
+### Batch workspace inspection
+
+`grind inspect [scope] --json` collects recorded state, observed checkouts and heads,
+index-link diagnostics, review-note counts, and pending lifecycle operations without
+fetching or modifying anything. `--open` and `--closed` use the list command's filters;
+unfiltered inspection includes malformed unarchived records. This is a factual snapshot,
+not a readiness or completion verdict. Load context to judge the actual outcome.
+
+Add `--remote` to read recorded GitHub PRs once per URL, after verifying the active
+identity is `jcppman`. Authentication and access failures remain explicit while local
+inspection continues. PR observations include revisions, checks and review state;
+they do not prove acceptance or integration into the intended final branch. Index
+links are checked locally, not recursively or over the network. Snapshot diagnostics
+and unavailable observations must be inspected even when the command exits zero.

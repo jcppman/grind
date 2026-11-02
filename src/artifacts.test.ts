@@ -54,19 +54,6 @@ test('symlinked artifacts are rejected, not read through', async (t) => {
   assert.equal(record.ledger, null);
 });
 
-test('a worktree recorded inside the state directory is rejected when the workspace is known', async (t) => {
-  const ws = await makeTempWorkspace();
-  t.after(() => ws.cleanup());
-  const dir = await writeInitiative(ws, 'app/wt', {
-    ledger: openLedger([{ path: 'app', branch: 'x', checkout: 'grind-state/initiatives/app/wt/worktrees/app' }]),
-  });
-  const workspace = await loadWorkspace({ cwd: ws.root });
-  assert.ok((await readInitiative(dir, { workspace })).diagnostics.some((d) => d.code === 'CHECKOUT_IN_STATE'));
-  assert.deepEqual((await readInitiative(dir)).diagnostics, []);
-  const outside = await writeInitiative(ws, 'app/ok', { ledger: openLedger([{ path: 'app', branch: 'x', checkout: 'worktrees/app' }]) });
-  assert.deepEqual((await readInitiative(outside, { workspace })).diagnostics, []);
-});
-
 test('reports missing required artifacts, broken index links, and missing types', async (t) => {
   const ws = await makeTempWorkspace();
   t.after(() => ws.cleanup());

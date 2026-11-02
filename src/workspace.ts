@@ -90,7 +90,7 @@ async function locateConfig(options: LoadWorkspaceOptions): Promise<string> {
   return found;
 }
 
-export async function readWorkspaceSettings(configPath: string): Promise<{ stateRepository: string; contextOnSessionStart: boolean }> {
+export async function readWorkspaceSettings(configPath: string): Promise<{ stateRepository: string }> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(configPath, 'utf8'));
@@ -114,11 +114,7 @@ export async function readWorkspaceSettings(configPath: string): Promise<{ state
       { configPath },
     );
   }
-  const enabled = parsed['contextOnSessionStart'];
-  if (enabled !== undefined && typeof enabled !== 'boolean') {
-    throw new GrindError('WORKSPACE_CONFIG_INVALID', 'contextOnSessionStart must be a boolean', { configPath });
-  }
-  return { stateRepository, contextOnSessionStart: enabled ?? false };
+  return { stateRepository };
 }
 
 /**

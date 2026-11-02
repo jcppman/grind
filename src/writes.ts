@@ -1,13 +1,14 @@
-import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { stringify } from 'yaml';
 import { isInitiativeRoot } from './discovery.ts';
 import { readInitiative } from './artifacts.ts';
 import type { CommandContext } from './commands.ts';
 import { GrindError } from './errors.ts';
+import { editFrontmatter } from './frontmatter.ts';
 import { git } from './git.ts';
 import { pathsBelow, resolveWithin, toPosix } from './paths.ts';
-import { assertNoPendingOperation, withLifecycleLocks } from './operations.ts';
+import { assertNoPendingOperation, atomicWriteFile, withLifecycleLocks } from './operations.ts';
 import { resolveInitiative } from './resolve.ts';
 import { findNestedWorkspaceConfig, type Workspace } from './workspace.ts';
 
@@ -119,6 +120,10 @@ export async function saveCommand(context: CommandContext, identifier: string | 
     await validateForWrite(workspace, initiative.dir);
     const relative = toPosix(path.relative(root, initiative.dir));
     const pathspec = `:(literal)${relative}`;
+    if (!(await checkedGit(root, 'status', '--porcelain', '--untracked-files=all', '--', pathspec))) {
+      return { id: initiative.id, saved: false, commit: null };
+    }
+    await stampUpdatedAt(path.join(initiative.dir, 'ledger.md'));
     await checkedGit(root, 'add', '-A', '--', pathspec);
     const staged = await checkedGit(root, 'diff', '--cached', '--name-only', '-z');
     if (!staged) return { id: initiative.id, saved: false, commit: null };
@@ -128,4 +133,14 @@ export async function saveCommand(context: CommandContext, identifier: string | 
     }
     return { id: initiative.id, saved: true, commit: (await checkedGit(root, 'rev-parse', 'HEAD')).trim() };
   });
+}
+
+/** The current time in the ledger's timestamp format. */
+export function currentTimestamp(now = new Date()): string {
+  return now.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+async function stampUpdatedAt(ledger: string): Promise<void> {
+  const raw = await readFile(ledger, 'utf8');
+  await atomicWriteFile(ledger, editFrontmatter(raw, (document) => document.setIn(['grind', 'updated_at'], currentTimestamp())));
 }

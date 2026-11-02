@@ -1,12 +1,11 @@
 {
   "name": "grind",
-  "version": "0.4.2",
+  "version": "0.8.0",
   "private": true,
   "description": "Vendor-neutral CLI and plugin for resumable development initiatives",
   "type": "module",
   "bin": {
-    "grind": "./dist/cli.js",
-    "agent-note": "./dist/agent-note.js"
+    "grind": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -15,7 +14,7 @@
     ".codex-plugin",
     ".claude-plugin",
     "scripts/grind.mjs",
-    "hooks"
+    "mod"
   ],
   "engines": {
     "node": ">=24"
@@ -26,7 +25,8 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "package:plugin": "npm run build && node scripts/package-plugin.mjs",
     "test:package": "npm run package:plugin && node --test scripts/package.test.mjs",
-    "update-plugin": "node scripts/update-plugin.mjs"
+    "update-plugin": "node scripts/update-plugin.mjs",
+    "test:mod": "node scripts/test-mod.mjs"
   },
   "dependencies": {
     "entities": "^8.1.0",

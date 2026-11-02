@@ -3,8 +3,9 @@ name: housekeeping
 description: Reconcile Grind roadmaps and inits, audit stale status and completed work, and organize milestone contributions. Use for requested Grind housekeeping, roadmap/init consistency checks, or initiative cleanup. An audit-only request produces findings without changing records.
 ---
 
-Read the Roadmaps, Choosing what to preserve, and Execution authorization and
-verification sections of the [shared protocol](../../docs/protocol.md). Use the
+Read [Roadmaps](../../docs/protocol/roadmaps.md),
+[Choosing what to preserve](../../docs/protocol/checkpoints.md#choosing-what-to-preserve),
+and [Execution authorization and verification](../../docs/protocol/artifacts.md#execution-authorization-and-verification). Use the
 [context workflow](../context/SKILL.md) to inspect inits and the
 [save workflow](../save/SKILL.md) for meaningful record changes.
 
@@ -16,8 +17,10 @@ scope. Inspect the state repository's instructions and dirty/staged state before
 editing, and preserve unrelated changes.
 
 Resolve the plugin root from this file. Run
-`node <plugin-root>/scripts/grind.mjs list [scope] --workspace <directory> --json`
-to inventory open and closed inits. Read the roadmap, linked inits, and relevant
+`node <plugin-root>/scripts/grind.mjs inspect [scope] --workspace <directory> --json`
+to inventory local facts, link diagnostics and pending operations. Add `--remote`
+when PR observations are needed; it verifies jcppman and never fetches or writes.
+Read diagnostics and unavailable observations even on exit zero. Read the roadmap, linked inits, and relevant
 unlinked inits in the chosen scope. A null roadmap association does not establish
 that no roadmap exists: inspect the configured state directory for Roadmap
 documents and project navigation. Use full scoped IDs for context calls; resolve

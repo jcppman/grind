@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, symlink } from 'node:fs/promises';
+import { writeFile, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { contextCommand, formatContext } from './context.ts';
 import { markdownSection } from './context-markdown.ts';
 import { loadWorkspace } from './workspace.ts';
-import { makeTempWorkspace, writeInitiative, makeCheckout, openLedger, writeSidecar, git } from './test-helpers.ts';
+import { addNote } from './notes.ts';
+import { makeTempWorkspace, writeInitiative, makeCheckout, openLedger, git } from './test-helpers.ts';
 
 test('section boundaries preserve prose and ignore fenced headings, including duplicate Unicode slugs', () => {
   const body = '# Root\r\n\r\n## Héllo!\r\none\r\n```md\r\n## fake\r\n```\r\n### Child\r\ntwo\r\n## Héllo!\r\nthree\r\n## End\r\n';
@@ -18,25 +19,24 @@ test('context preserves sources, deduplicates required reads, inspects foreign i
   const ws = await makeTempWorkspace(); t.after(ws.cleanup);
   const app = await makeCheckout(ws, 'app');
   await writeInitiative(ws, 'other', { ledger: openLedger([{ path: 'app', branch: 'main' }]) });
-  await writeSidecar(app, 'other', '## @README.md#1\n> # app\nPlease inspect\n');
   const dir = await writeInitiative(ws, 'selected', {
     index: '# Index\n\n## Read on every context load\n- [Intent](intent.md)\n- [Rule](rules.md#h%C3%A9llo)\n- [Again](rules.md#h%C3%A9llo)\n\n## Later\n- [Optional](rules.md#absent)\n',
     ledger: openLedger([], { body: '\nExact checkpoint.\n' }),
     files: { 'rules.md': '---\ntype: Specification\n---\n## Héllo\nKeep me.\n## Other\nOmit me.\n' },
   });
   const before = await git(ws.stateGitRoot, 'status', '--porcelain');
-  const sidecar = await readFile(path.join(app, '.grind.md'), 'utf8');
   const result = await contextCommand({ workspace: await loadWorkspace({ cwd: app }), cwd: app }, 'selected');
   assert.equal(result.complete, true);
   assert.equal(result.constraints.length, 1);
   assert.equal(result.constraints[0]?.body, '## Héllo\nKeep me.\n');
-  assert.equal(result.invokingCheckout?.association, 'other');
-  assert.equal(result.invokingCheckout?.notes[0]?.reference, '@README.md#1');
+  assert.deepEqual(result.invokingCheckout?.owners, ['other']);
+  assert.equal(result.invokingCheckout?.kind, 'canonical');
+  assert.ok(result.diagnostics.some(d => d.code === 'INVOKING_CHECKOUT_ASSOCIATION'));
   assert.equal(result.ledger?.body, '\n# Initiative Ledger\n\nExact checkpoint.\n');
   assert.match(formatContext(result), /Exact checkpoint/);
   assert.ok(result.navigation.some(link => link.path === path.join(dir, 'rules.md')));
   assert.equal(await git(ws.stateGitRoot, 'status', '--porcelain'), before);
-  assert.equal(await readFile(path.join(app, '.grind.md'), 'utf8'), sidecar);
+  assert.equal(await git(app, 'status', '--porcelain'), '');
 });
 
 test('missing fragments and symlink escapes make context incomplete without dropping other sources', async t => {
@@ -77,19 +77,22 @@ test('required missing fragment is diagnosed even when the whole document is alr
   assert.equal(result.complete, false);
 });
 
-test('context reports detached HEAD, missing checkout and notes without modifying branches', async t => {
+test('context reports where branches live, missing repositories, and review notes without modifying branches', async t => {
   const ws = await makeTempWorkspace(); t.after(ws.cleanup);
   const app = await makeCheckout(ws, 'app');
-  const head = await git(app, 'rev-parse', 'HEAD');
-  await git(app, 'checkout', '--detach', '-q');
-  await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'app', branch: 'main' }, { path: 'missing', branch: 'main' }]) });
-  await writeSidecar(app, 'work', '## @README.md#1\n> # app\nInspect\n');
-  const result = await contextCommand({ workspace: await loadWorkspace({ cwd: app }), cwd: app }, 'work');
+  const worktree = path.join(ws.root, '.worktrees', 'app', 'work');
+  await git(app, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+  const head = await git(worktree, 'rev-parse', 'HEAD');
+  await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'app', branch: 'feature' }, { path: 'missing', branch: 'main' }]) });
+  const workspace = await loadWorkspace({ cwd: app });
+  await addNote({ workspace, cwd: worktree }, { file: 'README.md', start: 1, end: 1, comment: 'Inspect' });
+  const result = await contextCommand({ workspace, cwd: app }, 'work');
   assert.equal(result.complete, false);
-  assert.equal(result.repositories[0]?.details?.head, head);
-  assert.equal(result.repositories[0]?.observed.detached, true);
-  assert.equal(result.repositories[0]?.details?.notes.length, 1);
-  assert.equal(await git(app, 'rev-parse', 'HEAD'), head);
+  assert.equal(result.repositories[0]?.observed.path, worktree);
+  assert.equal(result.repositories[0]?.head, head);
+  assert.deepEqual(result.notes.map(note => [note.id, note.repository, note.path, note.body]), [['n1', 'app', 'README.md', 'Inspect']]);
+  assert.match(formatContext(result), /Review notes \(1\)/);
+  assert.equal(await git(app, 'branch', '--show-current'), 'main');
 });
 
 test('required reads support reference links and headings with entities and formatting', async t => {
@@ -110,12 +113,11 @@ test('context discovers an init from its tracked linked worktree', async t => {
   await git(app, 'worktree', 'add', '-b', 'feature', worktree);
   await writeInitiative(ws, 'work', { ledger: openLedger([{ path: 'app', branch: 'feature', checkout: 'worktrees/feature' }]) });
   const input = { workspace: await loadWorkspace({ cwd: worktree }), cwd: worktree };
-  assert.equal((await contextCommand(input)).resolution.source, 'branch');
-  await writeSidecar(worktree, 'work');
   const result = await contextCommand(input);
   assert.equal(result.id, 'work');
   assert.equal(result.complete, true);
-  assert.equal(result.resolution.source, 'sidecar');
+  assert.equal(result.resolution.source, 'branch');
+  assert.equal(result.invokingCheckout?.kind, 'other');
 });
 
 test('nested rendered headings consume duplicate slugs without selecting the wrong constraint', async t => {

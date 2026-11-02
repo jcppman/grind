@@ -36,7 +36,7 @@ export interface InitiativeRecord {
 }
 
 export interface ReadInitiativeOptions {
-  /** Enables checks that need workspace geometry, such as worktrees inside the state directory. */
+  /** Enables roadmap resolution from the workspace's state directory. */
   workspace?: Workspace;
   roadmapCatalog?: RoadmapCatalog;
 }
@@ -63,9 +63,7 @@ export async function readInitiative(
     documents.find((d) => d.relativePath === relative) ?? null;
   const ledger = byRelative('ledger.md');
   const ledgerState = ledger
-    ? validateLedger(ledger.frontmatter, ledger.path, {
-        statePathFromWorkspace: statePathFromWorkspace(options.workspace),
-      })
+    ? validateLedger(ledger.frontmatter, ledger.path)
     : null;
   if (ledgerState) diagnostics.push(...ledgerState.diagnostics);
   for (const doc of documents) {
@@ -93,14 +91,6 @@ export async function readInitiative(
     ledgerState,
     diagnostics,
   };
-}
-
-/** Workspace-relative state directory, or null when the state lives outside the workspace. */
-function statePathFromWorkspace(workspace: Workspace | undefined): string | null {
-  if (!workspace) return null;
-  const relative = path.relative(workspace.root, workspace.stateDir);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return null;
-  return toPosix(relative);
 }
 
 async function collectMarkdown(dir: string, diagnostics: Diagnostic[]): Promise<string[]> {

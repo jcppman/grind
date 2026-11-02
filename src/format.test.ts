@@ -71,7 +71,8 @@ test('human formatting can add restrained status color without affecting plain o
 
 test('status reports artifact roles', () => {
   const output = formatStatus({
-    resolution: { source: 'argument', stalePointer: null, checkout: null },
+    kind: 'initiative',
+    resolution: { source: 'argument' },
     pendingOperations: [],
     archiveEligibility: { eligible: false, closedDays: null, blockers: ['initiative is not closed'] },
     inspection: {

@@ -6,29 +6,14 @@ import { GrindError } from './errors.ts';
 import { gitCommonDir } from './git.ts';
 import type { Workspace } from './workspace.ts';
 
-export interface OperationCheckout {
-  repository: string;
-  checkout: string;
-  sourceBranch: string;
-  targetBranch: string;
-  sourceInitiative?: string | null;
-  notePayload?: string;
-  noteState?: 'captured' | 'parked' | 'removed';
-  restoreBatches?: Array<{ operationId: string; payload: string }>;
-  restoreState?: 'captured' | 'copied' | 'removed' | 'complete';
-  targetSource?: 'local' | 'remote' | 'remote-default';
-  switchState?: 'planned' | 'notes-parked' | 'checkout-planned' | 'checked-out' | 'notes-restored';
-}
-
 export interface OperationRecord {
   version: 1;
   id: string;
-  kind: 'start' | 'close' | 'reopen' | 'archive';
+  kind: 'close' | 'archive';
   target: string;
   createdAt: string;
   updatedAt: string;
   step: string;
-  checkouts: OperationCheckout[];
   details?: Record<string, string>;
 }
 
@@ -54,14 +39,12 @@ function parseOperation(value: unknown, file: string): OperationRecord {
   if (
     record['version'] !== 1 ||
     typeof record['id'] !== 'string' ||
-    !['start', 'close', 'reopen', 'archive'].includes(record['kind'] as string) ||
+    !['close', 'archive'].includes(record['kind'] as string) ||
     typeof record['target'] !== 'string' ||
     typeof record['createdAt'] !== 'string' ||
     typeof record['updatedAt'] !== 'string' ||
     typeof record['step'] !== 'string' ||
-    (record['details'] !== undefined && !isStringRecord(record['details'])) ||
-    !Array.isArray(record['checkouts']) ||
-    !record['checkouts'].every(isOperationCheckout)
+    (record['details'] !== undefined && !isStringRecord(record['details']))
   ) {
     throw new GrindError('OPERATION_INVALID', `Operation journal ${file} has an unsupported shape`, { path: file });
   }
@@ -73,34 +56,12 @@ function parseOperation(value: unknown, file: string): OperationRecord {
     createdAt: record['createdAt'] as string,
     updatedAt: record['updatedAt'] as string,
     step: record['step'] as string,
-    checkouts: record['checkouts'] as OperationCheckout[],
     ...(isStringRecord(record['details']) ? { details: record['details'] } : {}),
   };
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every((item) => typeof item === 'string');
-}
-
-function isOperationCheckout(value: unknown): value is OperationCheckout {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const checkout = value as Record<string, unknown>;
-  const required = ['repository', 'checkout', 'sourceBranch', 'targetBranch'].every(
-    (key) => typeof checkout[key] === 'string' && (checkout[key] as string).trim() !== '',
-  );
-  if (!required) return false;
-  if (checkout['sourceInitiative'] !== undefined && checkout['sourceInitiative'] !== null && typeof checkout['sourceInitiative'] !== 'string') return false;
-  if (checkout['notePayload'] !== undefined && typeof checkout['notePayload'] !== 'string') return false;
-  if (checkout['noteState'] !== undefined && !['captured', 'parked', 'removed'].includes(checkout['noteState'] as string)) return false;
-  if (checkout['restoreState'] !== undefined && !['captured', 'copied', 'removed', 'complete'].includes(checkout['restoreState'] as string)) return false;
-  if (checkout['targetSource'] !== undefined && !['local', 'remote', 'remote-default'].includes(checkout['targetSource'] as string)) return false;
-  if (checkout['switchState'] !== undefined && !['planned', 'notes-parked', 'checkout-planned', 'checked-out', 'notes-restored'].includes(checkout['switchState'] as string)) return false;
-  if (checkout['restoreBatches'] !== undefined && (!Array.isArray(checkout['restoreBatches']) || !checkout['restoreBatches'].every((batch) => {
-    if (typeof batch !== 'object' || batch === null || Array.isArray(batch)) return false;
-    const item = batch as Record<string, unknown>;
-    return typeof item['operationId'] === 'string' && typeof item['payload'] === 'string';
-  }))) return false;
-  return true;
 }
 
 export async function readPendingOperations(workspace: Workspace): Promise<Array<OperationRecord & { path: string }>> {
@@ -139,34 +100,19 @@ export async function assertNoPendingOperation(workspace: Workspace, initiative?
   if (blocking.length > 0) {
     throw new GrindError(
       'OPERATION_PENDING',
-      `A lifecycle operation is pending for ${blocking.map((operation) => operation.target).join(', ')}; resume it with grind start before changing initiative state`,
+      `A lifecycle operation is pending for ${blocking.map((operation) => operation.target).join(', ')}; retry its original close or archive command before changing initiative state`,
       { operations: blocking.map(({ path: file, ...operation }) => ({ ...operation, path: file })) },
     );
   }
 }
 
-export function newStartOperation(target: string, checkouts: OperationCheckout[]): OperationRecord {
-  const now = new Date().toISOString();
-  return {
-    version: 1,
-    id: randomUUID(),
-    kind: 'start',
-    target,
-    createdAt: now,
-    updatedAt: now,
-    step: 'planned',
-    checkouts,
-  };
-}
-
 export function newLifecycleOperation(
-  kind: Exclude<OperationRecord['kind'], 'start'>,
+  kind: OperationRecord['kind'],
   target: string,
   details: Record<string, string>,
-  checkouts: OperationCheckout[] = [],
 ): OperationRecord {
   const now = new Date().toISOString();
-  return { version: 1, id: randomUUID(), kind, target, createdAt: now, updatedAt: now, step: 'planned', checkouts, details };
+  return { version: 1, id: randomUUID(), kind, target, createdAt: now, updatedAt: now, step: 'planned', details };
 }
 
 export function updateOperation(operation: OperationRecord, step: string): OperationRecord {
@@ -186,18 +132,6 @@ export async function writeOperation(workspace: Workspace, operation: OperationR
     throw error;
   }
   return file;
-}
-
-export function updateOperationCheckout(
-  operation: OperationRecord,
-  checkoutIndex: number,
-  update: Partial<OperationCheckout>,
-  step: string,
-): OperationRecord {
-  const current = operation.checkouts[checkoutIndex];
-  if (current === undefined) throw new GrindError('OPERATION_INVALID', `Operation has no checkout at index ${checkoutIndex}`);
-  const checkouts = operation.checkouts.map((checkout, index) => index === checkoutIndex ? { ...checkout, ...update } : checkout);
-  return { ...operation, updatedAt: new Date().toISOString(), step, checkouts };
 }
 
 export async function deleteOperation(workspace: Workspace, operationId: string): Promise<void> {
@@ -263,16 +197,5 @@ export async function withLifecycleLocks<T>(
     return await action();
   } finally {
     for (const release of releases.reverse()) await release();
-  }
-}
-
-export async function withRepositoryLock<T>(repositoryRoot: string, operationId: string, action: () => Promise<T>): Promise<T> {
-  const common = await gitCommonDir(repositoryRoot);
-  if (common === null) throw new GrindError('GIT_ERROR', `${repositoryRoot} is not a Git repository`);
-  const release = await acquireLock(path.join(common, 'grind-repository.lock'), 'REPOSITORY_LOCKED', operationId);
-  try {
-    return await action();
-  } finally {
-    await release();
   }
 }

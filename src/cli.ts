@@ -1,12 +1,18 @@
 #!/usr/bin/env node
+import { inspectWorkspace } from './workspace-inspect.ts';
 import { contextCommand, formatContext } from './context.ts';
 import { createCommand, saveCommand } from './writes.ts';
-import { listCommand, startCommand, statusCommand } from './commands.ts';
+import { listCommand, statusCommand } from './commands.ts';
 import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
-import { formatList, formatStart, formatStatus } from './format.ts';
+import { formatList, formatNotes, formatRepositoryInitiatives, formatStatus, formatSwitch, formatWorktree } from './format.ts';
+import { addNote, listNotes, resolveNote } from './notes.ts';
+import { repositoryStatus, switchCommand, worktreeCommand } from './worktree.ts';
 import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
+import { REVIEW_USAGE, runReview } from './review-cli.ts';
+import { assertParticipantMayRun, runDiscuss } from './discuss/cli.ts';
+import { participantGuard, systemServiceEnv } from './discuss/service.ts';
 
 const DEFERRED_COMMANDS: Record<string, string> = {
   init: 'a future release',
@@ -17,18 +23,30 @@ const USAGE = `Usage: grind <command> [options]
 
 Commands:
   create <name>       create an initiative
-  start [initiative]  make an existing initiative active
+  worktree <initiative> print where its work lives, creating a worktree if needed
+  switch [initiative] bring it into this repository's canonical checkout;
+                      without an argument, list the inits tracking the repository
+  note add <file> <start> [end] <comment|->  record a review note
+  note list [initiative]  list review notes
+  note done <id>      resolve a review note
   save [initiative]   validate and persist its prepared checkpoint
   close [initiative]  mark it delivered or abandoned
   archive [initiative] move eligible closed work to read-only history
   dashboard           serve the local initiative dashboard
   list [scope]        list initiatives and their recorded state
   context [initiative] load complete read-only initiative context
-  status [initiative] inspect initiative artifacts and recorded/observed state
+  inspect [scope]    batch local initiative facts; --remote adds PR observations
+  status [initiative] inspect an initiative; without one inside a repository,
+                      show the owning init and where the repository's inits live
+  review <action>     private batch review drafts; see grind review help
+  discuss <action>    bounded multi-agent discussions; see grind discuss help
 
 Options:
   --workspace <dir>   directory containing grind-workspace.json
   --scope <folder>    workspace-relative scope for create
+  --repo <repository> repository for worktree when the init tracks several or none
+  --init <initiative> initiative for note commands
+  --force             switch even if the target worktree changed in the last few minutes
   --open              list only open initiatives
   --closed            list only closed initiatives
   --filter <text>     list only initiatives whose id, roadmap, phase, task,
@@ -38,22 +56,28 @@ Options:
   --result <text>     result location or summary for close
   --notes <value>     handled or parked for close
   --date <YYYY-MM-DD> closure date override
+  --remote            read PR facts as jcppman (inspect only; no fetch)
   --json              emit one JSON envelope on stdout
   --help              show this help
 
-Start preflights and switches tracked clean checkouts, transfers review notes,
-and reopens closed work. Close persists an outcome and archive moves eligible
-history after its retention period. Create writes templates; save commits a
-prepared checkpoint.`;
+The canonical checkout of a repository belongs to the user; agents work in
+worktrees under <workspace>/.worktrees. Switch saves uncommitted work in labelled
+stashes and restores it on the other side. Close persists an outcome and archive
+moves eligible history after its retention period. Create writes templates; save
+stamps updated_at and commits a prepared checkpoint.`;
 
 export interface ParsedArgs {
   command: string | null;
   positional: string[];
   json: boolean;
+  remote: boolean;
   help: boolean;
   open: boolean;
   closed: boolean;
+  force: boolean;
   workspace?: string;
+  repo?: string;
+  init?: string;
   scope?: string;
   filter?: string;
   message?: string;
@@ -64,23 +88,26 @@ export interface ParsedArgs {
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: null, positional: [], json: false, help: false, open: false, closed: false };
+  const parsed: ParsedArgs = { command: null, positional: [], json: false, remote: false, help: false, open: false, closed: false, force: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
     if (arg === '--json') parsed.json = true;
+    else if (arg === '--remote') parsed.remote = true;
     else if (arg === '--help' || arg === '-h') parsed.help = true;
     else if (arg === '--open') parsed.open = true;
     else if (arg === '--closed') parsed.closed = true;
+    else if (arg === '--force') parsed.force = true;
     else if (arg === '--workspace') {
       const value = argv[i + 1];
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
       parsed.workspace = value;
       i += 1;
-    } else if (['--scope', '--filter', '--message', '--outcome', '--result', '--notes', '--date'].includes(arg)) {
+    } else if (['--scope', '--filter', '--message', '--outcome', '--result', '--notes', '--date', '--repo', '--init'].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new GrindError('USAGE', `${arg} requires a value`);
-      parsed[arg.slice(2) as 'scope' | 'filter' | 'message' | 'outcome' | 'result' | 'notes' | 'date'] = value;
+      parsed[arg.slice(2) as 'scope' | 'filter' | 'message' | 'outcome' | 'result' | 'notes' | 'date' | 'repo' | 'init'] = value;
     } else if (arg.startsWith('--workspace=')) parsed.workspace = arg.slice('--workspace='.length);
+    else if (arg === '-' && parsed.command === 'note') parsed.positional.push(arg);
     else if (arg.startsWith('-')) throw new GrindError('USAGE', `Unknown option ${arg}`);
     else if (parsed.command === null) parsed.command = arg;
     else parsed.positional.push(arg);
@@ -91,6 +118,22 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export async function run(argv: readonly string[]): Promise<number> {
   let json = argv.includes('--json');
   try {
+    assertParticipantMayRun(argv, participantGuard(process.env));
+    if (argv.filter((arg) => arg !== '--json')[0] === 'discuss') {
+      const rest = argv.filter((arg) => arg !== '--json').slice(1);
+      const result = await runDiscuss(rest, systemServiceEnv(process.cwd()));
+      if (rest[0] !== 'run' && rest[0] !== 'worker') {
+        const usage = (result as { usage?: string }).usage;
+        emit(json, { ok: true, data: result }, usage ?? JSON.stringify(result, null, 2));
+      }
+      return 0;
+    }
+    if (argv.filter((arg) => arg !== '--json')[0] === 'review') {
+      const rest = argv.filter((arg) => arg !== '--json').slice(1);
+      const result = await runReview(rest, process.cwd(), (value) => process.stdout.write(`${JSON.stringify(value)}\n`));
+      if (rest[0] !== 'watch') emit(json, { ok: true, data: result }, rest[0] === undefined || rest[0] === 'help' ? REVIEW_USAGE : JSON.stringify(result, null, 2));
+      return 0;
+    }
     const args = parseArgs(argv);
     json = args.json;
     if (args.help || args.command === null) {
@@ -105,16 +148,21 @@ export async function run(argv: readonly string[]): Promise<number> {
         { command: args.command, increment },
       );
     }
-    if (!['list', 'status', 'context', 'start', 'create', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
+    if (args.command === 'start') {
+      throw new GrindError('USAGE', '"grind start" was removed; use /grind:start, or grind worktree <initiative> for the working path');
+    }
+    if (!['inspect', 'list', 'status', 'context', 'create', 'worktree', 'switch', 'note', 'save', 'close', 'archive', 'dashboard'].includes(args.command)) {
       throw new GrindError('USAGE', `Unknown command "${args.command}"`);
     }
-    if (args.positional.length > (args.command === 'dashboard' ? 0 : 1)) {
+    if (args.command !== 'note' && args.positional.length > (args.command === 'dashboard' ? 0 : 1)) {
       throw new GrindError('USAGE', `Too many arguments for "grind ${args.command}"`);
     }
-    for (const [option, command] of [['scope', 'create'], ['filter', 'list'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close']] as const) {
-      if (args[option] !== undefined && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
+    for (const [option, command] of [['scope', 'create'], ['filter', 'list'], ['message', 'save'], ['outcome', 'close'], ['result', 'close'], ['notes', 'close'], ['date', 'close'], ['repo', 'worktree'], ['init', 'note'], ['force', 'switch']] as const) {
+      if (args[option] !== undefined && args[option] !== false && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
-    if ((args.open || args.closed) && args.command !== 'list') throw new GrindError('USAGE', '--open and --closed are only supported by list');
+    if (args.command === 'worktree' && args.positional.length !== 1) throw new GrindError('USAGE', 'worktree requires an initiative');
+    if (args.remote && args.command !== 'inspect') throw new GrindError('USAGE', '--remote is only supported by inspect');
+    if ((args.open || args.closed) && !['list', 'inspect'].includes(args.command)) throw new GrindError('USAGE', '--open and --closed are only supported by list or inspect');
     if (args.open && args.closed) throw new GrindError('USAGE', '--open and --closed cannot be combined');
     if (args.command === 'create' && args.positional.length !== 1) throw new GrindError('USAGE', 'create requires an argument');
     if (args.command === 'save' && !args.message?.trim()) throw new GrindError('USAGE', 'save requires --message');
@@ -140,6 +188,21 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'create') {
       const result = await createCommand(context, identifier!, args.scope);
       emit(json, { ok: true, data: result }, `Created ${result.id} at ${result.dir}`);
+    } else if (args.command === 'worktree') {
+      const result = await worktreeCommand(context, identifier!, args.repo === undefined ? {} : { repository: args.repo });
+      emit(json, { ok: true, data: result }, result.path);
+      const details = formatWorktree(result);
+      if (!json && details !== '') process.stderr.write(`${details}\n`);
+    } else if (args.command === 'switch') {
+      if (identifier === undefined) {
+        const result = await repositoryStatus(context);
+        emit(json, { ok: true, data: result }, formatRepositoryInitiatives(result));
+      } else {
+        const result = await switchCommand(context, identifier, { force: args.force });
+        emit(json, { ok: true, data: result }, formatSwitch(result));
+      }
+    } else if (args.command === 'note') {
+      await runNote(context, args, json);
     } else if (args.command === 'save') {
       const result = await saveCommand(context, identifier, args.message!);
       emit(json, { ok: true, data: result }, result.saved ? `Saved ${result.id}: ${result.commit}` : `${result.id}: nothing to save`);
@@ -149,6 +212,9 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'archive') {
       const result = await archiveCommand(context, identifier);
       emit(json, { ok: true, data: result }, `Archived ${result.id} as ${result.archivedId}`);
+    } else if (args.command === 'inspect') {
+      const result = await inspectWorkspace(context, { ...(identifier === undefined ? {} : { scope: identifier }), ...(args.open ? { status: 'open' as const } : args.closed ? { status: 'closed' as const } : {}), remote: args.remote });
+      emit(json, { ok: true, data: result }, JSON.stringify(result, null, 2));
     } else if (args.command === 'list') {
       const result = await listCommand(context, {
         ...(identifier === undefined ? {} : { scope: identifier }),
@@ -159,12 +225,9 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'context') {
       const result = await contextCommand(context, identifier);
       emit(json, { ok: true, data: result }, formatContext(result));
-    } else if (args.command === 'status') {
+    } else {
       const result = await statusCommand(context, identifier);
       emit(json, { ok: true, data: result }, formatStatus(result));
-    } else {
-      const result = await startCommand(context, identifier);
-      emit(json, { ok: true, data: result }, formatStart(result));
     }
     return 0;
   } catch (error) {
@@ -176,6 +239,40 @@ export async function run(argv: readonly string[]): Promise<number> {
     process.stderr.write(`grind: ${failure.message}\n`);
     return failure.code === 'USAGE' ? 2 : 1;
   }
+}
+
+async function runNote(context: Parameters<typeof addNote>[0], args: ParsedArgs, json: boolean): Promise<void> {
+  const [action, ...rest] = args.positional;
+  if (action === 'add') {
+    if (rest.length !== 3 && rest.length !== 4) throw new GrindError('USAGE', 'Usage: grind note add <file> <start> [end] <comment|-> [--init <initiative>]');
+    const [file, startText] = rest;
+    const endText = rest.length === 4 ? rest[2] : startText;
+    const comment = rest.at(-1) === '-' ? await readStdin() : rest.at(-1) as string;
+    const result = await addNote(context, {
+      file: file as string,
+      start: Number(startText),
+      end: Number(endText),
+      comment,
+      ...(args.init === undefined ? {} : { initiative: args.init }),
+    });
+    emit(json, { ok: true, data: result }, `${result.id} ${result.reference} -> ${result.initiative}`);
+  } else if (action === 'list') {
+    if (rest.length > 1) throw new GrindError('USAGE', 'Usage: grind note list [initiative]');
+    const result = await listNotes(context, rest[0] ?? args.init);
+    emit(json, { ok: true, data: result }, formatNotes(result));
+  } else if (action === 'done') {
+    if (rest.length !== 1) throw new GrindError('USAGE', 'Usage: grind note done <id> [--init <initiative>]');
+    const result = await resolveNote(context, rest[0] as string, args.init);
+    emit(json, { ok: true, data: result }, `Resolved ${result.id} of ${result.initiative}`);
+  } else {
+    throw new GrindError('USAGE', 'Usage: grind note add|list|done');
+  }
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function emit(json: boolean, envelope: unknown, human: string | null): void {

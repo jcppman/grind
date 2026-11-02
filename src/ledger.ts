@@ -8,8 +8,6 @@ export interface RepositoryEntry {
   /** Workspace-relative path of the repository. */
   path: string;
   branch: string;
-  /** `clone`, or the workspace-relative path of a worktree outside the state directory. */
-  checkout: string;
   pull_request: string | null;
 }
 
@@ -20,6 +18,8 @@ export interface ClosureRecord {
 
 export interface LedgerState {
   status: 'open' | 'closed';
+  need_verify?: boolean;
+  verified?: boolean;
   updated_at: string;
   phase: string | null;
   current_task: string | null;
@@ -52,16 +52,10 @@ function hasLegacyFields(body: string): boolean {
   return LEGACY_FIELD.test(body) || LEGACY_TRACKING.test(body);
 }
 
-export interface ValidateLedgerOptions {
-  /** Workspace-relative state directory; worktrees recorded beneath it are rejected. */
-  statePathFromWorkspace?: string | null;
-}
-
 /** Validates ledger frontmatter against the shared artifact contract. */
 export function validateLedger(
   frontmatter: Frontmatter,
   path: string,
-  options: ValidateLedgerOptions = {},
 ): LedgerValidation {
   const diagnostics: Diagnostic[] = [];
   const legacyFields = hasLegacyFields(frontmatter.body);
@@ -111,6 +105,12 @@ export function validateLedger(
     fail('INVALID_STATUS', '`grind.status` must be "open" or "closed"');
   }
 
+  for (const key of ['need_verify', 'verified']) {
+    if (key in grind && typeof grind[key] !== 'boolean') {
+      fail('INVALID_VERIFICATION', `grind.${key} must be a boolean`);
+    }
+  }
+
   const updatedAt = getString(grind, 'updated_at');
   if (updatedAt === null || !isTimestampWithOffset(updatedAt)) {
     fail('INVALID_TIMESTAMP', '`grind.updated_at` must be an ISO 8601 timestamp with a UTC offset');
@@ -141,7 +141,7 @@ export function validateLedger(
     }
   }
 
-  const repositories = parseRepositories(grind['repositories'], fail, options.statePathFromWorkspace ?? null);
+  const repositories = parseRepositories(grind['repositories'], fail);
 
   if (hasErrors(diagnostics)) {
     return { state: null, legacy: legacyFields, diagnostics };
@@ -149,6 +149,8 @@ export function validateLedger(
   return {
     state: {
       status: status as 'open' | 'closed',
+      ...(typeof grind['need_verify'] === 'boolean' ? { need_verify: grind['need_verify'] } : {}),
+      ...(typeof grind['verified'] === 'boolean' ? { verified: grind['verified'] } : {}),
       updated_at: updatedAt as string,
       phase,
       current_task: currentTask,
@@ -160,10 +162,6 @@ export function validateLedger(
     legacy: false,
     diagnostics,
   };
-}
-
-function isWithin(prefix: string, candidate: string): boolean {
-  return candidate === prefix || candidate.startsWith(`${prefix}/`);
 }
 
 function parseClosure(
@@ -192,7 +190,6 @@ function parseClosure(
 function parseRepositories(
   value: unknown,
   fail: (code: string, message: string) => void,
-  statePath: string | null,
 ): RepositoryEntry[] | null {
   if (!Array.isArray(value)) {
     fail('INVALID_REPOSITORIES', '`grind.repositories` must be a list (empty when no repository is chosen)');
@@ -208,7 +205,6 @@ function parseRepositories(
     }
     const repoPath = getString(item, 'path');
     const branch = getString(item, 'branch');
-    const checkout = getString(item, 'checkout');
     const pullRequest = item['pull_request'];
     let valid = true;
     if (repoPath === null || !isContainedRelativePath(repoPath)) {
@@ -217,13 +213,6 @@ function parseRepositories(
     }
     if (branch === null || BRANCH_FORBIDDEN.test(branch)) {
       fail('INVALID_REPOSITORY_BRANCH', `${label}.branch must be an exact branch name without whitespace or control characters`);
-      valid = false;
-    }
-    if (checkout === null || (checkout !== 'clone' && !isContainedRelativePath(checkout))) {
-      fail('INVALID_REPOSITORY_CHECKOUT', `${label}.checkout must be "clone" or a workspace-relative worktree path`);
-      valid = false;
-    } else if (checkout !== 'clone' && statePath !== null && isWithin(statePath, normalizeRepositoryPath(checkout))) {
-      fail('CHECKOUT_IN_STATE', `${label}.checkout must not lie inside the state directory ${statePath}`);
       valid = false;
     }
     if (pullRequest !== undefined && pullRequest !== null && typeof pullRequest !== 'string') {
@@ -242,7 +231,6 @@ function parseRepositories(
       entries.push({
         path: repoPath as string,
         branch: branch as string,
-        checkout: checkout as string,
         pull_request: typeof pullRequest === 'string' ? pullRequest : null,
       });
     }

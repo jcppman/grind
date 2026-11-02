@@ -65,9 +65,14 @@ test('save includes selected additions, modifications, deletions; preserves unre
   await writeFile(path.join(dir, 'intent.md'), '---\ntype: Intent\ngrind:\n  root: true\n---\n\n# updated\n');
   await writeFile(path.join(ws.stateGitRoot, 'unrelated.txt'), 'preserve');
   await writeFile(path.join(ws.initiativesDir, 'two', 'extra.txt'), 'preserve too');
+  const before = Date.now() - 1000;
   const saved = await saveCommand(context, 'one', 'save one');
   assert.equal(saved.saved, true);
-  assert.deepEqual((await git(ws.stateGitRoot, 'show', '--pretty=', '--name-only', 'HEAD')).split('\n').sort(), ['grind-state/initiatives/one/intent.md', 'grind-state/initiatives/one/new.txt', 'grind-state/initiatives/one/old.txt']);
+  assert.deepEqual((await git(ws.stateGitRoot, 'show', '--pretty=', '--name-only', 'HEAD')).split('\n').sort(), ['grind-state/initiatives/one/intent.md', 'grind-state/initiatives/one/ledger.md', 'grind-state/initiatives/one/new.txt', 'grind-state/initiatives/one/old.txt']);
+  const ledger = await readFile(path.join(dir, 'ledger.md'), 'utf8');
+  const stamped = Date.parse(/updated_at: "?([^"\n]+)"?/.exec(ledger)?.[1] ?? '');
+  assert.ok(stamped >= before && stamped <= Date.now(), ledger);
+  assert.match(ledger, /^# Initiative Ledger$/m);
   assert.match(await git(ws.stateGitRoot, 'status', '--porcelain'), /unrelated/);
   assert.equal(await readFile(path.join(ws.initiativesDir, 'two', 'extra.txt'), 'utf8'), 'preserve too');
   assert.equal((await saveCommand(context, 'one', 'no-op')).saved, false);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, rename, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { listCommand, statusCommand } from './commands.ts';
+import { listCommand, initiativeStatus } from './commands.ts';
 import { contextCommand, formatContext } from './context.ts';
 import { readRoadmaps } from './roadmaps.ts';
 import { makeTempWorkspace, writeInitiative } from './test-helpers.ts';
@@ -31,7 +31,7 @@ test('roadmap IDs resolve across directories and renames, with deduplicated plan
   const moved = path.join(ws.stateDir, 'renamed.md');
   await rename(file, moved);
   assert.deepEqual((await listCommand(input)).initiatives[0]!.roadmap, { id: 'rytho', path: moved });
-  assert.deepEqual((await statusCommand(input, 'app/work')).inspection.roadmap, { id: 'rytho', path: moved });
+  assert.deepEqual((await initiativeStatus(input, 'app/work')).inspection.roadmap, { id: 'rytho', path: moved });
 });
 
 test('roadmaps on supporting documents do not create or inherit init associations', async t => {

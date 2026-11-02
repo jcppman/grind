@@ -1,11 +1,12 @@
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { readInitiative, type InitiativeRecord } from './artifacts.ts';
+import { locateBranch, standardWorktreePath, type CheckoutKind } from './checkouts.ts';
 import type { InitiativeEntry } from './discovery.ts';
-import { diagnostic, hasErrors, type Diagnostic } from './errors.ts';
-import { gitChangedFiles, gitCurrentBranch, gitToplevel } from './git.ts';
+import { diagnostic, type Diagnostic } from './errors.ts';
+import { gitChangedFiles, gitToplevel } from './git.ts';
 import type { LedgerState, RepositoryEntry } from './ledger.ts';
-import { isDirectory } from './paths.ts';
-import { readSidecar, SIDECAR_FILENAME } from './sidecar.ts';
+import { isDirectory, normalizeRepositoryPath } from './paths.ts';
 import type { Workspace } from './workspace.ts';
 
 export interface ArtifactSummary {
@@ -15,22 +16,21 @@ export interface ArtifactSummary {
 }
 
 export interface ObservedCheckout {
-  /** Absolute path where the recorded checkout should be. */
-  path: string;
-  exists: boolean;
-  /** True when the path is a Git checkout. */
+  /** Absolute path of the recorded repository's canonical checkout. */
+  canonical: string;
+  /** True when the canonical path is a Git checkout. */
   repository: boolean;
-  branch: string | null;
-  detached: boolean;
+  /** Where the recorded branch is checked out, or null when it is not checked out. */
+  path: string | null;
+  kind: CheckoutKind | null;
+  /** Where `grind worktree` places this initiative's worktree. */
+  standardPath: string;
   changedFiles: string[];
-  sidecar: { initiative: string | null; verified: boolean; pendingNotes: number } | null;
 }
 
 export interface RepositoryInspection {
   recorded: RepositoryEntry;
   observed: ObservedCheckout;
-  /** True when the checkout exists and is on the recorded branch. */
-  onRecordedBranch: boolean;
 }
 
 export interface InitiativeInspection {
@@ -82,79 +82,28 @@ async function inspectRepository(
   recorded: RepositoryEntry,
   diagnostics: Diagnostic[],
 ): Promise<RepositoryInspection> {
-  const relative = recorded.checkout === 'clone' ? recorded.path : recorded.checkout;
-  const checkoutPath = path.resolve(workspace.root, relative);
+  const canonical = path.resolve(workspace.root, recorded.path);
   const observed: ObservedCheckout = {
-    path: checkoutPath,
-    exists: await isDirectory(checkoutPath),
+    canonical,
     repository: false,
-    branch: null,
-    detached: false,
+    path: null,
+    kind: null,
+    standardPath: standardWorktreePath(workspace, normalizeRepositoryPath(recorded.path), entry.id),
     changedFiles: [],
-    sidecar: null,
   };
-  if (!observed.exists) {
-    diagnostics.push(diagnostic('error', 'CHECKOUT_MISSING', `Recorded checkout ${relative} does not exist`, checkoutPath));
-    return { recorded, observed, onRecordedBranch: false };
+  if (!(await isDirectory(canonical))) {
+    diagnostics.push(diagnostic('error', 'CHECKOUT_MISSING', `Recorded repository ${recorded.path} does not exist`, canonical));
+    return { recorded, observed };
   }
-  const toplevel = await gitToplevel(checkoutPath);
-  if (toplevel === null) {
-    diagnostics.push(diagnostic('error', 'CHECKOUT_NOT_REPOSITORY', `Recorded checkout ${relative} is not a Git checkout`, checkoutPath));
-    return { recorded, observed, onRecordedBranch: false };
+  if (await gitToplevel(canonical) === null) {
+    diagnostics.push(diagnostic('error', 'CHECKOUT_NOT_REPOSITORY', `Recorded repository ${recorded.path} is not a Git checkout`, canonical));
+    return { recorded, observed };
   }
   observed.repository = true;
-  observed.branch = await gitCurrentBranch(checkoutPath);
-  observed.detached = observed.branch === null;
-  // The sidecar is never repository content, whether or not the user's global excludes hide it.
-  observed.changedFiles = ((await gitChangedFiles(checkoutPath)) ?? []).filter(
-    (line) => porcelainPath(line) !== SIDECAR_FILENAME,
-  );
-  const sidecar = await readSidecar(toplevel);
-  if (sidecar) {
-    diagnostics.push(...sidecar.diagnostics);
-    observed.sidecar = {
-      initiative: sidecar.initiative,
-      verified: sidecar.initiative === entry.id && observed.branch === recorded.branch,
-      pendingNotes: sidecar.notes.length,
-    };
-    if (sidecar.initiative !== null && sidecar.initiative !== entry.id) {
-      diagnostics.push(diagnostic('warning', 'POINTER_MISMATCH', `Sidecar of ${relative} points at ${sidecar.initiative}`, sidecar.path));
-    }
-    if (sidecar.notes.length > 0) {
-      diagnostics.push(diagnostic('warning', 'PENDING_NOTES', `${sidecar.notes.length} review note(s) pending in ${relative}`, sidecar.path));
-    }
-  }
-  const onRecordedBranch = observed.branch === recorded.branch;
-  if (observed.detached) {
-    diagnostics.push(diagnostic('warning', 'DETACHED_HEAD', `Checkout ${relative} has a detached HEAD; recorded branch is ${recorded.branch}`, checkoutPath));
-  } else if (!onRecordedBranch) {
-    diagnostics.push(diagnostic('warning', 'BRANCH_MISMATCH', `Checkout ${relative} is on ${observed.branch}; recorded branch is ${recorded.branch}`, checkoutPath));
-  }
-  return { recorded, observed, onRecordedBranch };
-}
-
-/** Destination path of a porcelain status line, including the target of a rename or copy. */
-function porcelainPath(line: string): string {
-  const entry = line.slice(3);
-  const arrow = entry.lastIndexOf(' -> ');
-  return arrow === -1 ? entry : entry.slice(arrow + 4);
-}
-
-/** Whether the inspection shows a state that a non-switching start may enter. */
-export function startBlockers(inspection: InitiativeInspection): string[] {
-  const blockers: string[] = [];
-  if (inspection.state === null) blockers.push('ledger state is malformed or legacy');
-  if (hasErrors(inspection.diagnostics)) {
-    blockers.push(...inspection.diagnostics.filter((d) => d.severity === 'error').map((d) => d.message));
-  }
-  for (const repo of inspection.repositories) {
-    if (repo.observed.exists && repo.observed.repository && !repo.onRecordedBranch) {
-      blockers.push(
-        repo.observed.detached
-          ? `${repo.recorded.path} has a detached HEAD`
-          : `${repo.recorded.path} is on ${repo.observed.branch}, not ${repo.recorded.branch}`,
-      );
-    }
-  }
-  return blockers;
+  observed.canonical = await realpath(canonical);
+  const location = await locateBranch(workspace, observed.canonical, recorded.branch);
+  observed.path = location.path;
+  observed.kind = location.kind;
+  if (location.path !== null) observed.changedFiles = (await gitChangedFiles(location.path)) ?? [];
+  return { recorded, observed };
 }
