@@ -100,17 +100,32 @@ context snapshot: intent, ledger, required constraints, linked plans and
 specifications, repository and workspace instructions, review notes, and the
 authorized targets.
 
-- Claude runs with `--restricted --tools Read,Grep,Glob --permission-mode dontAsk`
-  and an explicit `--session-id`, then `--resume`. File reads are confined to the
-  participant's scratch directory and the readable roots. This is tool-level
-  confinement, not operating-system isolation.
-- Codex runs with `sandbox_mode="read-only"`, then `exec resume <thread>`. Writes
-  are blocked by the Codex sandbox; reads are not confined to the workspace.
+Participants investigate like a regular session. They can read any file, run
+commands such as tests, git and gh, and use the network. The engine sandbox lets
+them write only to their scratch directory (`participants/<id>/work`, also their
+working directory) and temporary directories, so the repositories, plans and
+other files under discussion stay unchanged until Grind applies an accepted
+candidate.
+
+- Claude runs with `--tools Read,Grep,Glob,Bash,WebFetch,WebSearch`
+  `--permission-mode dontAsk` and an explicit `--session-id`, then `--resume`.
+  It has no Write or Edit tool, and `--allowedTools` pre-approves every tool it
+  has. Bash runs in Claude Code's sandbox, passed with
+  `--settings`. The sandbox allows any network domain and the macOS trust service
+  that Go-based CLIs need for TLS. Claude exits if the sandbox cannot start and
+  never retries a blocked command unsandboxed. MCP servers stay off
+  (`--strict-mcp-config`). User settings, hooks and instructions load.
+- Codex runs with `sandbox_mode="workspace-write"` and
+  `sandbox_workspace_write.network_access=true`, then `exec resume <thread>`.
   User Codex configuration, plugins and hooks still load.
+
+The sandbox limits file writes only. A participant with network access and the
+user's credentials could still change external state, for example by posting a
+comment with `gh`. The turn rules forbid that, but no tool enforces it.
 
 Participants get `GRIND_DISCUSSION_PARTICIPANT` in their environment. Mutating Grind
 commands refuse to run under it. That guards against accidents; the engine
-settings above are the actual boundary.
+settings above are the actual boundary for file writes.
 
 ## Commands
 

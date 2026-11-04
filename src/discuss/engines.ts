@@ -8,8 +8,19 @@ import type { TurnKind } from './protocol.ts';
 
 const exec = promisify(execFile);
 
-/** Claude participants can read and search but have no tool that writes, runs commands or fetches. */
-export const CLAUDE_READ_ONLY_TOOLS = 'Read,Grep,Glob';
+// In dontAsk mode, sandbox auto-allow alone can still deny commands outside cwd.
+export const CLAUDE_PARTICIPANT_TOOLS = 'Read,Grep,Glob,Bash,WebFetch,WebSearch';
+
+export const CLAUDE_PARTICIPANT_SETTINGS = {
+  sandbox: {
+    enabled: true,
+    failIfUnavailable: true,
+    autoAllowBashIfSandboxed: true,
+    allowUnsandboxedCommands: false,
+    // Go-based clients such as gh use macOS trustd for TLS verification.
+    network: { allowedDomains: ['*'], allowMachLookup: ['com.apple.trustd.agent'] },
+  },
+};
 
 export interface ResolvedExecutable {
   engine: Engine;
@@ -69,27 +80,30 @@ export interface EngineInvocation {
   sessionId: string | null;
   resume: boolean;
   cwd: string;
-  readableRoots: readonly string[];
   schema: object;
   schemaFile: string;
   lastMessageFile: string;
 }
 
-/** Command-line arguments for one bounded, read-only turn; the prompt is written to stdin. */
+/** The working directory must be participant scratch space; the sandbox permits writes there. */
 export function engineArgs(invocation: EngineInvocation): string[] {
   if (invocation.engine === 'claude') {
     if (invocation.sessionId === null) throw new GrindError('DISCUSSION_STATE', 'Claude turns require an explicit session ID');
     return [
       '-p', '--model', invocation.model,
       invocation.resume ? '--resume' : '--session-id', invocation.sessionId,
-      '--restricted', '--strict-mcp-config', '--tools', CLAUDE_READ_ONLY_TOOLS, '--permission-mode', 'dontAsk',
-      ...invocation.readableRoots.flatMap((root) => ['--add-dir', root]),
+      '--strict-mcp-config', '--tools', CLAUDE_PARTICIPANT_TOOLS, '--allowedTools', CLAUDE_PARTICIPANT_TOOLS,
+      '--permission-mode', 'dontAsk', '--settings', JSON.stringify(CLAUDE_PARTICIPANT_SETTINGS),
       '--output-format', 'stream-json', '--verbose',
       '--json-schema', JSON.stringify(invocation.schema),
     ];
   }
   // `exec resume` has no --sandbox flag, so both paths set the sandbox through configuration.
-  const common = ['--skip-git-repo-check', '-m', invocation.model, '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"', '--json', '-o', invocation.lastMessageFile, '--output-schema', invocation.schemaFile];
+  const common = [
+    '--skip-git-repo-check', '-m', invocation.model,
+    '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '-c', 'approval_policy="never"',
+    '--json', '-o', invocation.lastMessageFile, '--output-schema', invocation.schemaFile,
+  ];
   if (invocation.resume) {
     if (invocation.sessionId === null) throw new GrindError('DISCUSSION_STATE', 'Resuming a Codex turn requires its thread ID');
     return ['exec', 'resume', invocation.sessionId, ...common, '-'];

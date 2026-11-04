@@ -321,7 +321,6 @@ class Runner {
       await mkdir(work, { recursive: true, mode: 0o700 });
       const contextDir = path.join(this.dir, 'context', turn.snapshotId);
       const bundle = await readFile(path.join(contextDir, 'bundle.md'), 'utf8');
-      const readableRoots = [...this.state.snapshot.manifest.readableRoots, contextDir];
       await writeFile(attemptFiles.brief(attempt), composeBrief({
         state: this.state.protocol,
         turn,
@@ -331,7 +330,8 @@ class Runner {
         writer: this.record.config.writer,
         bundle,
         bundlePath: path.join(contextDir, 'bundle.md'),
-        readableRoots,
+        sourceRoots: this.state.snapshot.manifest.readableRoots,
+        workDir: work,
       }), { mode: 0o600 });
       const assignment: Assignment = {
         discussionId: this.record.id,
@@ -346,7 +346,6 @@ class Runner {
         sessionId: session.sessionId,
         resume: session.established,
         cwd: work,
-        readableRoots,
         turnTimeoutSeconds: limits.turnTimeoutSeconds,
         claudeConfigDir: this.record.claudeConfigDir,
       };

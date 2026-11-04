@@ -128,7 +128,6 @@ export interface Assignment {
   sessionId: string | null;
   resume: boolean;
   cwd: string;
-  readableRoots: string[];
   turnTimeoutSeconds: number;
   claudeConfigDir: string | null;
 }

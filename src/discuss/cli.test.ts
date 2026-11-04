@@ -34,18 +34,25 @@ test('the CLI refuses a mutating command under the participant marker before tou
   assert.equal(JSON.parse(run.stdout).error.code, 'PARTICIPANT_FORBIDDEN');
 });
 
-test('engine arguments keep participants read-only on first launch and resume', () => {
-  const base = { model: 'm', cwd: '/w', readableRoots: ['/r1', '/r2'], schema: {}, schemaFile: '/s.json', lastMessageFile: '/l.txt' };
+test('engine arguments sandbox participant writes on first launch and resume', () => {
+  const base = { model: 'm', cwd: '/w', schema: {}, schemaFile: '/s.json', lastMessageFile: '/l.txt' };
   const claudeFirst = engineArgs({ ...base, engine: 'claude', sessionId: 'sid', resume: false });
   assert.deepEqual(claudeFirst.slice(0, 5), ['-p', '--model', 'm', '--session-id', 'sid']);
-  assert.deepEqual(claudeFirst.filter((arg, i) => claudeFirst[i - 1] === '--add-dir'), ['/r1', '/r2']);
+  assert.ok(!claudeFirst.includes('--restricted') && !claudeFirst.includes('--add-dir'), 'reads are not confined to listed roots');
+  const tools = claudeFirst[claudeFirst.indexOf('--tools') + 1]!.split(',');
+  assert.ok(tools.includes('Bash') && !tools.includes('Write') && !tools.includes('Edit'), 'Bash is the only tool that can write');
+  assert.equal(claudeFirst[claudeFirst.indexOf('--allowedTools') + 1], claudeFirst[claudeFirst.indexOf('--tools') + 1], 'dontAsk must not deny an available tool');
+  const sandbox = JSON.parse(claudeFirst[claudeFirst.indexOf('--settings') + 1]!).sandbox;
+  assert.equal(sandbox.enabled, true);
+  assert.equal(sandbox.failIfUnavailable, true);
+  assert.equal(sandbox.allowUnsandboxedCommands, false);
   const claudeResume = engineArgs({ ...base, engine: 'claude', sessionId: 'sid', resume: true });
   assert.deepEqual(claudeResume.slice(3, 5), ['--resume', 'sid']);
   assert.throws(() => engineArgs({ ...base, engine: 'claude', sessionId: null, resume: false }), /explicit session ID/);
   assert.deepEqual(engineArgs({ ...base, engine: 'codex', sessionId: null, resume: false }).slice(0, 3), ['exec', '-C', '/w']);
   const codexResume = engineArgs({ ...base, engine: 'codex', sessionId: 'thread', resume: true });
   assert.deepEqual(codexResume.slice(0, 3), ['exec', 'resume', 'thread']);
-  assert.ok(codexResume.includes('sandbox_mode="read-only"') && codexResume.at(-1) === '-');
+  assert.ok(codexResume.includes('sandbox_mode="workspace-write"') && codexResume.at(-1) === '-');
   assert.equal(isCmuxShim('/Applications/cmux.app/Contents/Resources/bin/claude'), true);
   assert.equal(isCmuxShim('/opt/x/cmux-claude-wrapper'), true);
   assert.equal(isCmuxShim('/Users/me/.local/bin/claude'), false);

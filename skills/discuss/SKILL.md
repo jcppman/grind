@@ -12,7 +12,9 @@ it without blocking the user, and reports. Resolve the plugin root from this SKI
 
 1. Turn the user's request into a brief file in a private scratch location. State
    the question, the decision needed and any constraints the user gave. Do not
-   invent constraints or a desired outcome.
+   invent constraints or a desired outcome. Name the material to examine, such as
+   checkout paths, revisions, PR URLs or files. Participants can read anything
+   and run commands, but the shared context holds only the init's records.
 2. Choose the preset the user named, else the configured default. Run
    `discuss presets --json` when unsure which presets and roles exist.
 3. Owning init: pass `--init <id>` when the user named one or this chat is working
@@ -104,4 +106,5 @@ When the wait returns, report promptly according to `reason`:
 - `discuss stop <id> --json` cancels and stops only this discussion's workers.
 
 Agreement is not permission to implement, commit, push or publish. Participants
-are read-only and must not run mutating Grind commands; the CLI refuses them.
+write only to their scratch and temporary directories, must not change external
+state and must not run mutating Grind commands; the CLI refuses them.

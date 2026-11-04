@@ -133,7 +133,6 @@ async function runTurn(assignment: Assignment, attempt: string, probe: ProcessPr
     sessionId: assignment.sessionId,
     resume: assignment.resume,
     cwd: assignment.cwd,
-    readableRoots: assignment.readableRoots,
     schema,
     schemaFile: attemptFiles.schema(attempt),
     lastMessageFile: attemptFiles.last(attempt),

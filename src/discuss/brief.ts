@@ -10,7 +10,8 @@ export interface BriefInput {
   writer: string;
   bundle: string;
   bundlePath: string;
-  readableRoots: readonly string[];
+  sourceRoots: readonly string[];
+  workDir: string;
 }
 
 function bootstrap(input: BriefInput): string {
@@ -27,13 +28,14 @@ function bootstrap(input: BriefInput): string {
     `- Authorized document targets: ${state.targets.join(', ')}${state.targets[0] === PROPOSAL_TARGET ? ' (no file will be changed; the proposal is returned to the user)' : ''}`,
     '',
     '## Rules',
-    '- Read-only: do not create, edit or delete files, and do not try to work around tool or sandbox refusals.',
-    '- Do not run Grind lifecycle commands (start, save, close, switch, create, note, worktree, discuss) or any other command that changes state.',
+    '- Investigate as a regular session would: read any file, and run commands such as tests, git, gh or small probes when they help establish evidence.',
+    `- Write only inside your working directory (${input.workDir}) or a temporary directory. Put probes, copies and command output there. Do not create, edit or delete files anywhere else, and do not try to work around tool or sandbox refusals.`,
+    '- Do not change external state: no commits, pushes, pull requests, comments, reviews or messages, and no Grind lifecycle commands (start, save, close, switch, create, note, worktree, discuss).',
     '- Do not spawn agents, message other sessions or use cmux. Peers see your answer only through Grind.',
-    '- Ground claims in the context snapshot and the readable source roots. Cite evidence as file paths with line numbers or section names.',
+    '- Ground claims in the context snapshot, the source you read and the commands you ran. Cite evidence as file paths with line numbers, section names or the exact command and its result.',
     '- Distinguish an objection (the candidate is wrong or incomplete), an evidence_request (you need specific evidence first) and a user_question (only the user can decide). Do not invent agreement or disagreement you do not hold.',
     '- Agreement is not permission to implement; never claim work was done.',
-    `- Readable source roots: ${input.readableRoots.join(', ') || 'none'}`,
+    `- Source roots from the shared context (a starting point, not a limit): ${input.sourceRoots.join(', ') || 'none'}`,
   ].join('\n');
 }
 

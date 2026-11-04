@@ -174,7 +174,7 @@ export async function buildSnapshot(options: { workspace: Workspace | null; cwd:
     `# Grind discussion context snapshot ${id}`,
     header,
     `Omissions:\n${omissions.map((item) => `- ${item}`).join('\n') || '- none'}`,
-    `Readable source roots (read-only):\n${manifest.readableRoots.map((root) => `- ${root}`).join('\n') || '- none'}`,
+    `Source roots:\n${manifest.readableRoots.map((root) => `- ${root}`).join('\n') || '- none'}`,
     '## Artifacts',
     ...sections,
   ].join('\n\n');
