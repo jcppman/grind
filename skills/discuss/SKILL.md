@@ -26,9 +26,9 @@ it without blocking the user, and reports. Resolve the plugin root from this SKI
    [--update-plan <file>]... --json`. Give a short progress update: the discussion
    ID, the owning init, the participants and how the user can follow it (the cmux
    workspace name, or headless).
-6. Wait and report as described below. Skip the wait only when the user asked to
-   run the discussion in the background: then return the ID with the `wait` and
-   `status` commands.
+6. Wait and report in this turn by default. Headless describes the presentation;
+   it does not request a background handoff. Use the follow-up options below only
+   when the user requests background work or the turn cannot continue.
 
 If the result status is `needs_presentation_choice`, cmux is not reachable from
 this process. Explain that the workers can run headless with the same protocol
@@ -42,15 +42,27 @@ whole run; do not ask again. Never choose headless for the user.
 or needs the user, or when the timeout ends. It is read-only: it never starts,
 resumes, restarts or stops the discussion, so ending it early is safe.
 
-- Run it as a background command whose completion continues this chat, such as a
-  Bash command with `run_in_background` in Claude Code. Do not run a long
-  foreground wait that keeps the user from interacting, and do not repeat
-  `status` with sleeps in model turns. Choose a timeout that covers the time left
-  until the discussion's `deadline` (or, before it is set, the preset's total time
-  limit) plus a few minutes, at most 86400.
-- If the host has no such continuation, say that you cannot be notified, and give
-  the exact `discuss wait <id> --timeout <seconds> --json` command to run or
-  resume later. Do not promise an automatic report.
+- Run one wait command and await its result using the host's process tools, as for
+  a build. In Codex, let `exec_command` yield a session ID and use `write_stdin`
+  to await that same process in bounded calls. In Claude Code, use
+  `run_in_background` and its completion notification. A tool yielding is not a
+  reason to end the turn. Do not replace the wait with repeated `status` calls or
+  sleeps in model turns.
+- Choose the CLI timeout to cover the remaining discussion deadline (or the
+  preset's total limit before a deadline is set) plus a few minutes, at most
+  86400 seconds. Keep individual host-tool waits short enough for user interaction;
+  a host-tool yield does not mean the CLI timeout expired.
+- If the user requests background work or a runtime limit forces the turn to end,
+  connect supported completion notification or automation before yielding. In
+  Codex desktop, use a thread heartbeat when available: retain the discussion ID,
+  exact CLI path and deadline; check status once per scheduled run and fetch the
+  result when final. Reuse an existing monitor. Keep unchanged state quiet, report
+  completion or required action, and stop the monitor after reporting. Monitoring
+  does not authorize restarting or resubmitting a participant.
+- A detached process or saved result alone does not wake a chat after its turn
+  ends. If no continuation is available then, save the discussion ID and give the
+  exact `discuss wait <id> --timeout <seconds> --json` resume command. Missing a
+  post-turn callback does not prevent waiting during the active turn.
 - After `discuss input` or `discuss resume` starts work again, wait again the same
   way.
 
@@ -62,8 +74,9 @@ When the wait returns, report promptly according to `reason`:
 - `attention`: report the exact issue from `discussion` and its `nextCommand`:
   the questions for `needs_input`, the choice for `needs_presentation_choice`, or
   the error for `needs_recovery` and `interrupted`. Handle it as described below.
-- `timeout`: the discussion is still running; report its phase and round, then wait
-  again or give the command. If `runnerAlive` is null, report liveness as unknown.
+- `timeout`: the discussion is still running; wait again within its remaining
+  deadline, or report a deadline/runtime limit that needs judgment. If
+  `runnerAlive` is null, report liveness as unknown.
 - `caller_cancelled`: only the wait ended; the discussion continues.
 
 ## Follow up
