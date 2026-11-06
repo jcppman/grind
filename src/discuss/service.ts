@@ -7,9 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GrindError } from '../errors.ts';
 import { findWorkspaceConfig, loadWorkspace, type Workspace } from '../workspace.ts';
+import { callerAssignment, callerIdentity } from './caller.ts';
 import { resolveTargets } from './apply.ts';
 import { closeDiscussionWorkspace, systemCmux, type CmuxAdapter } from './cmux.ts';
-import { loadLayeredConfig, resolveEffective, type Engine, type Overrides, type Presentation } from './config.ts';
+import { loadLayeredConfig, resolveEffective, parseSetup, parseSetupParticipant, type Engine, type Overrides, type Presentation, type Setup } from './config.ts';
 import { buildSnapshot, resolveOwningInit, writeSnapshot } from './context.ts';
 import { resolveExecutable, type ResolvedExecutable } from './engines.ts';
 import { cancel, createProtocol, sha256, type UserInput } from './protocol.ts';
@@ -86,6 +87,10 @@ export interface StartOptions {
   briefFile?: string;
   brief?: string;
   preset?: string;
+  setupFile?: string;
+  callerFile?: string;
+  setup?: Setup;
+  writer?: string;
   init?: string;
   noInit?: boolean;
   targets: string[];
@@ -106,7 +111,14 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
   const brief = options.brief ?? (options.briefFile === undefined ? null : await readFile(path.resolve(service.cwd, options.briefFile), 'utf8'));
   if (brief === null || brief.trim() === '') throw new GrindError('USAGE', 'discuss start requires a nonempty --brief-file');
   const { workspace, layered } = await loadConfig(service, options.workspace);
+  const jsonFile = async (file: string): Promise<unknown> => JSON.parse(await readFile(path.resolve(service.cwd, file), 'utf8'));
+  const setup = options.setup ?? (options.setupFile ? parseSetup(await jsonFile(options.setupFile), options.setupFile) : undefined);
+  const caller = options.callerFile ? parseSetupParticipant(await jsonFile(options.callerFile), options.callerFile) : undefined;
+  if (caller && caller.execution !== 'caller') throw new GrindError('USAGE', '--caller-file must define execution caller');
   const overrides: Overrides = {
+    ...(setup ? { setup } : {}),
+    ...(caller ? { caller } : {}),
+    ...(options.writer === undefined ? {} : { writer: options.writer }),
     ...(options.preset === undefined ? {} : { preset: options.preset }),
     ...(options.presentation === undefined ? {} : { presentation: options.presentation }),
     ...(options.maxRounds === undefined ? {} : { maxRounds: options.maxRounds }),
@@ -115,7 +127,7 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
   const init = await resolveOwningInit({ workspace, cwd: service.cwd, ...(options.init === undefined ? {} : { init: options.init }), ...(options.noInit ? { noInit: true } : {}) });
   const targets = await resolveTargets(service.cwd, options.targets);
   const executables: Partial<Record<Engine, ResolvedExecutable>> = {};
-  for (const engine of new Set(config.participants.map((participant) => participant.engine))) {
+  for (const engine of new Set(config.participants.flatMap((participant) => participant.execution === 'caller' ? [] : [participant.engine]))) {
     executables[engine] = await resolveExecutable(engine, config.engines[engine], service.env);
   }
   const snapshot = await buildSnapshot({ workspace, cwd: service.cwd, init, targets: targets.map((target) => target.path) });
@@ -145,6 +157,7 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
     executables,
     claudeConfigDir: service.env['CLAUDE_CONFIG_DIR'] ?? null,
     targets,
+    callerIdentity: callerIdentity(service.env),
     linkedFrom: options.linkedFrom ?? null,
     launcher: { node: process.execPath, cli: cliEntry() },
   };
@@ -194,7 +207,7 @@ function summary(record: DiscussionRecord, state: RuntimeState, dir: string, run
     round: state.protocol.round,
     maxRounds: state.protocol.maxRounds,
     outcome: state.protocol.outcome,
-    participants: record.config.participants.map((participant) => ({ id: participant.id, role: participant.role, engine: participant.engine, model: participant.model, writer: participant.id === record.config.writer })),
+    participants: record.config.participants.map((participant) => ({ id: participant.id, role: participant.role, execution: participant.execution ?? 'managed', engine: participant.engine, model: participant.model, writer: participant.id === record.config.writer })),
     targets: record.targets.map((target) => target.path),
     questions: state.protocol.questions,
     error: state.error,
@@ -240,8 +253,11 @@ async function observe(service: ServiceEnv, id: string) {
 export async function discussionStatus(service: ServiceEnv, id: string) {
   const { dir, record, state, alive, starting, inspectionError } = await observe(service, id);
   const events = await readEvents(dir);
+  const assignment = await callerAssignment(dir, record, state);
   return {
     ...summary(record, state, dir, alive),
+    callerAssignment: assignment,
+    ...(assignment && alive !== false ? { nextCommand: `grind discuss submit ${id} --response-file <response.json> --json` } : {}),
     runnerAlive: alive,
     runnerStarting: starting,
     inspectionError,
@@ -281,7 +297,7 @@ export async function waitDiscussion(service: ServiceEnv, id: string, options: W
       const changed = new Promise<void>((resolve) => { wake = resolve; });
       const status = await discussionStatus(service, id);
       const stored = await readJson<Record<string, unknown>>(paths.result(dir));
-      const finish = (reason: 'final' | 'attention' | 'timeout' | 'caller_cancelled') => ({
+      const finish = (reason: 'final' | 'attention' | 'timeout' | 'caller_cancelled' | 'caller_assignment') => ({
         id,
         reason,
         waitedSeconds: Math.round((Date.now() - started) / 1000),
@@ -294,6 +310,7 @@ export async function waitDiscussion(service: ServiceEnv, id: string, options: W
       // state agrees, the runner is gone, or the wait runs out.
       if (stored !== null && (status.resultAvailable || status.status === 'interrupted' || remaining <= 0)) return finish('final');
       if (stored === null && ATTENTION.has(status.status)) return finish('attention');
+      if (status.callerAssignment) return finish('caller_assignment');
       if (options.signal?.aborted) return finish('caller_cancelled');
       if (remaining <= 0 && status.resultAvailable) return { ...finish('final'), result: await discussionResult(service, id) };
       if (remaining <= 0) return finish('timeout');
@@ -375,7 +392,7 @@ export async function addInput(service: ServiceEnv, id: string, text: string) {
   if (isFinal(state.status)) {
     const linked = await startDiscussion(service, {
       brief: `${record.brief}\n\n## Follow-up input after discussion ${record.id}\n\n${text}`,
-      preset: record.config.preset,
+      setup: { participants: record.config.participants, writer: record.config.writer },
       targets: record.targets.map((target) => target.path),
       ...(record.init === null ? { noInit: true } : { init: record.init.id }),
       ...(record.workspace === null ? {} : { workspace: record.workspace }),

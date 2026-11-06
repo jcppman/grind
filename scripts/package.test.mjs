@@ -213,6 +213,30 @@ test('relocated discuss runs a headless discussion from the copy with fake engin
   assert.deepEqual((await discuss('result', started.id)).data, waited.result);
   assert.equal(await readFile(path.join(temp, 'plan.md'), 'utf8'), 'fake plan revision 1\n');
 
+  await writeFile(path.join(temp, 'setup.json'), JSON.stringify({
+    participants: [
+      { id: 'caller', execution: 'caller', role: 'author', instructions: 'Write the proposal.' },
+      { id: 'critic', engine: 'codex', model: 'm', role: 'critic', instructions: 'Critique.' },
+    ], writer: 'caller',
+  }));
+  const callerRun = (await discuss('start', '--brief-file', 'brief.md', '--setup-file', 'setup.json', '--no-init')).data;
+  let callerResult;
+  for (let n = 0; n < 4; n++) {
+    const turn = (await discuss('wait', callerRun.id, '--timeout', '60')).data;
+    if (turn.reason === 'final') { callerResult = turn.result; break; }
+    assert.equal(turn.reason, 'caller_assignment');
+    const a = turn.discussion.callerAssignment;
+    const response = { discussionId: a.discussionId, participant: a.participant, turnId: a.turnId, phase: a.phase, revision: a.revision, snapshotId: a.snapshotId };
+    if (a.phase === 'assess') Object.assign(response, { summary: 'Independent caller assessment', findings: [] });
+    else if (a.phase === 'draft') Object.assign(response, { summary: 'Caller proposal', documents: [{ target: 'proposal', content: 'Packaged caller proposal' }], assumptions: [], dispositions: [] });
+    else Object.assign(response, { candidateHash: a.candidateHash, decision: 'accept', objections: [] });
+    await writeFile(path.join(temp, 'response.json'), JSON.stringify(response));
+    const receipt = (await discuss('submit', callerRun.id, '--response-file', 'response.json')).data;
+    assert.equal(receipt.turnId, a.turnId);
+  }
+  assert.equal(callerResult?.agreed, true);
+  assert.equal(callerResult?.proposal.documents[0].content, 'Packaged caller proposal');
+
   await fakes.setPlan({ participants: { a: { assess: 'hang' }, b: { assess: 'hang' } } });
   const slow = (await discuss('start', '--brief-file', 'brief.md', '--no-init')).data;
   const waiter = spawn(process.execPath, [cli, 'discuss', 'wait', slow.id, '--timeout', '60', '--json'], { cwd: temp, env: fakes.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -227,4 +251,7 @@ test('relocated discuss runs a headless discussion from the copy with fake engin
   assert.equal(after.status, 'running', 'ending the wait leaves the discussion running');
   assert.equal(after.runnerAlive, true);
   await discuss('stop', slow.id);
+  const stopped = (await discuss('wait', slow.id, '--timeout', '30')).data;
+  assert.equal(stopped.reason, 'final');
+  assert.equal(stopped.result.outcome.kind, 'cancelled');
 });

@@ -4,7 +4,7 @@ description: Start, follow, answer or stop a bounded Grind discussion in which s
 ---
 
 Grind runs the discussion in a detached local runner; this chat starts it, waits for
-it without blocking the user, and reports. Resolve the plugin root from this SKILL.md and run
+it without blocking the user, executes caller assignments when participating, and reports. Resolve the plugin root from this SKILL.md and run
 `node <plugin-root>/scripts/grind.mjs discuss <action> ... --json`. Read
 [discussions](../../docs/discussions.md) for configuration, presets and limits.
 
@@ -16,7 +16,12 @@ it without blocking the user, and reports. Resolve the plugin root from this SKI
    checkout paths, revisions, PR URLs or files. Participants can read anything
    and run commands, but the shared context holds only the init's records.
 2. Choose the preset the user named, else the configured default. Run
-   `discuss presets --json` when unsure which presets and roles exist.
+   `discuss presets --json` when unsure which presets and roles exist. To participate
+   in this chat, add `--caller-file <json>` with an explicit caller role. To define
+   a complete one-run roster, use `--setup-file <json>` instead of a preset or caller
+   file. See the JSON shapes in the discussion reference. Preserve the preset's
+   writer unless the user wants another; `--writer <id>` explicitly overrides it.
+   Ordinary preset starts do not add this chat automatically.
 3. Owning init: pass `--init <id>` when the user named one or this chat is working
    on one. The CLI otherwise resolves the init from the current folder or
    checkout; pass `--no-init` only for a discussion unrelated to any init. Report
@@ -73,6 +78,17 @@ When the wait returns, report promptly according to `reason`:
 - `final`: report from `result` (described below): the outcome, `agreed` and
   `applied` as separate facts, the proposal's revision and a short summary of what
   it proposes, each participant's decision and any unresolved issues.
+- `caller_assignment`: read `discussion.callerAssignment`, including its assignment,
+  response schema and context paths. Execute only that turn in this session. During
+  assessment do not read peers' conclusions or fetch their evidence through `result`
+  or runtime files. The assignment withholds peers, but cannot erase prior chat
+  knowledge. Write a JSON response in scratch space, copying its discussion,
+  participant, turn, phase, snapshot, revision and candidate hash exactly as required.
+  Run `discuss submit <id> --response-file <file> --json`, retain the receipt, then
+  wait again. An identical retry returns the same receipt, including after ingestion;
+  do not change a submitted response. Do not send caller reasoning through `input`.
+  If the runner is interrupted, handle recovery first. A changed caller session
+  must use `--handoff` explicitly; it records attribution, not a security boundary.
 - `attention`: report the exact issue from `discussion` and its `nextCommand`:
   the questions for `needs_input`, the choice for `needs_presentation_choice`, or
   the error for `needs_recovery` and `interrupted`. Handle it as described below.
@@ -106,5 +122,9 @@ When the wait returns, report promptly according to `reason`:
 - `discuss stop <id> --json` cancels and stops only this discussion's workers.
 
 Agreement is not permission to implement, commit, push or publish. Participants
-write only to their scratch and temporary directories, must not change external
-state and must not run mutating Grind commands; the CLI refuses them.
+write only to their scratch and temporary directories and must not change external
+state. Managed participants cannot run mutating Grind commands; the CLI refuses
+them. The caller may coordinate through status, wait and submit. Its existing session
+does not inherit the managed worker sandbox: investigation-only rules still apply
+while executing assignments. Membership and roles are fixed for the run; the whole
+caller chat is never shared automatically.

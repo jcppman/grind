@@ -6,7 +6,7 @@ export interface BriefInput {
   turn: Turn;
   brief: string;
   init: InitBinding | null;
-  participant: { id: string; role: string; instructions: string; engine: string };
+  participant: { id: string; role: string; instructions: string; engine?: string; execution?: string };
   writer: string;
   bundle: string;
   bundlePath: string;
@@ -30,7 +30,8 @@ function bootstrap(input: BriefInput): string {
     '## Rules',
     '- Investigate as a regular session would: read any file, and run commands such as tests, git, gh or small probes when they help establish evidence.',
     `- Write only inside your working directory (${input.workDir}) or a temporary directory. Put probes, copies and command output there. Do not create, edit or delete files anywhere else, and do not try to work around tool or sandbox refusals.`,
-    '- Do not change external state: no commits, pushes, pull requests, comments, reviews or messages, and no Grind lifecycle commands (start, save, close, switch, create, note, worktree, discuss).',
+    ...(participant.execution === 'caller' ? ['- You are the caller in your existing session. These investigation-only rules are instructions, not an inherited worker sandbox. You may use discuss status, wait and submit to coordinate this turn. Do not inspect peer assessments before submitting your own.'] : []),
+    '- Do not change external state: no commits, pushes, pull requests, comments, reviews or messages, and no Grind lifecycle commands (start, save, close, switch, create, note, worktree, or discussion mutations other than the caller coordination allowed above).',
     '- Do not spawn agents, message other sessions or use cmux. Peers see your answer only through Grind.',
     '- Ground claims in the context snapshot, the source you read and the commands you ran. Cite evidence as file paths with line numbers, section names or the exact command and its result.',
     '- Distinguish an objection (the candidate is wrong or incomplete), an evidence_request (you need specific evidence first) and a user_question (only the user can decide). Do not invent agreement or disagreement you do not hold.',

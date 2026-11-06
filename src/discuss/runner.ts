@@ -4,6 +4,7 @@ import { openSync, closeSync, watch } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { applyCandidate } from './apply.ts';
+import { callerDeadline, type CallerSubmission } from './caller.ts';
 import { composeBrief } from './brief.ts';
 import { closeDiscussionWorkspace, type CmuxAdapter } from './cmux.ts';
 import { compareSnapshots, writeSnapshot, type ContextSnapshot } from './context.ts';
@@ -164,6 +165,7 @@ class Runner {
 
   async reconcile(): Promise<void> {
     for (const [turnId, turn] of Object.entries(this.state.turns)) {
+      if (turn.engine === null) continue;
       if (turn.status === 'uncertain') {
         if (this.state.resubmitUncertain) {
           turn.status = 'retry';
@@ -201,6 +203,7 @@ class Runner {
     }
     const stdout = await readFile(attemptFiles.stdout(attempt), 'utf8').catch(() => '');
     const last = await readFile(attemptFiles.last(attempt), 'utf8').catch(() => null);
+    if (turn.engine === null) return;
     const parsed = parseEngineOutput(turn.engine, stdout, last);
     if (parsed.error === null && parsed.output !== null) {
       const outcome: TurnOutcome = { kind: 'response', response: parsed.output, sessionId: parsed.sessionId ?? turn.sessionId, model: parsed.model, exitCode: null, finishedAt: new Date().toISOString() };
@@ -216,6 +219,17 @@ class Runner {
     for (const [turnId, turn] of Object.entries(this.state.turns)) {
       if (turn.status !== 'assigned') continue;
       const attempt = paths.attempt(this.dir, turnId, turn.attempt);
+      if (turn.engine === null) {
+        const submission = await readJson<CallerSubmission>(paths.submission(this.dir, turnId));
+        if (submission) {
+          const verdict = recordResponse(this.state.protocol, turnId, submission.response);
+          turn.status = 'finished';
+          await this.event({ type: 'caller_response', turnId, receipt: submission.receipt, ...verdict });
+        } else if (this.deps.now().getTime() >= callerDeadline(this.record, this.state, turnId)) {
+          finish(this.state.protocol, { kind: 'unresolved', reason: `Caller ${turn.participant} exceeded its waiting deadline` });
+        }
+        continue;
+      }
       const outcome = await readJson<TurnOutcome>(attemptFiles.outcome(attempt));
       if (outcome !== null) {
         turn.status = 'finished';
@@ -294,12 +308,17 @@ class Runner {
 
   async assign(): Promise<void> {
     const { limits, participants } = this.record.config;
-    let inFlight = Object.values(this.state.turns).filter((turn) => turn.status === 'assigned').length;
+    let inFlight = Object.values(this.state.turns).filter((turn) => turn.status === 'assigned' && turn.engine !== null).length;
     for (const turn of pendingTurns(this.state.protocol)) {
       const runtime = this.state.turns[turn.id];
       if (runtime && runtime.status !== 'retry') continue;
-      if (inFlight >= limits.maxConcurrent) break;
       const participant = participants.find((item) => item.id === turn.participant)!;
+      if (participant.execution === 'caller') {
+        this.state.turns[turn.id] = { attempt: 1, generation: this.generation, participant: participant.id, engine: null, sessionId: null, resume: false, status: 'assigned', assignedAt: this.deps.now().toISOString() };
+        await mkdir(path.join(paths.participant(this.dir, participant.id), 'work'), { recursive: true, mode: 0o700 });
+        continue;
+      }
+      if (inFlight >= limits.maxConcurrent) continue;
       const session = this.state.sessions[participant.id] ?? { sessionId: null, established: false, reportedModel: null };
       if (participant.engine === 'claude' && !session.established) session.sessionId = randomUUID();
       this.state.sessions[participant.id] = session;
@@ -356,7 +375,7 @@ class Runner {
   }
 
   async ensureWorkers(): Promise<void> {
-    const needed = [...new Set(Object.values(this.state.turns).filter((turn) => turn.status === 'assigned').map((turn) => turn.participant))];
+    const needed = [...new Set(Object.values(this.state.turns).filter((turn) => turn.status === 'assigned' && turn.engine !== null).map((turn) => turn.participant))];
     for (const participant of needed) {
       const worker = this.state.workers[participant];
       if (worker && worker.generation === this.generation) {
@@ -478,6 +497,7 @@ export function buildResult(record: DiscussionRecord, state: RuntimeState) {
     participants: record.config.participants.map((participant) => ({
       id: participant.id,
       role: participant.role,
+      execution: participant.execution ?? 'managed',
       engine: participant.engine,
       model: participant.model,
       reportedModel: state.sessions[participant.id]?.reportedModel ?? null,

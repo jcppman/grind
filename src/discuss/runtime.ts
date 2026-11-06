@@ -27,6 +27,7 @@ export interface DiscussionRecord {
   executables: Partial<Record<Engine, ResolvedExecutable>>;
   /** Provider configuration directory in effect when the discussion started; credentials are never recorded. */
   claudeConfigDir: string | null;
+  callerIdentity?: string | null;
   targets: AuthorizedTarget[];
   linkedFrom: string | null;
   launcher: { node: string; cli: string };
@@ -36,7 +37,7 @@ export interface TurnRuntime {
   attempt: number;
   generation: number;
   participant: string;
-  engine: Engine;
+  engine: Engine | null;
   sessionId: string | null;
   resume: boolean;
   /** `retry` means nothing ran and the turn may be assigned again; `uncertain` needs explicit recovery. */
@@ -94,6 +95,7 @@ export const paths = {
   state: (dir: string) => path.join(dir, 'state.json'),
   result: (dir: string) => path.join(dir, 'result.json'),
   stop: (dir: string) => path.join(dir, 'stop.json'),
+  submission: (dir: string, turnId: string) => path.join(dir, 'submissions', `${turnId}.json`),
   inputs: (dir: string) => path.join(dir, 'inputs'),
   application: (dir: string) => path.join(dir, 'application.json'),
   runnerLog: (dir: string) => path.join(dir, 'runner.log'),
