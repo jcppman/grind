@@ -1,7 +1,8 @@
 # Discussions
 
-`grind discuss` runs a bounded discussion between two to eight configured CLI
-participants. Version 1 supports macOS only. On other hosts, `start` and `resume`
+`grind discuss` runs a bounded discussion between two to eight participants,
+using a preset or an ad hoc roster. Participants are managed CLI agents or an
+optional calling session. Version 1 supports macOS only. On other hosts, `start` and `resume`
 fail with `UNSUPPORTED_PLATFORM` before they launch a process or write state.
 
 In Claude Code and Codex the skill is `/grind:discuss`. A bare `/discuss` alias
@@ -17,7 +18,7 @@ is not provided.
 4. Objections go back to the writer for a new revision, which is ratified again.
    `maxRounds` counts these ratification cycles.
 5. Unanimous acceptance of one revision is `agreed`. Exhausted rounds or the total
-   time limit is `unresolved`. A failed, timed-out or malformed participant is
+   time limit is `unresolved`. A failed, timed-out or malformed managed participant is
    `failed`; Grind never resends a turn by itself.
 
 A user question with rounds left pauses the discussion as `needs_input`. New input
@@ -79,7 +80,7 @@ that was in effect at start; it never records credentials.
 ## Presentation
 
 With `cmux`, the runner opens one workspace named after the init and discussion,
-with one terminal per participant, without taking focus. Each terminal runs the
+with one terminal per managed participant, without taking focus. Each terminal runs the
 Grind worker, which shows that participant's turns. Grind drives every turn; typing
 into a worker terminal does nothing for the protocol. Closing a terminal interrupts
 that worker and leaves the discussion `needs_recovery`. When the discussion reaches
@@ -101,7 +102,7 @@ specifications, repository and workspace instructions, review notes, and the
 authorized targets.
 
 Participants investigate like a regular session. They can read any file, run
-commands such as tests, git and gh, and use the network. The engine sandbox lets
+commands such as tests, git and gh, and use the network. For managed participants, the engine sandbox lets
 them write only to their scratch directory (`participants/<id>/work`, also their
 working directory) and temporary directories, so the repositories, plans and
 other files under discussion stay unchanged until Grind applies an accepted
@@ -123,7 +124,7 @@ The sandbox limits file writes only. A participant with network access and the
 user's credentials could still change external state, for example by posting a
 comment with `gh`. The turn rules forbid that, but no tool enforces it.
 
-Participants get `GRIND_DISCUSSION_PARTICIPANT` in their environment. Mutating Grind
+Managed participants get `GRIND_DISCUSSION_PARTICIPANT` in their environment. Mutating Grind
 commands refuse to run under it. That guards against accidents; the engine
 settings above are the actual boundary for file writes.
 
@@ -132,6 +133,7 @@ settings above are the actual boundary for file writes.
 | Command | Purpose |
 |---|---|
 | `start --brief-file <f> [--preset <p>] [--init <id> \| --no-init] [--update-plan <f>]... [--presentation cmux\|headless] [--max-rounds <n>]` | create a discussion and start its detached runner |
+| `submit <id> --response-file <f> [--handoff]` | submit a caller response and return its durable receipt |
 | `status <id>` | phase, round, turns, recent events and the next command |
 | `wait <id> [--timeout <seconds>]` | wait until the discussion finishes or needs the caller (default 600 seconds) |
 | `result <id>` | outcome, proposal, decisions, issues, evidence, application |
@@ -145,6 +147,7 @@ settings above are the actual boundary for file writes.
 `wait` is read-only and bounded. It returns `reason`:
 
 - `final` with `result` once the stored result and the recorded state agree;
+- `caller_assignment` with a pending caller turn, its instructions and response schema;
 - `attention` with `nextCommand` for `needs_input`, `needs_presentation_choice`,
   `needs_recovery`, or `interrupted` after a confirmed runner exit;
 - `timeout` when `--timeout` ends first, or `caller_cancelled` on `SIGINT` or
@@ -189,3 +192,66 @@ The total time limit is fixed at the first launch and is not extended by recover
 - A provider may process a turn that Grind records as uncertain; Grind does not
   claim exactly-once execution.
 - Participants cannot be replaced in a running discussion; start a linked one.
+
+## Participate from the calling session
+
+A participant's `execution` is `managed` by default. A caller uses `"execution":
+"caller"` and has no engine or model. There can be 2–8 participants, including at
+most one caller. Either type may be writer. Every participant must explicitly
+ratify the same candidate hash, including the writer.
+
+For a complete roster used only for this run, write a setup file:
+
+```json
+{
+  "participants": [
+    { "id": "author", "execution": "caller", "role": "author", "instructions": "Assess the brief and write a complete proposal." },
+    { "id": "critic", "engine": "codex", "model": "gpt-6.1", "role": "critic", "instructions": "Investigate failure cases and review the proposal." }
+  ],
+  "writer": "author"
+}
+```
+
+Start with `discuss start --brief-file brief.md --setup-file setup.json` and normal
+init, target, presentation and round options. The saved configuration is unchanged.
+Do not combine `--setup-file` with `--preset` or `--caller-file`.
+
+To join a preset, put only the caller participant object above in `caller.json` and
+use `--preset <name> --caller-file caller.json`. The preset writer remains selected;
+`--writer author` explicitly changes it. Presets can also define a caller using a
+configured role. Grind snapshots the resolved roster and instructions at start.
+Follow-up discussions started by `input` retain that roster.
+
+`discuss wait <id>` returns reason `caller_assignment` when a caller turn is ready.
+Both `wait` and `status` expose `callerAssignment`: discussion/participant/turn IDs,
+phase, snapshot ID, candidate revision/hash, assignment text, JSON response schema,
+and supporting context paths. During assessment the assignment includes no peer
+assessments. Existing knowledge in the caller's chat cannot be erased.
+
+Perform the assigned investigation and write the required JSON response to scratch
+space. Use `discuss submit <id> --response-file response.json`, then wait again.
+Caller reasoning belongs in `submit`; `input` remains the user's own input. The
+response must echo the exact envelope shown by the assignment. Ratification must
+include the exact candidate hash. Invalid or stale responses do not change state.
+
+The receipt is persisted before acknowledgment. An identical JSON response retry
+returns the original receipt even after ingestion or completion; a conflicting
+response fails. The runner alone writes protocol state and ingests the submission
+once. If the runner stops, resume it normally: pending caller turns and durable
+responses survive, and no caller replacement worker is launched. Caller waiting
+uses no managed concurrency slot, worker, engine session or cmux pane. The original
+total deadline still applies across recovery, including time waiting for the caller.
+A caller turn also retains its original `turnTimeoutSeconds` deadline after assignment;
+expiry ends unresolved. Late submissions are rejected.
+
+Grind records the caller's Codex thread or Claude session ID when available. If the
+submitting identity differs, `--handoff` explicitly attributes that submission to
+the new session and records the original owner. Each submission from a different
+session requires that flag. Identity metadata is not a security boundary against
+another process running as the same local account.
+
+Caller assignments are investigation-only. The caller's existing session does not
+inherit a managed worker's sandbox. It may coordinate with `status`, `wait` and
+`submit`, but must follow the assignment's restrictions on other mutations. Agreement
+grants no authority to implement, commit, push or publish. Document application
+still requires explicit targets, exact-hash unanimity, and unchanged target files.

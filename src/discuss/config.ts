@@ -26,11 +26,27 @@ export interface Role {
   instructions: string;
 }
 
-export interface Participant {
+export interface ManagedParticipant {
+  execution?: 'managed';
   id: string;
   engine: Engine;
   model: string;
   role: string;
+}
+
+export interface CallerParticipant {
+  id: string;
+  execution: 'caller';
+  role: string;
+  engine?: never;
+  model?: never;
+}
+
+export type Participant = ManagedParticipant | CallerParticipant;
+export type ResolvedParticipant = Participant & { instructions: string };
+export interface Setup {
+  participants: ResolvedParticipant[];
+  writer: string;
 }
 
 export interface Preset {
@@ -64,11 +80,14 @@ export interface LayeredConfig {
 
 export interface Overrides extends Partial<Defaults> {
   preset?: string;
+  setup?: Setup;
+  caller?: ResolvedParticipant;
+  writer?: string;
 }
 
 export interface EffectiveConfig {
   preset: string;
-  participants: Array<Participant & { instructions: string }>;
+  participants: ResolvedParticipant[];
   writer: string;
   presentation: Presentation;
   limits: Limits;
@@ -126,11 +145,17 @@ function parseDefaults(value: unknown, where: string): Partial<Defaults> {
 
 function parseParticipant(value: unknown, where: string): Participant {
   if (!isRecord(value)) invalid(where, 'must be an object');
-  onlyKeys(value, ['id', 'engine', 'model', 'role'], where);
+  onlyKeys(value, ['id', 'engine', 'model', 'role', 'execution'], where);
   const id = nonEmptyString(value['id'], `${where}.id`);
   if (!ID.test(id)) invalid(`${where}.id`, 'must use letters, digits, - or _');
+  const role = nonEmptyString(value['role'], `${where}.role`);
+  if (value['execution'] === 'caller') {
+    if (value['engine'] !== undefined || value['model'] !== undefined) invalid(where, 'caller must not specify engine or model');
+    return { id, role, execution: 'caller' };
+  }
+  if (value['execution'] !== undefined && value['execution'] !== 'managed') invalid(`${where}.execution`, 'must be managed or caller');
   if (!(ENGINES as readonly unknown[]).includes(value['engine'])) invalid(`${where}.engine`, `must be one of ${ENGINES.join(', ')}`);
-  return { id, engine: value['engine'] as Engine, model: nonEmptyString(value['model'], `${where}.model`), role: nonEmptyString(value['role'], `${where}.role`) };
+  return { id, engine: value['engine'] as Engine, model: nonEmptyString(value['model'], `${where}.model`), role };
 }
 
 function parsePreset(value: unknown, where: string): Preset {
@@ -233,12 +258,12 @@ export async function loadLayeredConfig(options: { workspaceConfigPath: string |
   return { sources, merged, origins };
 }
 
-/** Selects a preset and resolves defaults and overrides into a validated effective configuration. */
 export function resolveEffective(layered: LayeredConfig, overrides: Overrides = {}): EffectiveConfig {
   const defaults = { ...layered.merged.defaults, ...Object.fromEntries(Object.entries(overrides).filter(([, value]) => value !== undefined)) } as Partial<Defaults>;
-  const presetName = defaults.preset;
+  if (overrides.setup && (overrides.preset || overrides.caller)) invalid('setup', 'cannot combine --setup-file with --preset or --caller-file');
+  const presetName = overrides.setup ? 'ad-hoc' : defaults.preset;
   if (!presetName) throw new GrindError('DISCUSSION_CONFIG_INVALID', 'No preset selected; pass --preset or set defaults.preset', { presets: Object.keys(layered.merged.presets) });
-  const preset = layered.merged.presets[presetName];
+  const preset = overrides.setup ?? layered.merged.presets[presetName];
   if (!preset) throw new GrindError('DISCUSSION_CONFIG_INVALID', `Unknown preset "${presetName}"`, { presets: Object.keys(layered.merged.presets) });
   const where = layered.origins.presets[presetName] ?? `presets.${presetName}`;
   const limits: Limits = {
@@ -247,27 +272,44 @@ export function resolveEffective(layered: LayeredConfig, overrides: Overrides = 
     turnTimeoutSeconds: positiveInteger(defaults.turnTimeoutSeconds, 'defaults.turnTimeoutSeconds'),
     totalTimeoutSeconds: positiveInteger(defaults.totalTimeoutSeconds, 'defaults.totalTimeoutSeconds'),
   };
-  if (preset.participants.length < 2) invalid(`${where}.participants`, 'requires at least two participants');
-  if (preset.participants.length > MAX_PARTICIPANTS) invalid(`${where}.participants`, `allows at most ${MAX_PARTICIPANTS} participants`);
+  const roster = [...preset.participants, ...(overrides.caller ? [overrides.caller] : [])];
+  if (roster.filter((p) => p.execution === 'caller').length > 1) invalid(where, 'allows at most one caller');
+  if (roster.length < 2) invalid(`${where}.participants`, 'requires at least two participants');
+  if (roster.length > MAX_PARTICIPANTS) invalid(`${where}.participants`, `allows at most ${MAX_PARTICIPANTS} participants`);
   const ids = new Set<string>();
-  const participants = preset.participants.map((participant, index) => {
+  const participants = roster.map((participant, index) => {
     if (ids.has(participant.id)) invalid(`${where}.participants[${index}].id`, `duplicate participant "${participant.id}"`);
     ids.add(participant.id);
+    if ('instructions' in participant) return participant as ResolvedParticipant;
     const role = layered.merged.roles[participant.role];
     if (!role) invalid(`${where}.participants[${index}].role`, `undefined role "${participant.role}"`);
     return { ...participant, instructions: role.instructions };
   });
-  if (!ids.has(preset.writer)) invalid(`${where}.writer`, `"${preset.writer}" is not a participant`);
+  const writer = overrides.writer ?? preset.writer;
+  if (!ids.has(writer)) invalid(`${where}.writer`, `"${writer}" is not a participant`);
   // A shared default may name more workers than a small preset has; never run more than one per participant.
   limits.maxConcurrent = Math.min(limits.maxConcurrent, participants.length);
   if (limits.turnTimeoutSeconds > limits.totalTimeoutSeconds) invalid('defaults.turnTimeoutSeconds', 'must not exceed totalTimeoutSeconds');
   return {
     preset: presetName,
     participants,
-    writer: preset.writer,
+    writer,
     presentation: defaults.presentation ?? 'cmux',
     limits,
     engines: layered.merged.engines,
     sources: layered.sources,
   };
+}
+
+export function parseSetupParticipant(value: unknown, where: string): ResolvedParticipant {
+  if (!isRecord(value)) invalid(where, 'must be an object');
+  const { instructions, ...participant } = value;
+  return { ...parseParticipant(participant, where), instructions: nonEmptyString(instructions, `${where}.instructions`) };
+}
+
+export function parseSetup(value: unknown, where: string): Setup {
+  if (!isRecord(value)) invalid(where, 'must be an object');
+  onlyKeys(value, ['participants', 'writer'], where);
+  if (!Array.isArray(value['participants'])) invalid(where, 'participants must be an array');
+  return { participants: value['participants'].map((p, i) => parseSetupParticipant(p, `${where}.participants[${i}]`)), writer: nonEmptyString(value['writer'], `${where}.writer`) };
 }

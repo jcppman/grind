@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { GrindError } from '../errors.ts';
 import { PRESENTATIONS, type Presentation } from './config.ts';
+import { submitCaller } from './caller.ts';
 import { runWorker } from './worker.ts';
 import { systemCmux } from './cmux.ts';
 import {
@@ -18,8 +19,10 @@ Bounded discussions between configured Codex and Claude CLI participants (macOS)
 Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions.
 
   start --brief-file <file> [--preset <name>] [--init <id> | --no-init]
+        [--setup-file <file> | --caller-file <file>] [--writer <id>]
         [--update-plan <file>]... [--presentation cmux|headless] [--max-rounds <n>]
                                      start a detached discussion and print its ID
+  submit <id> --response-file <file> [--handoff]  submit a caller turn
   status <id>                        progress, phase and what to do next (read-only)
   wait <id> [--timeout <seconds>]    wait until it finishes or needs you, at most --timeout
                                      (default ${DEFAULT_WAIT_SECONDS}); read-only, and stopping
@@ -37,8 +40,8 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
 every participant accepted the same candidate and each file still matches its
 starting content. It does not authorize implementation, commits or publication.`;
 
-const VALUE_OPTIONS = ['--brief-file', '--preset', '--init', '--update-plan', '--presentation', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token', '--timeout'] as const;
-const FLAGS = ['--json', '--no-init', '--resubmit-uncertain', '--help', '-h'] as const;
+const VALUE_OPTIONS = ['--setup-file', '--caller-file', '--writer', '--response-file', '--brief-file', '--preset', '--init', '--update-plan', '--presentation', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token', '--timeout'] as const;
+const FLAGS = ['--json', '--no-init', '--resubmit-uncertain', '--handoff', '--help', '-h'] as const;
 type ValueOption = (typeof VALUE_OPTIONS)[number];
 
 export interface DiscussArgs {
@@ -95,7 +98,7 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
   if (args.flags.has('--help') || args.flags.has('-h') || args.action === null || args.action === 'help') return { usage: DISCUSS_USAGE };
   switch (args.action) {
     case 'start': {
-      only(args, ['--brief-file', '--preset', '--init', '--no-init', '--update-plan', '--presentation', '--max-rounds', '--workspace']);
+      only(args, ['--setup-file', '--caller-file', '--writer', '--brief-file', '--preset', '--init', '--no-init', '--update-plan', '--presentation', '--max-rounds', '--workspace']);
       if (args.positional.length > 0) throw new GrindError('USAGE', 'discuss start takes no positional arguments; put the brief in --brief-file');
       const maxRounds = integer(args.values['--max-rounds'], '--max-rounds');
       const chosen = presentation(args.values['--presentation']);
@@ -104,6 +107,9 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
         ...(args.values['--preset'] === undefined ? {} : { preset: args.values['--preset'] }),
         ...(args.values['--init'] === undefined ? {} : { init: args.values['--init'] }),
         ...(args.flags.has('--no-init') ? { noInit: true } : {}),
+        ...(args.values['--setup-file'] === undefined ? {} : { setupFile: args.values['--setup-file'] }),
+        ...(args.values['--caller-file'] === undefined ? {} : { callerFile: args.values['--caller-file'] }),
+        ...(args.values['--writer'] === undefined ? {} : { writer: args.values['--writer'] }),
         targets: args.updatePlan,
         ...(chosen === undefined ? {} : { presentation: chosen }),
         ...(maxRounds === undefined ? {} : { maxRounds }),
@@ -131,6 +137,12 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
     case 'result':
       only(args, []);
       return discussionResult(service, id(args));
+    case 'submit': {
+      only(args, ['--response-file', '--handoff']);
+      const file = args.values['--response-file'];
+      if (file === undefined) throw new GrindError('USAGE', 'discuss submit requires --response-file');
+      return submitCaller(service, id(args), JSON.parse(await readFile(path.resolve(service.cwd, file), 'utf8')), { handoff: args.flags.has('--handoff') });
+    }
     case 'input': {
       only(args, ['--brief-file']);
       const file = args.values['--brief-file'];

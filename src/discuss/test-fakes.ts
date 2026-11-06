@@ -140,7 +140,7 @@ export async function makeFakes(options: { cmuxMode?: 'ok' | 'denied' } = {}): P
     async cmuxCalls() {
       return (await readFile(cmuxLog, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line) as { args: string[]; surface: string | null });
     },
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
   };
   delete fakes.env['CLAUDE_CONFIG_DIR'];
   delete fakes.env['GRIND_DISCUSSION_PARTICIPANT'];
