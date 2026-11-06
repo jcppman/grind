@@ -18,16 +18,30 @@ let lastRefresh = 0
 let knownComments = new Set<string>()
 
 async function grind($: EngineInterface, args: string[], stdin?: string): Promise<CliResult> {
-  const result = await $.process.run(['node', `${$.plugin.root}/scripts/grind.mjs`, ...args, '--json'], {
-    ...(session === null ? {} : { cwd: session.cwd }),
-    ...(stdin === undefined ? {} : { stdin }),
-  })
+  let result
+  try {
+    result = await $.process.run(['node', `${$.plugin.root}/scripts/grind.mjs`, ...args, '--json'], {
+      ...(session === null ? {} : { cwd: session.cwd }),
+      ...(stdin === undefined ? {} : { stdin }),
+    })
+  } catch (error) {
+    return { ok: false, code: 'CLI_FAILED', message: `grind could not run: ${String(error)}`.slice(0, 300) }
+  }
   try {
     const envelope = JSON.parse(result.stdout)
     return envelope.ok ? { ok: true, data: envelope.data } : { ok: false, code: envelope.error.code, message: envelope.error.message }
   } catch {
     return { ok: false, code: 'CLI_FAILED', message: (result.stderr || result.stdout || `grind exited ${result.exitCode}`).trim().slice(0, 300) }
   }
+}
+
+// The session's directory can change after it starts, as when a pre-warmed session moves into its project.
+async function hasMoved($: EngineInterface): Promise<boolean> {
+  return session !== null && session.cwd !== await $.session.cwd()
+}
+
+async function followSession($: EngineInterface): Promise<void> {
+  if (await hasMoved($)) await startSession($)
 }
 
 async function say($: EngineInterface, text: string): Promise<void> {
@@ -229,7 +243,8 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined && Date.now() - lastRefresh > 3000) void refreshCurrent($)
+    if (e.agentId === undefined && await hasMoved($)) void startSession($)
+    else if (e.agentId === undefined && Date.now() - lastRefresh > 3000) void refreshCurrent($)
     return next(e)
   })
 
@@ -247,6 +262,7 @@ export const register: Register = on => {
   on('command.run', { command: 'grind-init' }, async ($, e) => {
     const target = e.args.trim()
     if (target === '') return { text: 'Usage: /grind-init <init|none>' }
+    await followSession($)
     const result = await bind($, target === 'none' ? null : target, 'user')
     return { text: result.ok ? (target === 'none' ? 'This session has no init set.' : `This session works on ${result.data.binding.initiative}.`) : result.message }
   })
@@ -254,6 +270,7 @@ export const register: Register = on => {
   on('tool.call', { tool: `mcp__grind__${SET_INIT}` }, async ($, e) => {
     const target = (e as { init?: unknown }).init
     if (target !== null && (typeof target !== 'string' || target.trim() === '')) return { deny: 'init must be an init id or null' }
+    if (e.agentId === undefined) await followSession($)
     const result = await bind($, target === null ? null : target.trim(), 'agent')
     if (!result.ok) return { deny: result.message }
     return { result: target === null ? 'No init is set for this session.' : `This session works on ${result.data.binding.initiative}.` }

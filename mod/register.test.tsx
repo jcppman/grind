@@ -4,16 +4,24 @@ const OK = (data: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify({ 
 
 const DEMO = { state: 'resolved', initiative: 'demo', setBy: 'agent', currentTask: 'Review' }
 
-function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean }) => void = () => undefined, currentInit: () => unknown = () => DEMO): Array<{ argv: readonly string[]; stdin?: string }> {
-  const runs: Array<{ argv: readonly string[]; stdin?: string }> = []
-  on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
-    runs.push({ argv: e.argv, ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }) })
+type Run = { argv: readonly string[]; stdin?: string; cwd?: string }
+type Host = { cwd?: () => string; cannotStart?: (run: Run) => boolean; watched?: Array<readonly string[]> }
+
+function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean }) => void = () => undefined, currentInit: () => unknown = () => DEMO, host: Host = {}): Run[] {
+  const runs: Run[] = []
+  on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string; cwd?: string } }) => {
+    const run = { argv: e.argv, ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }), ...(e.init?.cwd === undefined ? {} : { cwd: e.init.cwd }) }
+    runs.push(run)
+    if (host.cannotStart?.(run)) throw new Error('spawn node ENOENT')
     if (e.argv.includes('current')) return OK(currentInit())
     if (e.argv.includes('bind')) return OK({ binding: e.argv.includes('--none') ? null : { initiative: 'demo', workspace: '/w', setBy: 'agent' } })
     if (e.argv.includes('submit')) return { value: { exitCode: 1, stdout: JSON.stringify({ ok: false, error: { code: 'REVIEW_STALE', message: 'stale' } }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     return OK({})
   })
-  on('process.spawn', async function* () { return { value: { code: 0, signal: null } } })
+  on('process.spawn', async function* (_: unknown, e: { argv: readonly string[] }) {
+    host.watched?.push(e.argv)
+    return { value: { code: 0, signal: null } }
+  })
   on('command.register', (_: unknown, e: { name: string }) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('tool.register', (_: unknown, e: { name: string; isDeferred?: boolean }) => {
@@ -22,7 +30,7 @@ function recordRuns(on: any, onTool: (spec: { name: string; isDeferred?: boolean
   })
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'sess-1' }))
-  on('session.cwd', () => ({ value: '/w' }))
+  on('session.cwd', () => ({ value: host.cwd?.() ?? '/w' }))
   return runs
 }
 
@@ -151,4 +159,39 @@ test('the status line follows the init the agent sets and clears', async ($, on)
   init = { state: 'none', reason: 'No init is set for this session' }
   await $.tool.call({ tool: 'mcp__grind__set-init', init: null } as any)
   expect(shown.at(-1)).toBe('no init')
+})
+
+test('a session claimed from a removed spare directory runs the CLI in its current directory', async ($, on) => {
+  let cwd = '/spare'
+  const runs = recordRuns(on, undefined, undefined, { cwd: () => cwd, cannotStart: run => run.cwd === '/spare' })
+  await $.session.start({ cwd: '/spare', surface: 'terminal', isInteractive: true })
+  cwd = '/w'
+
+  const set = await $.tool.call({ tool: 'mcp__grind__set-init', init: 'demo' } as any)
+  expect(set.result).toBe('This session works on demo.')
+  expect(runs.find(run => run.argv.includes('bind'))?.cwd).toBe('/w')
+})
+
+test('a CLI that cannot start refuses the tool call with its reason', async ($, on) => {
+  recordRuns(on, undefined, undefined, { cannotStart: run => run.argv.includes('bind') })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+
+  const set = await $.tool.call({ tool: 'mcp__grind__set-init', init: 'demo' } as any)
+  expect(set.deny).toMatch(/^grind could not run/)
+})
+
+test('the review watcher moves to the directory the session moved to', async ($, on) => {
+  let cwd = '/spare'
+  const watched: Array<readonly string[]> = []
+  recordRuns(on, undefined, undefined, { cwd: () => cwd, watched })
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.status', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/spare', surface: 'terminal', isInteractive: true })
+  cwd = '/w'
+
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't-1', reason: 'answer' } as any)
+  const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+  for (let tries = 0; watched.length < 2 && tries < 50; tries++) await pause(10)
+  await pause(50)
+  expect(watched.map(argv => argv[argv.indexOf('--cwd') + 1])).toEqual(['/spare', '/w'])
 })
