@@ -15,11 +15,20 @@ it without blocking the user, executes caller assignments when participating, an
    invent constraints or a desired outcome. Name the material to examine, such as
    checkout paths, revisions, PR URLs or files. Participants can read anything
    and run commands, but the shared context holds only the init's records.
-2. Choose the preset the user named, else the configured default. Run
-   `discuss presets --json` when unsure which presets and roles exist. To participate
-   in this chat, add `--caller-file <json>` with an explicit caller role. To define
-   a complete one-run roster, use `--setup-file <json>` instead of a preset or caller
-   file. See the JSON shapes in the discussion reference. Preserve the preset's
+2. For a preset-based discussion, run `discuss presets --json` from the task's
+   workspace to inspect the effective presets and role instructions. Use the
+   user's explicit preset choice. Otherwise choose the available preset whose
+   roles best fit the requested output: `design` for interfaces and tradeoffs,
+   `plan` for execution sequencing and verification, `code-review` for findings
+   about code changes, and `workflow` for improvements to skills or agent workflows.
+   Judge custom presets by their role instructions, not just their names. For
+   mixed tasks, choose by the primary deliverable. If no preset clearly fits, use
+   the configured default. If an explicitly chosen preset is unavailable, report
+   it and ask for a replacement rather than substituting one. Pass the selected
+   name with `--preset` and state it with a brief reason in the start update.
+   To participate in this chat, add `--caller-file <json>` with an explicit caller
+   role. To define a complete one-run roster, use `--setup-file <json>` instead of
+   a preset or caller file. See the JSON shapes in the discussion reference. Preserve the preset's
    writer unless the user wants another; `--writer <id>` explicitly overrides it.
    Ordinary preset starts do not add this chat automatically.
 3. Owning init: pass `--init <id>` when the user named one or this chat is working
