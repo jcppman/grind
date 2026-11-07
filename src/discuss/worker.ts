@@ -3,7 +3,6 @@ import { createWriteStream, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { engineArgs, parseEngineOutput, responseSchema } from './engines.ts';
-import type { CmuxAdapter } from './cmux.ts';
 import { attemptFiles, paths, readRecord, readState, type Assignment, type TurnOutcome, type WorkerRegistration } from './runtime.ts';
 import { readJson, systemProbe, writeJsonAtomic, writeJsonExclusive, type ProcessProbe } from './store.ts';
 
@@ -17,7 +16,6 @@ export interface WorkerOptions {
   generation: number;
   token: string;
   probe?: ProcessProbe;
-  cmux?: CmuxAdapter | null;
   log?: (line: string) => void;
 }
 
@@ -77,12 +75,10 @@ export async function runWorker(options: WorkerOptions): Promise<number> {
     generation: options.generation,
     token: options.token,
     identity,
-    cmux: { workspace: process.env['CMUX_WORKSPACE_ID'] ?? null, surface: process.env['CMUX_SURFACE_ID'] ?? null },
   };
   await writeJsonAtomic(paths.worker(options.dir, options.participant, options.generation), registration);
   const participant = record.config.participants.find((item) => item.id === options.participant);
   const title = `${record.init?.id ?? 'no init'} · ${record.id} · ${options.participant} (${participant?.role ?? '?'}, ${participant?.engine ?? '?'})`;
-  if (options.cmux && registration.cmux.surface) await options.cmux.renameOwnTab(title).catch(() => undefined);
   log(`Grind discussion worker: ${title}`);
   let child: ReturnType<typeof spawn> | null = null;
   let stopping = false;

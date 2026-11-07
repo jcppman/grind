@@ -40,17 +40,9 @@ it without blocking the user, executes caller assignments when participating, an
    to discuss alone never authorizes changing a plan or ledger.
 5. Run `discuss start --brief-file <file> [--preset <name>] [--init <id>|--no-init]
    [--update-plan <file>]... --json`. Give a short progress update: the discussion
-   ID, the owning init, the participants and how the user can follow it (the cmux
-   workspace name, or headless).
-6. Wait and report in this turn by default. Headless describes the presentation;
-   it does not request a background handoff. Use the follow-up options below only
+   ID, the owning init and the participants.
+6. Wait and report in this turn by default. Use the follow-up options below only
    when the user requests background work or the turn cannot continue.
-
-If the result status is `needs_presentation_choice`, cmux is not reachable from
-this process. Explain that the workers can run headless with the same protocol
-and only local logs, and ask. On an explicit choice, run
-`discuss resume <id> --presentation headless --json`. That choice covers the
-whole run; do not ask again. Never choose headless for the user.
 
 ## Wait and report
 
@@ -99,8 +91,8 @@ When the wait returns, report promptly according to `reason`:
   If the runner is interrupted, handle recovery first. A changed caller session
   must use `--handoff` explicitly; it records attribution, not a security boundary.
 - `attention`: report the exact issue from `discussion` and its `nextCommand`:
-  the questions for `needs_input`, the choice for `needs_presentation_choice`, or
-  the error for `needs_recovery` and `interrupted`. Handle it as described below.
+  the questions for `needs_input`, or the error for `needs_recovery` and
+  `interrupted`. Handle it as described below.
 - `timeout`: the discussion is still running; wait again within its remaining
   deadline, or report a deadline/runtime limit that needs judgment. If
   `runnerAlive` is null, report liveness as unknown.

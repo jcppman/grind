@@ -19,13 +19,13 @@ const roles = {
 const pair = { participants: [{ id: 'architect', engine: 'claude', model: 'opus', role: 'architect' }, { id: 'critic', engine: 'codex', model: 'gpt-x', role: 'critic' }], writer: 'architect' };
 const trio = { participants: [...pair.participants, { id: 'operator', engine: 'claude', model: 'sonnet', role: 'operator' }], writer: 'architect' };
 
-async function setup(t: TestContext, options: { cmuxMode?: 'ok' | 'denied'; defaults?: Record<string, unknown> } = {}) {
-  const fakes = await makeFakes(options.cmuxMode === undefined ? {} : { cmuxMode: options.cmuxMode });
+async function setup(t: TestContext, options: { defaults?: Record<string, unknown> } = {}) {
+  const fakes = await makeFakes();
   t.after(async () => {
     await stopAll(fakes);
     await fakes.cleanup();
   });
-  await writePersonalConfig(fakes, { roles, presets: { pair, trio }, defaults: { preset: 'pair', presentation: 'headless', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120, ...options.defaults } });
+  await writePersonalConfig(fakes, { roles, presets: { pair, trio }, defaults: { preset: 'pair', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120, ...options.defaults } });
   const work = path.join(fakes.root, 'work');
   await mkdir(work);
   await writeFile(path.join(work, 'brief.md'), 'Decide the plan.\n');
@@ -114,39 +114,19 @@ test('a question with rounds left waits for user input, then the input resumes t
   assert.equal(result['proposal'].documents[0].target, 'proposal');
 });
 
-test('without cmux the start waits for an explicit presentation choice before launching anyone', darwinOnly, async (t) => {
-  const { fakes, service } = await setup(t, { defaults: { presentation: 'cmux' } });
-  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
-  assert.equal(started.status, 'needs_presentation_choice');
-  assert.match(started.nextCommand, /--presentation headless/);
+test('a discussion left waiting for a presentation choice by an earlier version resumes as a normal start', darwinOnly, async (t) => {
+  const { fakes, service } = await setup(t);
+  const started = await startDiscussion({ ...service, launchRunner: async () => undefined }, { briefFile: 'brief.md', targets: [], noInit: true });
+  const state = JSON.parse(await readFile(paths.state(started.dir), 'utf8'));
+  await writeFile(paths.state(started.dir), JSON.stringify({ ...state, status: 'needs_presentation_choice', generation: 0, presentation: { kind: null, workspace: null, error: 'cmux is unavailable' } }));
+  const waited = await waitDiscussion(service, started.id, { timeoutSeconds: 60 });
+  assert.equal(waited.reason, 'attention');
+  assert.equal(waited.discussion.status, 'needs_recovery');
+  assert.equal(waited.nextCommand, `grind discuss resume ${started.id} --json`);
   assert.equal((await fakes.invocations()).length, 0);
-  await assert.rejects(resumeDiscussion(service, started.id, {}), /Choose a presentation explicitly/);
-  const resumed = await resumeDiscussion(service, started.id, { presentation: 'headless' });
-  assert.equal(resumed.resumed, true);
-  const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
-  assert.equal(done.presentation.kind, 'headless');
-  assert.equal(done.outcome?.kind, 'agreed');
-});
-
-test('cmux presentation opens one labelled workspace with a worker surface per participant and closes it when final', darwinOnly, async (t) => {
-  const { fakes, service } = await setup(t, { cmuxMode: 'ok', defaults: { presentation: 'cmux' } });
-  const started = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
-  assert.equal(started.status, 'running');
+  assert.equal((await resumeDiscussion(service, started.id, {})).resumed, true);
   const done = await waitFor(() => discussionStatus(service, started.id), (value) => value.status === 'completed');
   assert.equal(done.outcome?.kind, 'agreed');
-  const workspace = '00000000-0000-4000-8000-000000000001';
-  assert.equal(done.presentation.workspace, workspace);
-  const calls = await waitFor(() => fakes.cmuxCalls(), (value) => value.some((call) => call.args[0] === 'close-workspace'));
-  assert.deepEqual(calls.filter((call) => call.args[0] === 'close-workspace').map((call) => call.args), [['close-workspace', '--workspace', workspace]]);
-  const pane = calls.find((call) => call.args[0] === 'new-pane')!.args;
-  assert.equal(pane[pane.indexOf('--workspace') + 1], workspace);
-  const opened = calls.filter((call) => call.args[0] === 'new-workspace' || call.args[0] === 'new-pane');
-  assert.deepEqual(opened.map((call) => call.args[0]), ['new-workspace', 'new-pane']);
-  assert.ok(opened.every((call) => /^sh '.*launch-g1\.sh'$/.test(call.args[call.args.indexOf('--command') + 1]!)), 'startup commands stay short');
-  assert.ok(opened.every((call) => call.args[call.args.indexOf('--focus') + 1] === 'false'));
-  const renames = calls.filter((call) => call.args[0] === 'rename-tab');
-  assert.deepEqual(renames.map((call) => call.surface).sort(), ['surface:1', 'surface:2']);
-  assert.ok(renames.some((call) => call.args.at(-1)!.includes('critic (critic, codex)')));
 });
 
 test('stop cancels a running discussion and terminates only its own engine processes', darwinOnly, async (t) => {
@@ -269,7 +249,7 @@ test('wait returns the final result once, and an already-finished discussion ret
   assert.equal(await generation(started.dir), before);
 });
 
-test('wait returns promptly when the discussion needs input or a presentation choice, without resuming it', darwinOnly, async (t) => {
+test('wait returns promptly when the discussion needs input, without resuming it', darwinOnly, async (t) => {
   const { fakes, service } = await setup(t);
   await fakes.setPlan({ participants: { critic: { ratify: 'question_once' } } });
   const asking = await startDiscussion(service, { briefFile: 'brief.md', targets: [], noInit: true });
@@ -284,12 +264,6 @@ test('wait returns promptly when the discussion needs input or a presentation ch
   assert.equal((await waitDiscussion(service, asking.id, { timeoutSeconds: 1 })).reason, 'attention');
   assert.equal((await fakes.invocations()).length, calls);
   assert.equal(await generation(asking.dir), before);
-
-  const { service: cmuxService } = await setup(t, { defaults: { presentation: 'cmux' } });
-  const choosing = await startDiscussion(cmuxService, { briefFile: 'brief.md', targets: [], noInit: true });
-  const choice = await waitDiscussion(cmuxService, choosing.id, { timeoutSeconds: 60 });
-  assert.equal(choice.reason, 'attention');
-  assert.match(choice.nextCommand!, /--presentation headless/);
 });
 
 test('timeout and caller cancellation end only the wait; the discussion keeps its runner and turns', darwinOnly, async (t) => {

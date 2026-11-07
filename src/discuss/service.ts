@@ -9,8 +9,7 @@ import { GrindError } from '../errors.ts';
 import { findWorkspaceConfig, loadWorkspace, type Workspace } from '../workspace.ts';
 import { callerAssignment, callerIdentity } from './caller.ts';
 import { resolveTargets } from './apply.ts';
-import { closeDiscussionWorkspace, systemCmux, type CmuxAdapter } from './cmux.ts';
-import { loadLayeredConfig, resolveEffective, parseSetup, parseSetupParticipant, type Engine, type Overrides, type Presentation, type Setup } from './config.ts';
+import { loadLayeredConfig, resolveEffective, parseSetup, parseSetupParticipant, type Engine, type Overrides, type Setup } from './config.ts';
 import { buildSnapshot, resolveOwningInit, writeSnapshot } from './context.ts';
 import { resolveExecutable, type ResolvedExecutable } from './engines.ts';
 import { cancel, createProtocol, sha256, type UserInput } from './protocol.ts';
@@ -20,14 +19,13 @@ import { appendEvent, discussionDir, ensurePrivateDir, isSameProcess, listDiscus
 import { PARTICIPANT_ENV } from './worker.ts';
 
 const RUNNER_START_GRACE_MS = 30_000;
-const ATTENTION = new Set(['needs_input', 'needs_presentation_choice', 'needs_recovery', 'interrupted']);
+const ATTENTION = new Set(['needs_input', 'needs_recovery', 'interrupted']);
 
 export interface ServiceEnv {
   cwd: string;
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   probe: ProcessProbe;
-  cmux: CmuxAdapter;
   /** Starts the detached runner for a generation. */
   launchRunner(dir: string, generation: number): Promise<void>;
 }
@@ -43,7 +41,6 @@ export function systemServiceEnv(cwd: string, env: NodeJS.ProcessEnv = process.e
     env,
     platform: process.platform,
     probe: systemProbe,
-    cmux: systemCmux(env['GRIND_CMUX'] ?? 'cmux', env),
     launchRunner: async (dir, generation) => {
       const fd = openSync(paths.runnerLog(dir), 'a', 0o600);
       try {
@@ -58,8 +55,7 @@ export function systemServiceEnv(cwd: string, env: NodeJS.ProcessEnv = process.e
 export function systemRunnerDeps(): RunnerDeps {
   return {
     probe: systemProbe,
-    cmux: systemCmux(process.env['GRIND_CMUX'] ?? 'cmux'),
-    launchHeadless: spawnDetachedScript,
+    spawnWorker: spawnDetachedScript,
     rebuildSnapshot: async (record) => {
       const workspace = record.workspace === null ? null : await loadWorkspace({ cwd: record.workspace, workspace: record.workspace });
       return buildSnapshot({ workspace, cwd: record.workspace ?? process.cwd(), init: record.init, targets: record.targets.map((target) => target.path) });
@@ -94,7 +90,6 @@ export interface StartOptions {
   init?: string;
   noInit?: boolean;
   targets: string[];
-  presentation?: Presentation;
   maxRounds?: number;
   workspace?: string;
   linkedFrom?: string;
@@ -120,7 +115,6 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
     ...(caller ? { caller } : {}),
     ...(options.writer === undefined ? {} : { writer: options.writer }),
     ...(options.preset === undefined ? {} : { preset: options.preset }),
-    ...(options.presentation === undefined ? {} : { presentation: options.presentation }),
     ...(options.maxRounds === undefined ? {} : { maxRounds: options.maxRounds }),
   };
   const config = resolveEffective(layered, overrides);
@@ -131,15 +125,6 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
     executables[engine] = await resolveExecutable(engine, config.engines[engine], service.env);
   }
   const snapshot = await buildSnapshot({ workspace, cwd: service.cwd, init, targets: targets.map((target) => target.path) });
-  let presentationKind: Presentation | null = config.presentation;
-  let presentationError: string | null = null;
-  if (config.presentation === 'cmux') {
-    const available = await service.cmux.available();
-    if (!available.ok) {
-      presentationKind = null;
-      presentationError = available.reason;
-    }
-  }
   const id = newDiscussionId();
   const dir = discussionDir(id, service.env);
   await ensurePrivateDir(path.dirname(dir));
@@ -164,10 +149,9 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
   await writeJsonAtomic(paths.record(dir), record);
   await writeSnapshot(dir, snapshot);
   const state: RuntimeState = {
-    status: presentationKind === null ? 'needs_presentation_choice' : 'running',
-    generation: presentationKind === null ? 0 : 1,
+    status: 'running',
+    generation: 1,
     runner: null,
-    presentation: { kind: presentationKind, workspace: null, error: presentationError },
     deadline: null,
     protocol: createProtocol({
       discussionId: id,
@@ -185,12 +169,12 @@ export async function startDiscussion(service: ServiceEnv, options: StartOptions
     drift: [],
     application: null,
     resubmitUncertain: false,
-    error: presentationError === null ? null : `cmux is unavailable (${presentationError}); choose headless explicitly or retry inside cmux`,
+    error: null,
     updatedAt: new Date().toISOString(),
   };
   await writeState(dir, state);
-  await appendEvent(dir, { type: 'created', init: init?.id ?? null, preset: config.preset, presentation: presentationKind, linkedFrom: record.linkedFrom });
-  if (presentationKind !== null) await service.launchRunner(dir, state.generation);
+  await appendEvent(dir, { type: 'created', init: init?.id ?? null, preset: config.preset, linkedFrom: record.linkedFrom });
+  await service.launchRunner(dir, state.generation);
   return summary(record, state, dir);
 }
 
@@ -202,7 +186,6 @@ function summary(record: DiscussionRecord, state: RuntimeState, dir: string, run
     status: interrupted ? 'interrupted' : state.status,
     init: record.init,
     preset: record.config.preset,
-    presentation: state.presentation,
     phase: state.protocol.phase,
     round: state.protocol.round,
     maxRounds: state.protocol.maxRounds,
@@ -213,13 +196,11 @@ function summary(record: DiscussionRecord, state: RuntimeState, dir: string, run
     error: state.error,
     deadline: state.deadline,
     resultAvailable: isFinal(state.status),
-    nextCommand: state.status === 'needs_presentation_choice'
-      ? `grind discuss resume ${record.id} --presentation headless --json`
-      : state.status === 'needs_input'
-        ? `grind discuss input ${record.id} --brief-file <answer.md> --json`
-        : state.status === 'needs_recovery' || interrupted
-          ? `grind discuss resume ${record.id} --json`
-          : isFinal(state.status) ? `grind discuss result ${record.id} --json` : `grind discuss status ${record.id} --json`,
+    nextCommand: state.status === 'needs_input'
+      ? `grind discuss input ${record.id} --brief-file <answer.md> --json`
+      : state.status === 'needs_recovery' || interrupted
+        ? `grind discuss resume ${record.id} --json`
+        : isFinal(state.status) ? `grind discuss result ${record.id} --json` : `grind discuss status ${record.id} --json`,
   };
 }
 
@@ -282,7 +263,7 @@ export interface WaitOptions {
 
 /**
  * Waits without changing anything until the discussion finishes or needs the caller: user input,
- * a presentation choice, recovery, or a confirmed runner exit. Returns `timeout` or
+ * recovery, or a confirmed runner exit. Returns `timeout` or
  * `caller_cancelled` otherwise. Unknown runner liveness keeps waiting and never counts as an exit.
  */
 export async function waitDiscussion(service: ServiceEnv, id: string, options: WaitOptions) {
@@ -356,20 +337,11 @@ async function nextGeneration(service: ServiceEnv, dir: string, update: (state: 
   }, service.probe);
 }
 
-export async function resumeDiscussion(service: ServiceEnv, id: string, options: { presentation?: Presentation; resubmitUncertain?: boolean }) {
+export async function resumeDiscussion(service: ServiceEnv, id: string, options: { resubmitUncertain?: boolean }) {
   assertSupportedPlatform(service.platform);
   const { dir, record, state } = await load(service, id);
   if (isFinal(state.status)) throw new GrindError('DISCUSSION_STATE', `Discussion ${id} is ${state.status}; start a linked discussion instead`);
   if (state.status === 'needs_input') throw new GrindError('DISCUSSION_STATE', `Discussion ${id} is waiting for user input; use discuss input`);
-  if (state.status === 'needs_presentation_choice') {
-    if (options.presentation === undefined) throw new GrindError('USAGE', 'Choose a presentation explicitly with --presentation headless|cmux');
-    if (options.presentation === 'cmux') {
-      const available = await service.cmux.available();
-      if (!available.ok) throw new GrindError('PRESENTATION_UNAVAILABLE', `cmux is unavailable: ${available.reason}`);
-    }
-  } else if (options.presentation !== undefined && options.presentation !== state.presentation.kind) {
-    throw new GrindError('USAGE', 'Presentation is fixed once workers have been launched');
-  }
   if (state.status === 'running' && state.runner && await isSameProcess(state.runner, service.probe)) {
     return { ...summary(record, state, dir, true), resumed: false };
   }
@@ -378,10 +350,9 @@ export async function resumeDiscussion(service: ServiceEnv, id: string, options:
     throw new GrindError('DISCUSSION_STATE', 'Some turns have an uncertain execution. Inspect them with discuss status, then resume with --resubmit-uncertain or stop the discussion', { uncertain: Object.entries(state.turns).filter(([, turn]) => turn.status === 'uncertain').map(([turnId]) => turnId) });
   }
   const next = await nextGeneration(service, dir, (current) => {
-    if (current.status === 'needs_presentation_choice') current.presentation = { kind: options.presentation!, workspace: null, error: null };
     current.resubmitUncertain = Boolean(options.resubmitUncertain);
   });
-  await appendEvent(dir, { type: 'resumed', generation: next.generation, presentation: next.presentation.kind, resubmitUncertain: Boolean(options.resubmitUncertain) });
+  await appendEvent(dir, { type: 'resumed', generation: next.generation, resubmitUncertain: Boolean(options.resubmitUncertain) });
   await service.launchRunner(dir, next.generation);
   return { ...summary(record, next, dir), resumed: true };
 }
@@ -396,7 +367,6 @@ export async function addInput(service: ServiceEnv, id: string, text: string) {
       targets: record.targets.map((target) => target.path),
       ...(record.init === null ? { noInit: true } : { init: record.init.id }),
       ...(record.workspace === null ? {} : { workspace: record.workspace }),
-      ...(state.presentation.kind === null ? {} : { presentation: state.presentation.kind }),
       linkedFrom: record.id,
     });
     return { linked: true, previous: record.id, discussion: linked };
@@ -438,9 +408,6 @@ export async function stopDiscussion(service: ServiceEnv, id: string) {
     return current;
   }, service.probe);
   await appendEvent(dir, { type: 'finished', outcome: final.protocol.outcome });
-  await closeDiscussionWorkspace(service.cmux, final.presentation)
-    .then((closed) => closed ? appendEvent(dir, { type: 'workspace_closed', workspace: final.presentation.workspace }) : undefined)
-    .catch((error: Error) => appendEvent(dir, { type: 'workspace_close_failed', workspace: final.presentation.workspace, error: error.message }));
   return { ...summary(record, final, dir), stopped: true };
 }
 

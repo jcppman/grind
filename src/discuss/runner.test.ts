@@ -23,7 +23,7 @@ interface Harness {
   id: string;
 }
 
-function headless(fakes: Fakes) {
+function spawnWorker(fakes: Fakes) {
   return async (script: string, log: string) => {
     const fd = openSync(log, 'a', 0o600);
     try {
@@ -38,7 +38,7 @@ function headless(fakes: Fakes) {
 async function harness(t: TestContext, plan: Record<string, Record<string, string>> = {}): Promise<Harness> {
   const fakes = await makeFakes();
   t.after(fakes.cleanup);
-  await writePersonalConfig(fakes, { roles, presets: { pair }, defaults: { preset: 'pair', presentation: 'headless', turnTimeoutSeconds: 30, totalTimeoutSeconds: 600 } });
+  await writePersonalConfig(fakes, { roles, presets: { pair }, defaults: { preset: 'pair', turnTimeoutSeconds: 30, totalTimeoutSeconds: 600 } });
   await fakes.setPlan({ participants: plan });
   const work = path.join(fakes.root, 'work');
   await mkdir(work);
@@ -46,7 +46,7 @@ async function harness(t: TestContext, plan: Record<string, Record<string, strin
   await writeFile(path.join(work, 'plan.md'), 'original\n');
   const h = {} as Harness;
   h.fakes = fakes;
-  h.deps = { ...systemRunnerDeps(), launchHeadless: headless(fakes), tickMs: 100, workerStartMs: 20_000 };
+  h.deps = { ...systemRunnerDeps(), spawnWorker: spawnWorker(fakes), tickMs: 100, workerStartMs: 20_000 };
   h.service = { ...systemServiceEnv(work, fakes.env), launchRunner: async (dir, generation) => runRunner(dir, generation, h.deps) };
   const started = await startDiscussion({ ...h.service, launchRunner: async () => undefined }, { briefFile: 'brief.md', targets: ['plan.md'], noInit: true });
   h.dir = started.dir;
@@ -57,7 +57,7 @@ async function harness(t: TestContext, plan: Record<string, Record<string, strin
 
 /** Runs generation 1 until it has persisted turn intents, then leaves it as if the runner died. */
 async function assignWithoutWorkers(h: Harness): Promise<RuntimeState> {
-  await runRunner(h.dir, 1, { ...h.deps, launchHeadless: async () => { throw new Error('simulated crash before any worker started'); } });
+  await runRunner(h.dir, 1, { ...h.deps, spawnWorker: async () => { throw new Error('simulated crash before any worker started'); } });
   const state = (await readState(h.dir))!;
   assert.equal(state.status, 'needs_recovery');
   return state;
@@ -135,14 +135,14 @@ test('a resumed runner stops a stale worker of an earlier generation before sche
   t.after(() => { try { process.kill(stale.pid!, 'SIGKILL'); } catch { /* gone */ } });
   const identity = (await systemProbe.identify(stale.pid!))!;
   const [turnId] = Object.keys(crashed.turns).filter((id) => id.includes('-critic-'));
-  await writeJsonAtomic(paths.worker(h.dir, 'critic', 1), { participant: 'critic', generation: 1, token: 'old', identity, cmux: { workspace: null, surface: null } });
+  await writeJsonAtomic(paths.worker(h.dir, 'critic', 1), { participant: 'critic', generation: 1, token: 'old', identity });
   await writeJsonAtomic(attemptFiles.claim(paths.attempt(h.dir, turnId!, 1)), { token: 'old', identity });
   await resumeDiscussion(h.service, h.id, {});
   assert.equal(await isSameProcess(identity), false, 'the stale worker was terminated');
   assert.equal((await readState(h.dir))!.protocol.outcome?.kind, 'agreed');
 });
 
-test('a worker interrupted mid-turn (closed surface) needs recovery and never falls back to another presentation', darwinOnly, async (t) => {
+test('a worker interrupted mid-turn needs recovery', darwinOnly, async (t) => {
   const h = await harness(t, { critic: { assess: 'hang' } });
   const runner = runRunner(h.dir, 1, h.deps);
   let registration: { identity: { pid: number; started: string } } | null = null;
@@ -161,7 +161,6 @@ test('a worker interrupted mid-turn (closed surface) needs recovery and never fa
   const state = (await readState(h.dir))!;
   assert.equal(state.status, 'needs_recovery');
   assert.match(state.error!, /critic.*uncertain/);
-  assert.equal(state.presentation.kind, 'headless');
 });
 
 test('the total deadline set at first launch survives recovery and ends the discussion unresolved', darwinOnly, async (t) => {

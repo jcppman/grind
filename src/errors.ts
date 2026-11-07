@@ -45,7 +45,6 @@ export type ErrorCode =
   | 'PROCESS_INSPECTION_FAILED'
   | 'DISCUSSION_TARGET_INVALID'
   | 'ENGINE_UNAVAILABLE'
-  | 'PRESENTATION_UNAVAILABLE'
   | 'PARTICIPANT_FORBIDDEN';
 
 export class GrindError extends Error {

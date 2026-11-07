@@ -1,10 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { GrindError } from '../errors.ts';
-import { PRESENTATIONS, type Presentation } from './config.ts';
 import { submitCaller } from './caller.ts';
 import { runWorker } from './worker.ts';
-import { systemCmux } from './cmux.ts';
 import {
   addInput, discussionResult, discussionStatus, listDiscussions, listPresets, resumeDiscussion, runnerMain, startDiscussion, stopDiscussion, validateConfig, waitDiscussion,
   type ServiceEnv,
@@ -20,7 +18,7 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
 
   start --brief-file <file> [--preset <name>] [--init <id> | --no-init]
         [--setup-file <file> | --caller-file <file>] [--writer <id>]
-        [--update-plan <file>]... [--presentation cmux|headless] [--max-rounds <n>]
+        [--update-plan <file>]... [--max-rounds <n>]
                                      start a detached discussion and print its ID
   submit <id> --response-file <file> [--handoff]  submit a caller turn
   status <id>                        progress, phase and what to do next (read-only)
@@ -29,7 +27,7 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
                                      the wait never stops the discussion
   result <id>                        outcome, proposal, decisions and application (read-only)
   input <id> --brief-file <file>     add user input; a finished discussion starts a linked one
-  resume <id> [--presentation headless|cmux] [--resubmit-uncertain]
+  resume <id> [--resubmit-uncertain]
                                      continue an interrupted, recoverable or undecided run
   stop <id>                          cancel; stops only this discussion's workers
   list                               discussions on this machine
@@ -40,7 +38,7 @@ Runtime state is private to this machine under $XDG_STATE_HOME/grind/discussions
 every participant accepted the same candidate and each file still matches its
 starting content. It does not authorize implementation, commits or publication.`;
 
-const VALUE_OPTIONS = ['--setup-file', '--caller-file', '--writer', '--response-file', '--brief-file', '--preset', '--init', '--update-plan', '--presentation', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token', '--timeout'] as const;
+const VALUE_OPTIONS = ['--setup-file', '--caller-file', '--writer', '--response-file', '--brief-file', '--preset', '--init', '--update-plan', '--max-rounds', '--workspace', '--dir', '--generation', '--participant', '--token', '--timeout'] as const;
 const FLAGS = ['--json', '--no-init', '--resubmit-uncertain', '--handoff', '--help', '-h'] as const;
 type ValueOption = (typeof VALUE_OPTIONS)[number];
 
@@ -81,12 +79,6 @@ function id(args: DiscussArgs): string {
   return args.positional[0]!;
 }
 
-function presentation(value: string | undefined): Presentation | undefined {
-  if (value === undefined) return undefined;
-  if (!(PRESENTATIONS as readonly string[]).includes(value)) throw new GrindError('USAGE', '--presentation must be cmux or headless');
-  return value as Presentation;
-}
-
 function integer(value: string | undefined, option: string): number | undefined {
   if (value === undefined) return undefined;
   if (!/^[1-9]\d*$/.test(value)) throw new GrindError('USAGE', `${option} must be a positive integer`);
@@ -98,10 +90,9 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
   if (args.flags.has('--help') || args.flags.has('-h') || args.action === null || args.action === 'help') return { usage: DISCUSS_USAGE };
   switch (args.action) {
     case 'start': {
-      only(args, ['--setup-file', '--caller-file', '--writer', '--brief-file', '--preset', '--init', '--no-init', '--update-plan', '--presentation', '--max-rounds', '--workspace']);
+      only(args, ['--setup-file', '--caller-file', '--writer', '--brief-file', '--preset', '--init', '--no-init', '--update-plan', '--max-rounds', '--workspace']);
       if (args.positional.length > 0) throw new GrindError('USAGE', 'discuss start takes no positional arguments; put the brief in --brief-file');
       const maxRounds = integer(args.values['--max-rounds'], '--max-rounds');
-      const chosen = presentation(args.values['--presentation']);
       return startDiscussion(service, {
         ...(args.values['--brief-file'] === undefined ? {} : { briefFile: args.values['--brief-file'] }),
         ...(args.values['--preset'] === undefined ? {} : { preset: args.values['--preset'] }),
@@ -111,7 +102,6 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
         ...(args.values['--caller-file'] === undefined ? {} : { callerFile: args.values['--caller-file'] }),
         ...(args.values['--writer'] === undefined ? {} : { writer: args.values['--writer'] }),
         targets: args.updatePlan,
-        ...(chosen === undefined ? {} : { presentation: chosen }),
         ...(maxRounds === undefined ? {} : { maxRounds }),
         ...(args.values['--workspace'] === undefined ? {} : { workspace: args.values['--workspace'] }),
       });
@@ -150,9 +140,8 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
       return addInput(service, id(args), await readFile(path.resolve(service.cwd, file), 'utf8'));
     }
     case 'resume': {
-      only(args, ['--presentation', '--resubmit-uncertain']);
-      const chosen = presentation(args.values['--presentation']);
-      return resumeDiscussion(service, id(args), { ...(chosen === undefined ? {} : { presentation: chosen }), resubmitUncertain: args.flags.has('--resubmit-uncertain') });
+      only(args, ['--resubmit-uncertain']);
+      return resumeDiscussion(service, id(args), { resubmitUncertain: args.flags.has('--resubmit-uncertain') });
     }
     case 'stop':
       only(args, []);
@@ -179,7 +168,7 @@ export async function runDiscuss(argv: readonly string[], service: ServiceEnv): 
       const generation = integer(args.values['--generation'], '--generation');
       const { '--dir': dir, '--participant': participant, '--token': token } = args.values;
       if (dir === undefined || participant === undefined || token === undefined || generation === undefined) throw new GrindError('USAGE', 'discuss worker requires --dir, --participant, --generation and --token');
-      await runWorker({ dir, participant, generation, token, cmux: process.env['CMUX_SURFACE_ID'] ? systemCmux(process.env['GRIND_CMUX'] ?? 'cmux') : null });
+      await runWorker({ dir, participant, generation, token });
       return { worked: true };
     }
     default:

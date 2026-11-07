@@ -41,9 +41,17 @@ test('workspace presets replace whole personal presets, defaults merge by field,
   assert.equal(effective.limits.turnTimeoutSeconds, 100);
   assert.equal(effective.limits.maxConcurrent, 2, 'built-in default fills the gap');
   assert.equal(effective.participants[1]!.instructions, 'Critique.');
-  assert.equal(resolveEffective(layered, { maxRounds: 1, presentation: 'headless' }).limits.maxRounds, 1);
-  assert.equal(resolveEffective(layered, { presentation: 'headless' }).presentation, 'headless');
+  assert.equal(resolveEffective(layered, { maxRounds: 1 }).limits.maxRounds, 1);
   assert.equal(resolveEffective(layered, { maxConcurrent: 5 }).limits.maxConcurrent, 2, 'concurrency never exceeds the participant count');
+});
+
+test('a legacy presentation default still loads, and any other value is rejected', async (t) => {
+  for (const presentation of ['cmux', 'headless']) {
+    const { env, workspaceConfigPath } = await fixture(t, { roles, presets: { design: pair }, defaults: { presentation } }, undefined);
+    assert.equal(resolveEffective(await loadLayeredConfig({ workspaceConfigPath, env }), { preset: 'design' }).writer, 'a');
+  }
+  const { env, workspaceConfigPath } = await fixture(t, { roles, presets: { design: pair }, defaults: { presentation: 'tmux' } }, undefined);
+  await assert.rejects(async () => resolveEffective(await loadLayeredConfig({ workspaceConfigPath, env }), { preset: 'design' }), /presentation: is no longer used/);
 });
 
 test('a workspace role replaces the personal role of the same name', async (t) => {

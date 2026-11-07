@@ -194,7 +194,7 @@ test('relocated discuss runs a headless discussion from the copy with fake engin
   await writePersonalConfig(fakes, {
     roles: { a: { instructions: 'Design.' }, b: { instructions: 'Critique.' } },
     presets: { pair: { participants: [{ id: 'a', engine: 'claude', model: 'm', role: 'a' }, { id: 'b', engine: 'codex', model: 'm', role: 'b' }], writer: 'a' } },
-    defaults: { preset: 'pair', presentation: 'headless', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120 },
+    defaults: { preset: 'pair', turnTimeoutSeconds: 60, totalTimeoutSeconds: 120 },
   });
   await writeFile(path.join(temp, 'brief.md'), 'Decide.\n');
   await writeFile(path.join(temp, 'plan.md'), 'original\n');

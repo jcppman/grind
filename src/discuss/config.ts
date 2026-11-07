@@ -6,8 +6,6 @@ import { isRecord } from '../frontmatter.ts';
 
 export const ENGINES = ['claude', 'codex'] as const;
 export type Engine = (typeof ENGINES)[number];
-export const PRESENTATIONS = ['cmux', 'headless'] as const;
-export type Presentation = (typeof PRESENTATIONS)[number];
 export const MAX_PARTICIPANTS = 8;
 
 export interface Limits {
@@ -19,7 +17,6 @@ export interface Limits {
 
 export interface Defaults extends Limits {
   preset: string | null;
-  presentation: Presentation;
 }
 
 export interface Role {
@@ -89,14 +86,13 @@ export interface EffectiveConfig {
   preset: string;
   participants: ResolvedParticipant[];
   writer: string;
-  presentation: Presentation;
   limits: Limits;
   engines: Partial<Record<Engine, EngineSettings>>;
   sources: ConfigSource[];
 }
 
 export const BUILT_IN: DiscussionsConfig = {
-  defaults: { preset: null, presentation: 'cmux', maxRounds: 3, maxConcurrent: 2, turnTimeoutSeconds: 900, totalTimeoutSeconds: 3600 },
+  defaults: { preset: null, maxRounds: 3, maxConcurrent: 2, turnTimeoutSeconds: 900, totalTimeoutSeconds: 3600 },
   roles: {},
   presets: {},
   engines: {},
@@ -133,10 +129,8 @@ function parseDefaults(value: unknown, where: string): Partial<Defaults> {
   onlyKeys(value, DEFAULT_KEYS, where);
   const out: Partial<Defaults> = {};
   if (value['preset'] !== undefined) out.preset = nonEmptyString(value['preset'], `${where}.preset`);
-  if (value['presentation'] !== undefined) {
-    if (!(PRESENTATIONS as readonly unknown[]).includes(value['presentation'])) invalid(`${where}.presentation`, 'must be cmux or headless');
-    out.presentation = value['presentation'] as Presentation;
-  }
+  // `presentation` has no effect; its former values stay valid so older configurations still load.
+  if (value['presentation'] !== undefined && value['presentation'] !== 'cmux' && value['presentation'] !== 'headless') invalid(`${where}.presentation`, 'is no longer used; remove it');
   for (const key of ['maxRounds', 'maxConcurrent', 'turnTimeoutSeconds', 'totalTimeoutSeconds'] as const) {
     if (value[key] !== undefined) out[key] = positiveInteger(value[key], `${where}.${key}`);
   }
@@ -294,7 +288,6 @@ export function resolveEffective(layered: LayeredConfig, overrides: Overrides = 
     preset: presetName,
     participants,
     writer,
-    presentation: defaults.presentation ?? 'cmux',
     limits,
     engines: layered.merged.engines,
     sources: layered.sources,

@@ -48,7 +48,7 @@ async function fixture(t: TestContext, launch = true, options: { totalTimeoutSec
   await writeFile(path.join(work, 'plan.md'), 'original');
   await writeFile(path.join(work, 'setup.json'), JSON.stringify(setup));
   await writeFile(path.join(work, 'caller.json'), JSON.stringify(caller));
-  await writePersonalConfig(fakes, { defaults: { presentation: 'headless', maxConcurrent: 1, turnTimeoutSeconds: options.totalTimeoutSeconds ?? 60, totalTimeoutSeconds: options.totalTimeoutSeconds ?? 120, maxRounds: options.maxRounds ?? 3 }, roles: { critic: { instructions: 'Critique' } }, presets: { pair: { participants: [managed, { ...managed, id: 'other' }].map(({ instructions, ...p }) => p), writer: managed.id } } });
+  await writePersonalConfig(fakes, { defaults: { maxConcurrent: 1, turnTimeoutSeconds: options.totalTimeoutSeconds ?? 60, totalTimeoutSeconds: options.totalTimeoutSeconds ?? 120, maxRounds: options.maxRounds ?? 3 }, roles: { critic: { instructions: 'Critique' } }, presets: { pair: { participants: [managed, { ...managed, id: 'other' }].map(({ instructions, ...p }) => p), writer: managed.id } } });
   const service = systemServiceEnv(work, { ...fakes.env, CODEX_THREAD_ID: 'original' });
   const starter = launch ? service : { ...service, launchRunner: async () => undefined };
   const started = await startDiscussion(starter, { briefFile: 'brief.md', setupFile: 'setup.json', targets: ['plan.md'], noInit: true });
@@ -221,7 +221,7 @@ test('substantive context drift requires caller drafting and ratification agains
   let boundaries = 0;
   const runner = runRunner(h.dir, 1, {
     ...deps, tickMs: 50,
-    launchHeadless: async (script, log) => {
+    spawnWorker: async (script, log) => {
       const fd = openSync(log, 'a', 0o600);
       try { spawn('/bin/sh', [script], { detached: true, stdio: ['ignore', fd, fd], env: h.fakes.env }).unref(); }
       finally { closeSync(fd); }

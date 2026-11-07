@@ -45,7 +45,7 @@ file and field.
 ```json
 {
   "schemaVersion": 1,
-  "defaults": { "preset": "review", "presentation": "cmux", "maxRounds": 3, "maxConcurrent": 3, "turnTimeoutSeconds": 900, "totalTimeoutSeconds": 3600 },
+  "defaults": { "preset": "review", "maxRounds": 3, "maxConcurrent": 3, "turnTimeoutSeconds": 900, "totalTimeoutSeconds": 3600 },
   "roles": {
     "architect": { "instructions": "Develop a concrete design and explain its tradeoffs." },
     "critic": { "instructions": "Find unsupported assumptions, failure cases and simpler alternatives." },
@@ -77,21 +77,18 @@ that was in effect at start; it never records credentials.
 `grind discuss presets --json` shows the effective presets with their sources.
 `grind discuss config validate --json` checks every preset.
 
-## Presentation
+## Workers
 
-With `cmux`, the runner opens one workspace named after the init and discussion,
-with one terminal per managed participant, without taking focus. Each terminal runs the
-Grind worker, which shows that participant's turns. Grind drives every turn; typing
-into a worker terminal does nothing for the protocol. Closing a terminal interrupts
-that worker and leaves the discussion `needs_recovery`. When the discussion reaches
-a final outcome, Grind closes its workspace; the turns stay in `discuss result` and
-the discussion folder. A discussion that waits for input or recovery keeps its
-workspace, because resuming adds its new workers there.
+The runner starts one detached worker process per managed participant. Each worker
+writes a summary of its turns to `participants/<id>/worker-g<generation>.log` in the
+discussion folder, and each turn keeps its full engine output under `turns/`. Workers
+inherit the environment of the process that ran `start` or `resume`, including any
+sandbox it runs in.
 
-cmux only accepts commands from processes started inside cmux. If `start` cannot
-reach it, the discussion waits as `needs_presentation_choice` and launches nothing.
-`resume <id> --presentation headless` is the explicit choice to run the same
-workers with local logs only.
+Earlier versions could open the workers in cmux terminals. A `presentation` default
+in existing configuration is still accepted and has no effect. A discussion that an
+earlier version left waiting for a presentation choice reports `needs_recovery`;
+`resume <id>` starts it.
 
 ## Participants and permissions
 
@@ -132,13 +129,13 @@ settings above are the actual boundary for file writes.
 
 | Command | Purpose |
 |---|---|
-| `start --brief-file <f> [--preset <p>] [--init <id> \| --no-init] [--update-plan <f>]... [--presentation cmux\|headless] [--max-rounds <n>]` | create a discussion and start its detached runner |
+| `start --brief-file <f> [--preset <p>] [--init <id> \| --no-init] [--update-plan <f>]... [--max-rounds <n>]` | create a discussion and start its detached runner |
 | `submit <id> --response-file <f> [--handoff]` | submit a caller response and return its durable receipt |
 | `status <id>` | phase, round, turns, recent events and the next command |
 | `wait <id> [--timeout <seconds>]` | wait until the discussion finishes or needs the caller (default 600 seconds) |
 | `result <id>` | outcome, proposal, decisions, issues, evidence, application |
 | `input <id> --brief-file <f>` | queue user input; on a finished run, start a linked discussion |
-| `resume <id> [--presentation <p>] [--resubmit-uncertain]` | continue an interrupted, recoverable or undecided run |
+| `resume <id> [--resubmit-uncertain]` | continue an interrupted, recoverable or undecided run |
 | `stop <id>` | cancel and stop this discussion's workers |
 | `list`, `presets`, `config validate` | inspect discussions and configuration |
 
@@ -148,8 +145,8 @@ settings above are the actual boundary for file writes.
 
 - `final` with `result` once the stored result and the recorded state agree;
 - `caller_assignment` with a pending caller turn, its instructions and response schema;
-- `attention` with `nextCommand` for `needs_input`, `needs_presentation_choice`,
-  `needs_recovery`, or `interrupted` after a confirmed runner exit;
+- `attention` with `nextCommand` for `needs_input`, `needs_recovery`, or
+  `interrupted` after a confirmed runner exit;
 - `timeout` when `--timeout` ends first, or `caller_cancelled` on `SIGINT` or
   `SIGTERM`.
 
@@ -213,7 +210,7 @@ For a complete roster used only for this run, write a setup file:
 ```
 
 Start with `discuss start --brief-file brief.md --setup-file setup.json` and normal
-init, target, presentation and round options. The saved configuration is unchanged.
+init, target and round options. The saved configuration is unchanged.
 Do not combine `--setup-file` with `--preset` or `--caller-file`.
 
 To join a preset, put only the caller participant object above in `caller.json` and
@@ -239,7 +236,7 @@ returns the original receipt even after ingestion or completion; a conflicting
 response fails. The runner alone writes protocol state and ingests the submission
 once. If the runner stops, resume it normally: pending caller turns and durable
 responses survive, and no caller replacement worker is launched. Caller waiting
-uses no managed concurrency slot, worker, engine session or cmux pane. The original
+uses no managed concurrency slot, worker or engine session. The original
 total deadline still applies across recovery, including time waiting for the caller.
 A caller turn also retains its original `turnTimeoutSeconds` deadline after assignment;
 expiry ends unresolved. Late submissions are rejected.

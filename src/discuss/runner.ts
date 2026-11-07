@@ -6,21 +6,19 @@ import path from 'node:path';
 import { applyCandidate } from './apply.ts';
 import { callerDeadline, type CallerSubmission } from './caller.ts';
 import { composeBrief } from './brief.ts';
-import { closeDiscussionWorkspace, type CmuxAdapter } from './cmux.ts';
 import { compareSnapshots, writeSnapshot, type ContextSnapshot } from './context.ts';
 import { parseEngineOutput } from './engines.ts';
 import { advance, cancel, expire, finish, isTerminal, latestCandidate, pendingTurns, queueInput, recordFailure, recordResponse, sha256, type UserInput } from './protocol.ts';
 import { attemptFiles, paths, readRecord, readState, type Assignment, type DiscussionRecord, type RuntimeState, type TurnOutcome, type WorkerRegistration } from './runtime.ts';
 import { appendEvent, isSameProcess, readJson, terminateOwned, withLock, writeJsonAtomic, type ProcessProbe } from './store.ts';
-import { launchScript, scriptPath, shellQuote } from './worker.ts';
+import { launchScript, scriptPath } from './worker.ts';
 
 const MAX_WORKER_LAUNCHES = 2;
 
 export interface RunnerDeps {
   probe: ProcessProbe;
-  cmux: CmuxAdapter | null;
-  /** Starts a headless worker script detached from the runner, writing its output to `logFile`. */
-  launchHeadless(script: string, logFile: string): Promise<void>;
+  /** Starts a worker script detached from the runner, writing its output to `logFile`. */
+  spawnWorker(script: string, logFile: string): Promise<void>;
   rebuildSnapshot(record: DiscussionRecord): Promise<ContextSnapshot>;
   now(): Date;
   tickMs: number;
@@ -381,7 +379,6 @@ class Runner {
       if (worker && worker.generation === this.generation) {
         const registration = await readJson<WorkerRegistration>(paths.worker(this.dir, participant, this.generation));
         if (registration && registration.token === worker.token && await isSameProcess(registration.identity, this.deps.probe)) {
-          worker.surface ??= registration.cmux.surface;
           continue;
         }
         if (!registration && this.deps.now().getTime() - Date.parse(worker.launchedAt) < this.deps.workerStartMs) continue;
@@ -411,34 +408,17 @@ class Runner {
       env: { CLAUDE_CONFIG_DIR: this.record.claudeConfigDir },
     }), { mode: 0o700 });
     await chmod(script, 0o700);
-    this.state.workers[participant] = { generation: this.generation, token, launchedAt: this.deps.now().toISOString(), surface: null, launches: previousLaunches + 1 };
+    this.state.workers[participant] = { generation: this.generation, token, launchedAt: this.deps.now().toISOString(), launches: previousLaunches + 1 };
     await this.save();
-    const command = `sh ${shellQuote(script)}`;
     try {
-      if (this.state.presentation.kind === 'cmux') {
-        if (this.deps.cmux === null) throw new Error('cmux adapter is unavailable');
-        if (this.state.presentation.workspace === null) {
-          const opened = await this.deps.cmux.openWorkspace({
-            name: `${this.record.init?.id ?? 'discussion'} · ${this.record.id}`,
-            description: this.record.brief.split('\n')[0]!.slice(0, 120),
-            cwd: dir,
-            command,
-          });
-          this.state.presentation.workspace = opened.workspace;
-          this.state.workers[participant]!.surface = opened.surface;
-        } else {
-          this.state.workers[participant]!.surface = (await this.deps.cmux.addPane({ workspace: this.state.presentation.workspace, cwd: dir, command })).surface;
-        }
-      } else {
-        await this.deps.launchHeadless(script, path.join(dir, `worker-g${this.generation}.log`));
-      }
+      await this.deps.spawnWorker(script, path.join(dir, `worker-g${this.generation}.log`));
     } catch (error) {
       this.state.status = 'needs_recovery';
-      this.state.error = `Could not start the ${this.state.presentation.kind} worker for ${participant}: ${(error as Error).message}`;
+      this.state.error = `Could not start the worker for ${participant}: ${(error as Error).message}`;
       await this.event({ type: 'worker_launch_failed', participant, error: (error as Error).message });
       return;
     }
-    await this.event({ type: 'worker_launched', participant, presentation: this.state.presentation.kind, surface: this.state.workers[participant]!.surface });
+    await this.event({ type: 'worker_launched', participant });
   }
 
   /** Stops this discussion's workers and their engines, checking each recorded process identity first. */
@@ -471,9 +451,6 @@ class Runner {
     await writeJsonAtomic(paths.result(this.dir), buildResult(this.record, this.state));
     await this.event({ type: 'finished', outcome: protocol.outcome });
     await this.save();
-    await closeDiscussionWorkspace(this.deps.cmux, this.state.presentation)
-      .then((closed) => closed ? this.event({ type: 'workspace_closed', workspace: this.state.presentation.workspace }) : undefined)
-      .catch((error: Error) => this.event({ type: 'workspace_close_failed', workspace: this.state.presentation.workspace, error: error.message }));
   }
 }
 

@@ -7,7 +7,6 @@ import type { ProtocolState, TurnKind } from './protocol.ts';
 import { readJson, writeJsonAtomic, type ProcessIdentity } from './store.ts';
 
 export type DiscussionStatus =
-  | 'needs_presentation_choice'
   | 'running'
   | 'needs_input'
   | 'needs_recovery'
@@ -49,7 +48,6 @@ export interface WorkerRuntime {
   generation: number;
   token: string;
   launchedAt: string;
-  surface: string | null;
   launches: number;
 }
 
@@ -57,7 +55,6 @@ export interface RuntimeState {
   status: DiscussionStatus;
   generation: number;
   runner: ProcessIdentity | null;
-  presentation: { kind: 'cmux' | 'headless' | null; workspace: string | null; error: string | null };
   deadline: string | null;
   protocol: ProtocolState;
   snapshot: { id: string; manifest: ContextManifest };
@@ -77,7 +74,6 @@ export interface WorkerRegistration {
   generation: number;
   token: string;
   identity: ProcessIdentity;
-  cmux: { workspace: string | null; surface: string | null };
 }
 
 export interface TurnOutcome {
@@ -139,7 +135,13 @@ export async function readRecord(dir: string): Promise<DiscussionRecord | null> 
 }
 
 export async function readState(dir: string): Promise<RuntimeState | null> {
-  return readJson<RuntimeState>(paths.state(dir));
+  const state = await readJson<RuntimeState>(paths.state(dir));
+  // State written by an older version may wait for a presentation choice that no longer exists; it resumes as a normal start.
+  if (state !== null && (state.status as string) === 'needs_presentation_choice') {
+    state.status = 'needs_recovery';
+    state.error = 'Created by an earlier Grind version and never started; resume it to start';
+  }
+  return state;
 }
 
 export async function writeState(dir: string, state: RuntimeState): Promise<void> {

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * Deterministic stand-ins for the Claude and Codex CLIs and for cmux. They
+ * Deterministic stand-ins for the Claude and Codex CLIs. They
  * speak the same output formats the adapters parse, record every invocation,
  * and follow a per-participant behavior plan so tests never call a model.
  */
@@ -52,48 +52,15 @@ if (engine === 'claude') {
 }
 `;
 
-const FAKE_CMUX = String.raw`
-const fs = require('node:fs');
-const { spawn } = require('node:child_process');
-const args = process.argv.slice(2).filter((arg, i, all) => arg !== '--json' && arg !== '--id-format' && all[i - 1] !== '--id-format');
-const log = process.env.FAKE_CMUX_LOG;
-fs.appendFileSync(log, JSON.stringify({ args, surface: process.env.CMUX_SURFACE_ID || null }) + '\n');
-if (process.env.FAKE_CMUX_MODE !== 'ok') { process.stderr.write('Error: ERROR: Access denied - only processes started inside cmux can connect\n'); process.exit(1); }
-const after = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
-const counter = log + '.n';
-const next = () => { const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) + 1 : 1; fs.writeFileSync(counter, String(n)); return n; };
-if (args[0] === 'identify') { console.log(JSON.stringify({ socket_path: 'fake' })); process.exit(0); }
-if (args[0] === 'new-workspace' || args[0] === 'new-pane') {
-  const n = next();
-  const workspace = args[0] === 'new-workspace' ? 'workspace:' + n : after('--workspace');
-  const surface = 'surface:' + n;
-  const out = fs.openSync(log + '.' + surface.replace(':', '-') + '.out', 'a');
-  spawn('/bin/sh', ['-c', after('--command')], { detached: true, stdio: ['ignore', out, out], env: { ...process.env, CMUX_SURFACE_ID: surface, CMUX_WORKSPACE_ID: workspace } }).unref();
-  console.log(JSON.stringify({ workspace_ref: workspace, surface_ref: surface }));
-  process.exit(0);
-}
-if (args[0] === 'list-workspaces') {
-  const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0;
-  console.log(JSON.stringify({ workspaces: Array.from({ length: n }, (_, i) => ({ id: '00000000-0000-4000-8000-' + String(i + 1).padStart(12, '0'), ref: 'workspace:' + (i + 1) })) }));
-  process.exit(0);
-}
-if (args[0] === 'rename-tab' || args[0] === 'close-workspace') { console.log('{}'); process.exit(0); }
-process.stderr.write('unsupported fake cmux command ' + args[0] + '\n');
-process.exit(2);
-`;
-
 export interface Fakes {
   root: string;
   claude: string;
   codex: string;
-  cmux: string;
   plan: string;
   log: string;
-  cmuxLog: string;
   env: NodeJS.ProcessEnv;
   setPlan(plan: { participants?: Record<string, Record<string, string>>; content?: string }): Promise<void>;
   invocations(): Promise<Array<Record<string, unknown>>>;
-  cmuxCalls(): Promise<Array<{ args: string[]; surface: string | null }>>;
   cleanup(): Promise<void>;
 }
 
@@ -103,23 +70,19 @@ async function script(file: string, body: string, env: Record<string, string> = 
   await chmod(file, 0o755);
 }
 
-export async function makeFakes(options: { cmuxMode?: 'ok' | 'denied' } = {}): Promise<Fakes> {
+export async function makeFakes(): Promise<Fakes> {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'grind-discuss-')));
   const bin = path.join(root, 'bin');
   await mkdir(bin);
   const plan = path.join(root, 'plan.json');
   const log = path.join(root, 'invocations.jsonl');
-  const cmuxLog = path.join(root, 'cmux.jsonl');
   const claude = path.join(bin, 'claude');
   const codex = path.join(bin, 'codex');
-  const cmux = path.join(bin, 'cmux');
   await script(claude, FAKE_ENGINE, { FAKE_ENGINE_NAME: 'claude' });
   await script(codex, FAKE_ENGINE, { FAKE_ENGINE_NAME: 'codex' });
-  await script(cmux, FAKE_CMUX);
   await writeFile(log, '');
-  await writeFile(cmuxLog, '');
   const fakes: Fakes = {
-    root, claude, codex, cmux, plan, log, cmuxLog,
+    root, claude, codex, plan, log,
     env: {
       ...process.env,
       HOME: process.env['HOME'] ?? root,
@@ -127,9 +90,6 @@ export async function makeFakes(options: { cmuxMode?: 'ok' | 'denied' } = {}): P
       XDG_STATE_HOME: path.join(root, 'state'),
       XDG_CONFIG_HOME: path.join(root, 'config'),
       FAKE_DISCUSS_PLAN: plan,
-      FAKE_CMUX_LOG: cmuxLog,
-      FAKE_CMUX_MODE: options.cmuxMode ?? 'denied',
-      GRIND_CMUX: cmux,
     },
     async setPlan(value) {
       await writeFile(plan, JSON.stringify({ log, ...value }));
@@ -137,15 +97,10 @@ export async function makeFakes(options: { cmuxMode?: 'ok' | 'denied' } = {}): P
     async invocations() {
       return (await readFile(log, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
     },
-    async cmuxCalls() {
-      return (await readFile(cmuxLog, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line) as { args: string[]; surface: string | null });
-    },
     cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
   };
   delete fakes.env['CLAUDE_CONFIG_DIR'];
   delete fakes.env['GRIND_DISCUSSION_PARTICIPANT'];
-  delete fakes.env['CMUX_SURFACE_ID'];
-  delete fakes.env['CMUX_WORKSPACE_ID'];
   await fakes.setPlan({});
   return fakes;
 }
