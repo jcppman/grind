@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { assertParticipantMayRun, parseDiscussArgs } from './cli.ts';
-import { engineArgs, isCmuxShim, parseEngineOutput } from './engines.ts';
+import { engineArgs, parseEngineOutput } from './engines.ts';
 
 const exec = promisify(execFile);
 
@@ -53,9 +53,6 @@ test('engine arguments sandbox participant writes on first launch and resume', (
   const codexResume = engineArgs({ ...base, engine: 'codex', sessionId: 'thread', resume: true });
   assert.deepEqual(codexResume.slice(0, 3), ['exec', 'resume', 'thread']);
   assert.ok(codexResume.includes('sandbox_mode="workspace-write"') && codexResume.at(-1) === '-');
-  assert.equal(isCmuxShim('/Applications/cmux.app/Contents/Resources/bin/claude'), true);
-  assert.equal(isCmuxShim('/opt/x/cmux-claude-wrapper'), true);
-  assert.equal(isCmuxShim('/Users/me/.local/bin/claude'), false);
 });
 
 test('engine output parsing distinguishes structured answers, errors and interrupted streams', () => {

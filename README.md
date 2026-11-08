@@ -44,7 +44,7 @@ branch to the foreground, keeping staged, unstaged, and untracked changes. Insid
 repository, `grind status` names the init owning the current branch and where the
 repository's other inits live. Review notes from `grind note add` go to the init
 owning the file's branch and are committed with it. Batch reviews of Claude replies
-and Markdown documents stay private to this machine; see [batch reviews](docs/reviews.md).
+stay private to this machine; see [batch reviews](docs/reviews.md).
 
 On macOS, `grind discuss` (skill `/grind:discuss`) runs a bounded discussion between
 configured Codex and Claude CLI agents that sees the owning init's context and

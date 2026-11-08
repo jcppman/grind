@@ -1,9 +1,8 @@
 # Batch reviews
 
-A batch review collects comments on passages of Claude Code replies and Markdown
-documents, keeps them editable, and sends them to one Claude conversation together
+A batch review collects comments on passages of Claude Code replies, keeps them editable, and sends them to one Claude conversation together
 when you choose. `grind review` owns the drafts and the record of each sent batch.
-The [review mod](review-mod.md) and a cmux action call it.
+The [review mod](review-mod.md) calls it.
 
 ## Where review data lives
 
@@ -17,7 +16,7 @@ repository:
 
 The directory holds `drafts/` (one draft per Claude session), `submissions/`
 (frozen batches), `delivery/` (delivery attempts and resolution, kept apart from the
-frozen batch) and `sessions/` (sessions that can receive cmux captures).
+frozen batch) and `sessions/` (live sessions and the init each is bound to).
 
 Consequences:
 

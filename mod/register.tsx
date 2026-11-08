@@ -183,9 +183,8 @@ async function addSelection($: EngineInterface): Promise<string> {
         source: { kind: 'claude-reply', sessionId: session.id, messageId: selected.requestId ?? null },
         quote: selected.text,
       }))
-    : await grind($, ['review', 'capture-cmux', '--session', session.id])
-  if (!result.ok && /CMUX_WORKSPACE_ID/.test(result.message)) return 'Nothing is selected. Select text in the fullscreen transcript, or run Claude Code inside cmux to add document selections.'
-  if (!result.ok && /Nothing is selected/.test(result.message)) return 'Nothing is selected. Without the fullscreen renderer, typing clears the terminal selection; select the text and use the cmux Grind review action instead.'
+    : null
+  if (result === null) return 'Nothing is selected. Select text in the fullscreen transcript (/tui fullscreen), then run /add-to-review.'
   if (!result.ok) return `Not added: ${result.message}`
   void $.ui.open({ id: PANE, title: 'Grind review', rows: 30 })
   return 'Added to the review draft.'

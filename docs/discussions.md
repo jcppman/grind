@@ -69,7 +69,7 @@ Model names are passed to the CLI unchanged and are never substituted. The resul
 records the model Claude reports; Codex does not report one.
 
 `engines` is accepted only in personal configuration. Without it, Grind uses the
-first executable of that name on `PATH`, skipping cmux agent wrappers. Pin the real
+first executable of that name on `PATH`. Pin the real
 CLI when the first one on `PATH` is a wrapper that changes accounts or settings.
 Grind records the resolved path and version, and keeps the `CLAUDE_CONFIG_DIR`
 that was in effect at start; it never records credentials.
@@ -85,7 +85,7 @@ discussion folder, and each turn keeps its full engine output under `turns/`. Wo
 inherit the environment of the process that ran `start` or `resume`, including any
 sandbox it runs in.
 
-Earlier versions could open the workers in cmux terminals. A `presentation` default
+Earlier versions could open the workers in terminal windows. A `presentation` default
 in existing configuration is still accepted and has no effect. A discussion that an
 earlier version left waiting for a presentation choice reports `needs_recovery`;
 `resume <id>` starts it.

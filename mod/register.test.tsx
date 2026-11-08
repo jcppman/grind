@@ -54,7 +54,7 @@ test('a stored prompt row carrying a batch marker records the receipt, and other
   ])
 })
 
-test('add-to-review quotes the transcript selection with its row, and falls back to cmux without one', async ($, on) => {
+test('add-to-review quotes the transcript selection with its row, and asks for a selection without one', async ($, on) => {
   const runs = recordRuns(on)
   let selection: { text: string; requestId?: string } | undefined = { text: 'cache layer', requestId: 'row-7' }
   on('ui.selection', () => ({ value: selection }))
@@ -68,7 +68,7 @@ test('add-to-review quotes the transcript selection with its row, and falls back
 
   selection = undefined
   await $.command.run({ command: 'add-to-review', args: '' } as any)
-  expect(runs.some(run => run.argv.includes('capture-cmux'))).toBe(true)
+  expect(runs.filter(run => run.argv.includes('add'))).toHaveLength(1)
 })
 
 const PANE = {
