@@ -18,6 +18,7 @@ import {
   type OperationRecord,
 } from './operations.ts';
 import { toPosix } from './paths.ts';
+import { removeInitiativeWorktrees, type InitiativeWorktreeRemoval } from './worktree-cleanup.ts';
 import { resolveIdentifier, resolveInitiative } from './resolve.ts';
 import { assertVerification, closeLedger, type CloseInput } from './transitions.ts';
 import { checkedGit, validateForWrite } from './writes.ts';
@@ -28,6 +29,7 @@ export interface CloseOptions {
   result: string;
   notes: 'handled' | 'parked';
   date?: string;
+  removeWorktrees?: boolean;
 }
 
 export interface ArchiveEligibility {
@@ -67,7 +69,20 @@ async function assertInitialIndexClean(workspace: Workspace): Promise<void> {
   }
 }
 
-export async function closeCommand(context: CommandContext, identifier: string | undefined, options: CloseOptions) {
+export async function closeCommand(context: CommandContext, identifier: string | undefined, options: CloseOptions): Promise<Awaited<ReturnType<typeof closeInitiative>> & { worktrees?: InitiativeWorktreeRemoval }> {
+  const closed = await closeInitiative(context, identifier, options);
+  if (options.removeWorktrees !== true) return closed;
+  let worktrees: InitiativeWorktreeRemoval;
+  try {
+    const initiative = await resolveIdentifier(context.workspace, closed.id);
+    worktrees = await removeInitiativeWorktrees(context.workspace, closed.id, initiative);
+  } catch (error) {
+    worktrees = { removed: [], skipped: [{ path: '', branch: null, reasons: [`worktree removal failed: ${(error as Error).message}`] }] };
+  }
+  return { ...closed, worktrees };
+}
+
+async function closeInitiative(context: CommandContext, identifier: string | undefined, options: CloseOptions) {
   if (!options.result.trim()) throw new GrindError('USAGE', 'close requires a nonempty --result');
   const pending = await readPendingOperations(context.workspace);
   if (pending.length > 0) {

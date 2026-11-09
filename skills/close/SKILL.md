@@ -20,9 +20,15 @@ local verification of the current outcome. Automated checks or a request to clos
 do not count as that confirmation.
 
 Resolve the plugin root from this SKILL.md and run
-`node <plugin-root>/scripts/grind.mjs close [initiative] --outcome <delivered|abandoned> --result <location-or-summary> --notes <handled|parked> --json`,
-adding `--workspace <directory>` when needed. Close never commits application code,
-switches branches, or deletes checkouts. If a close operation is pending, retry the
+`node <plugin-root>/scripts/grind.mjs close [initiative] --outcome <delivered|abandoned> --result <location-or-summary> --notes <handled|parked> --remove-worktrees --json`,
+adding `--workspace <directory>` when needed. Close never commits application code
+or switches branches. With `--remove-worktrees` it then removes the init's linked
+worktrees under `.worktrees` only when each is clean (no uncommitted or untracked
+files), has no commits missing from a remote, has no operation in progress, and no
+running process uses it; it never deletes branches or the canonical checkout.
+Report the removed and skipped worktrees from the output, with the skip reasons.
+Leave skipped worktrees alone; do not clean, push, or force-remove them to make
+removal succeed, and omit the flag only when the user asks to keep the worktrees. If a close operation is pending, retry the
 same command after resolving the reported failure so its journal can finish.
 
 After a successful close, when the `mcp__grind__set-init` tool is available and

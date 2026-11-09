@@ -5,8 +5,9 @@ import { createCommand, saveCommand } from './writes.ts';
 import { listCommand, statusCommand } from './commands.ts';
 import { archiveCommand, closeCommand } from './lifecycle-commands.ts';
 import { GrindError, type ErrorCode } from './errors.ts';
-import { formatList, formatNotes, formatRepositoryInitiatives, formatStatus, formatSwitch, formatWorktree } from './format.ts';
+import { formatList, formatNotes, formatPrune, formatRemovedWorktrees, formatRepositoryInitiatives, formatStatus, formatSwitch, formatWorktree } from './format.ts';
 import { addNote, listNotes, resolveNote } from './notes.ts';
+import { pruneWorktreesCommand } from './worktree-cleanup.ts';
 import { repositoryStatus, switchCommand, worktreeCommand } from './worktree.ts';
 import { serveDashboard } from './dashboard.ts';
 import { loadWorkspace } from './workspace.ts';
@@ -24,6 +25,7 @@ const USAGE = `Usage: grind <command> [options]
 Commands:
   create <name>       create an initiative
   worktree <initiative> print where its work lives, creating a worktree if needed
+  worktree prune      remove finished worktrees under <workspace>/.worktrees
   switch [initiative] bring it into this repository's canonical checkout;
                       without an argument, list the inits tracking the repository
   note add <file> <start> [end] <comment|->  record a review note
@@ -56,6 +58,9 @@ Options:
   --result <text>     result location or summary for close
   --notes <value>     handled or parked for close
   --date <YYYY-MM-DD> closure date override
+  --remove-worktrees  close: afterwards remove the init's clean, pushed worktrees
+  --dry-run           worktree prune: list what would be removed, remove nothing
+  --idle-days <N>     worktree prune: treat worktrees idle this long as finished (default 14)
   --remote            read PR facts as jcppman (inspect only; no fetch)
   --json              emit one JSON envelope on stdout
   --help              show this help
@@ -64,7 +69,9 @@ The canonical checkout of a repository belongs to the user; agents work in
 worktrees under <workspace>/.worktrees. Switch saves uncommitted work in labelled
 stashes and restores it on the other side. Close persists an outcome and archive
 moves eligible history after its retention period. Create writes templates; save
-stamps updated_at and commits a prepared checkpoint.`;
+stamps updated_at and commits a prepared checkpoint. Worktree removal never deletes
+dirty or unpushed worktrees, worktrees in use by a process, or branches; prune also
+skips branches owned by open inits.`;
 
 export interface ParsedArgs {
   command: string | null;
@@ -75,6 +82,9 @@ export interface ParsedArgs {
   open: boolean;
   closed: boolean;
   force: boolean;
+  removeWorktrees?: boolean;
+  dryRun?: boolean;
+  idleDays?: number;
   workspace?: string;
   repo?: string;
   init?: string;
@@ -97,7 +107,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     else if (arg === '--open') parsed.open = true;
     else if (arg === '--closed') parsed.closed = true;
     else if (arg === '--force') parsed.force = true;
-    else if (arg === '--workspace') {
+    else if (arg === '--remove-worktrees') parsed.removeWorktrees = true;
+    else if (arg === '--dry-run') parsed.dryRun = true;
+    else if (arg === '--idle-days') {
+      const value = argv[++i];
+      if (value === undefined || !/^\d+$/.test(value)) throw new GrindError('USAGE', '--idle-days requires a non-negative integer');
+      parsed.idleDays = Number(value);
+    } else if (arg === '--workspace') {
       const value = argv[i + 1];
       if (value === undefined) throw new GrindError('USAGE', '--workspace requires a directory');
       parsed.workspace = value;
@@ -161,6 +177,10 @@ export async function run(argv: readonly string[]): Promise<number> {
       if (args[option] !== undefined && args[option] !== false && args.command !== command) throw new GrindError('USAGE', `--${option} is only supported by ${command}`);
     }
     if (args.command === 'worktree' && args.positional.length !== 1) throw new GrindError('USAGE', 'worktree requires an initiative');
+    const pruning = args.command === 'worktree' && args.positional[0] === 'prune';
+    if (args.removeWorktrees === true && args.command !== 'close') throw new GrindError('USAGE', '--remove-worktrees is only supported by close');
+    if ((args.dryRun !== undefined || args.idleDays !== undefined) && !pruning) throw new GrindError('USAGE', '--dry-run and --idle-days are only supported by worktree prune');
+    if (pruning && args.repo !== undefined) throw new GrindError('USAGE', 'worktree prune does not take --repo');
     if (args.remote && args.command !== 'inspect') throw new GrindError('USAGE', '--remote is only supported by inspect');
     if ((args.open || args.closed) && !['list', 'inspect'].includes(args.command)) throw new GrindError('USAGE', '--open and --closed are only supported by list or inspect');
     if (args.open && args.closed) throw new GrindError('USAGE', '--open and --closed cannot be combined');
@@ -188,6 +208,9 @@ export async function run(argv: readonly string[]): Promise<number> {
     } else if (args.command === 'create') {
       const result = await createCommand(context, identifier!, args.scope);
       emit(json, { ok: true, data: result }, `Created ${result.id} at ${result.dir}`);
+    } else if (pruning) {
+      const result = await pruneWorktreesCommand(workspace, { dryRun: args.dryRun === true, ...(args.idleDays === undefined ? {} : { idleDays: args.idleDays }) });
+      emit(json, { ok: true, data: result }, formatPrune(result));
     } else if (args.command === 'worktree') {
       const result = await worktreeCommand(context, identifier!, args.repo === undefined ? {} : { repository: args.repo });
       emit(json, { ok: true, data: result }, result.path);
@@ -207,8 +230,9 @@ export async function run(argv: readonly string[]): Promise<number> {
       const result = await saveCommand(context, identifier, args.message!);
       emit(json, { ok: true, data: result }, result.saved ? `Saved ${result.id}: ${result.commit}` : `${result.id}: nothing to save`);
     } else if (args.command === 'close') {
-      const result = await closeCommand(context, identifier, { outcome: args.outcome as 'delivered' | 'abandoned', result: args.result!, notes: args.notes as 'handled' | 'parked', ...(args.date === undefined ? {} : { date: args.date }) });
-      emit(json, { ok: true, data: result }, `Closed ${result.id}: ${result.commit ?? 'already committed'}`);
+      const result = await closeCommand(context, identifier, { outcome: args.outcome as 'delivered' | 'abandoned', result: args.result!, notes: args.notes as 'handled' | 'parked', ...(args.date === undefined ? {} : { date: args.date }), ...(args.removeWorktrees === true ? { removeWorktrees: true } : {}) });
+      const removal = result.worktrees === undefined ? '' : `\n${formatRemovedWorktrees(result.worktrees)}`;
+      emit(json, { ok: true, data: result }, `Closed ${result.id}: ${result.commit ?? 'already committed'}${removal}`);
     } else if (args.command === 'archive') {
       const result = await archiveCommand(context, identifier);
       emit(json, { ok: true, data: result }, `Archived ${result.id} as ${result.archivedId}`);

@@ -46,6 +46,15 @@ repository's other inits live. Review notes from `grind note add` go to the init
 owning the file's branch and are committed with it. Batch reviews of Claude replies
 and Markdown documents stay private to this machine; see [batch reviews](docs/reviews.md).
 
+Worktrees accumulate under `.worktrees`. `grind close ... --remove-worktrees` removes
+the closed init's linked worktrees after the close, and `grind worktree prune
+[--dry-run] [--idle-days N]` removes finished worktrees that no open init owns
+(merged into the default branch, upstream deleted, or idle for N days, default 14).
+Both remove a worktree only when it is under `.worktrees`, has no uncommitted or
+untracked files and no commits missing from a remote, has no merge or rebase in
+progress, and no running process has its working directory inside it (checked with
+`lsof`). Branches are never deleted.
+
 On macOS, `grind discuss` (skill `/grind:discuss`) runs a bounded discussion between
 configured Codex and Claude CLI agents that sees the owning init's context and
 applies a plan change only when every participant accepts the same revision; see

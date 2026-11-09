@@ -76,7 +76,7 @@ Use the [close workflow](../close/SKILL.md) for outcomes verified complete when
 closure is in scope. Preserve unresolved limitations and transfer legitimate
 follow-ups to an existing or authorized new owner without weakening completion
 criteria. Lack of activity is not abandonment; closing abandoned work requires a
-user decision. Do not archive, delete worktrees, switch branches, implement product
+user decision. Do not archive, switch branches, implement product
 fixes, merge PRs, or publish releases merely to make records look complete.
 
 Review initiative assets before closure. Retire obsolete execution instructions
@@ -84,6 +84,16 @@ and ad hoc helpers only after preserving useful decisions and evidence. Keep dat
 Reference documents intact and do not rewrite historical evidence as a current
 claim. Correct malformed tracking from observed checkout facts without assigning
 unrelated current branches or changing checkout ownership.
+
+## Reclaim worktree space
+
+Run `node <plugin-root>/scripts/grind.mjs worktree prune --dry-run --json` (add
+`--idle-days <N>`; the default is 14). It lists worktrees under `.worktrees` that are
+clean, fully pushed, not in use, not on a branch of an open init, and either merged
+(or with a deleted upstream) or idle. Report each candidate's reason and size and the
+reclaimable total. Run `grind worktree prune` without `--dry-run` only after the user
+confirms the listed candidates; never remove other worktrees, and do not delete
+branches.
 
 ## Verify and hand off
 

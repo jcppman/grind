@@ -1,3 +1,4 @@
+import type { InitiativeWorktreeRemoval, PruneResult } from './worktree-cleanup.ts';
 import type { CheckoutKind } from './checkouts.ts';
 import type { ListResult, StatusResult } from './commands.ts';
 import type { Diagnostic } from './errors.ts';
@@ -243,4 +244,24 @@ export function formatNotes(result: { initiative: string; notes: ListedNote[] })
       note.body,
     ]),
   ].join('\n');
+}
+
+function mb(kb: number): string {
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+export function formatRemovedWorktrees(result: InitiativeWorktreeRemoval): string {
+  const lines = result.removed.map((item) => `Removed worktree ${item.path} (${item.branch})`);
+  lines.push(...result.skipped.map((item) => `Kept worktree ${item.path === '' ? '' : `${item.path} `}(${item.branch ?? 'detached'}): ${item.reasons.join('; ')}`));
+  return lines.length === 0 ? 'No linked worktrees to remove.' : lines.join('\n');
+}
+
+export function formatPrune(result: PruneResult): string {
+  const lines = result.candidates.map((item) => `${result.dryRun ? 'Would remove' : 'Candidate'} ${item.path} (${item.branch ?? 'detached'}, ${mb(item.sizeKb)}): ${item.reason}`);
+  lines.push(...result.failed.map((item) => `Failed to remove ${item.path}: ${item.reasons.join('; ')}`));
+  lines.push(...result.skipped.map((item) => `Kept ${item.path} (${item.branch ?? 'detached'}): ${item.reasons.join('; ')}`));
+  lines.push(result.dryRun
+    ? `${result.candidates.length} worktree(s) reclaimable, ${mb(result.totalKb)} in total (dry run; nothing removed).`
+    : `Removed ${result.removed.length} of ${result.candidates.length} worktree(s), reclaimed ${mb(result.reclaimedKb)}.`);
+  return lines.join('\n');
 }
