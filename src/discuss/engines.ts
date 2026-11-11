@@ -31,11 +31,6 @@ export interface ResolvedExecutable {
   version: string;
 }
 
-/** cmux puts agent wrappers on PATH inside its terminals; participants must never resolve to one by accident. */
-export function isCmuxShim(file: string): boolean {
-  return /\.app\/Contents\/Resources\/bin\//.test(file) || /cmux-[a-z-]+-wrapper$/.test(file);
-}
-
 export async function resolveExecutable(engine: Engine, settings: EngineSettings | undefined, env: NodeJS.ProcessEnv = process.env): Promise<ResolvedExecutable> {
   let candidate: string | null = null;
   let source: ResolvedExecutable['source'] = 'path';
@@ -50,8 +45,6 @@ export async function resolveExecutable(engine: Engine, settings: EngineSettings
       } catch {
         continue;
       }
-      const real = await realpath(file).catch(() => file);
-      if (isCmuxShim(file) || isCmuxShim(real)) continue;
       candidate = file;
       break;
     }
@@ -64,7 +57,6 @@ export async function resolveExecutable(engine: Engine, settings: EngineSettings
   } catch {
     throw new GrindError('ENGINE_UNAVAILABLE', `${engine} executable ${candidate} is not executable`);
   }
-  if (isCmuxShim(realPath)) throw new GrindError('ENGINE_UNAVAILABLE', `${candidate} resolves to a cmux wrapper; set engines.${engine}.executable to the real CLI`);
   let version: string;
   try {
     version = (await exec(realPath, ['--version'], { timeout: 15_000, env })).stdout.trim();

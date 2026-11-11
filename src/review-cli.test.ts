@@ -39,7 +39,7 @@ test('a session drafts, submits and delivers one batch; the init sees a referenc
 
   const unbound = await grind(env, app, ['review', 'add', '--session', 'sess-0'], JSON.stringify({ source: { ...source, sessionId: 'sess-0' }, quote: 'x' }));
   assert.deepEqual(unbound.json.data.draft.association, { workspace: ws.root, initiative: null, source: 'none' });
-  await registerSession({ root: home }, { sessionId: 'sess-1', cwd: app, workspace: ws.root, cmux: { workspaceId: null, surfaceId: null }, pid: process.pid, host: os.hostname() });
+  await registerSession({ root: home }, { sessionId: 'sess-1', cwd: app, workspace: ws.root, pid: process.pid, host: os.hostname() });
   assert.equal((await grind(env, app, ['review', 'bind', '--session', 'sess-1', '--init', 'alpha', '--by', 'robot'])).json.error?.code, 'USAGE');
   assert.equal((await grind(env, app, ['review', 'bind', '--session', 'sess-1', '--init', 'alp', '--by', 'agent'])).code, 0);
   const current = await grind(env, app, ['review', 'current', '--session', 'sess-1']);
@@ -84,12 +84,12 @@ test('a session drafts, submits and delivers one batch; the init sees a referenc
 test('watch registers the session and streams a snapshot after another process changes the draft', async (t) => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'grind-review-watch-'));
   t.after(() => rm(home, { recursive: true, force: true }));
-  const env = { ...process.env, GRIND_REVIEW_HOME: home, CMUX_WORKSPACE_ID: 'W1', CMUX_SURFACE_ID: 'S1' };
+  const env = { ...process.env, GRIND_REVIEW_HOME: home };
   const child = spawn(process.execPath, [CLI, 'review', 'watch', '--session', 'sess-w', '--json'], { cwd: home, env });
   t.after(() => child.kill());
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const first = JSON.parse((await lines.next()).value);
-  assert.deepEqual([first.type, first.draft, first.registration.cmux], ['snapshot', null, { workspaceId: 'W1', surfaceId: 'S1' }]);
+  assert.deepEqual([first.type, first.draft, first.registration.sessionId], ['snapshot', null, 'sess-w']);
 
   const sessions = await grind({ GRIND_REVIEW_HOME: home }, home, ['review', 'sessions']);
   assert.deepEqual(sessions.json.data.map((session: { sessionId: string }) => session.sessionId), ['sess-w']);

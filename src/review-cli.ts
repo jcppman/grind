@@ -13,12 +13,11 @@ import {
 } from './review-store.ts';
 import { reconcileBatch } from './review-transcript.ts';
 import { loadWorkspace } from './workspace.ts';
-import { captureFromCmux } from './review-capture.ts';
 
 export const REVIEW_USAGE = `Usage: grind review <action> [options] --json
 
 Drafts are private to this machine and never enter initiative records. The
-Claude Code mod drives these actions; cmux shortcuts use capture-cmux.
+Claude Code mod drives these actions.
 
   current --session <id> [--cwd <dir>]        the init the session concerns
   show --session <id>                         the session's draft and recent batches
@@ -37,7 +36,6 @@ Claude Code mod drives these actions; cmux shortcuts use capture-cmux.
   show-batch <batch> [--prompt]               a frozen batch, or its full prompt text
   resolve <batch> [--note <text>]             record that the feedback was addressed
   watch --session <id> [--cwd <dir>]          register the session and stream JSON lines
-  capture-cmux [--session <id>] [--comment <text>]  add the focused cmux selection
   sessions                                    registered live sessions`;
 
 const VALUE_OPTIONS = ['--session', '--cwd', '--expect-revision', '--comment', '--init', '--draft', '--revision', '--batch', '--attempt', '--status', '--row', '--reason', '--transcript', '--note', '--workspace', '--by'] as const;
@@ -215,11 +213,6 @@ export async function runReview(argv: readonly string[], cwd: string, emitLine: 
     }
     case 'sessions':
       return liveSessions(store);
-    case 'capture-cmux':
-      return captureFromCmux(store, {
-        ...(args.values['--session'] ? { sessionId: session() } : {}),
-        ...(args.values['--comment'] ? { body: args.values['--comment'] } : {}),
-      });
     case 'watch':
       return watchSession(store, session(), sessionCwd, emitLine);
     default:
@@ -261,7 +254,6 @@ async function watchSession(store: ReviewStore, sessionId: string, cwd: string, 
     sessionId,
     cwd,
     workspace: current.workspace,
-    cmux: { workspaceId: process.env['CMUX_WORKSPACE_ID'] ?? null, surfaceId: process.env['CMUX_SURFACE_ID'] ?? null },
     pid: process.pid,
     host: os.hostname(),
   });

@@ -118,7 +118,7 @@ test('a discussion left waiting for a presentation choice by an earlier version 
   const { fakes, service } = await setup(t);
   const started = await startDiscussion({ ...service, launchRunner: async () => undefined }, { briefFile: 'brief.md', targets: [], noInit: true });
   const state = JSON.parse(await readFile(paths.state(started.dir), 'utf8'));
-  await writeFile(paths.state(started.dir), JSON.stringify({ ...state, status: 'needs_presentation_choice', generation: 0, presentation: { kind: null, workspace: null, error: 'cmux is unavailable' } }));
+  await writeFile(paths.state(started.dir), JSON.stringify({ ...state, status: 'needs_presentation_choice', generation: 0, presentation: { kind: null, workspace: null, error: 'unavailable' } }));
   const waited = await waitDiscussion(service, started.id, { timeoutSeconds: 60 });
   assert.equal(waited.reason, 'attention');
   assert.equal(waited.discussion.status, 'needs_recovery');

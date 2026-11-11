@@ -102,7 +102,6 @@ export interface SessionRegistration {
   sessionId: string;
   cwd: string;
   workspace: string | null;
-  cmux: { workspaceId: string | null; surfaceId: string | null };
   /** The registering watcher process; a registration whose process is gone is stale. */
   pid: number;
   host: string;
