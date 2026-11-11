@@ -1,0 +1,47 @@
+import type { Engine, EngineSettings } from './config.ts';
+import type { TurnKind } from './protocol.ts';
+export declare const CLAUDE_PARTICIPANT_TOOLS = "Read,Grep,Glob,Bash,WebFetch,WebSearch";
+export declare const CLAUDE_PARTICIPANT_SETTINGS: {
+    sandbox: {
+        enabled: boolean;
+        failIfUnavailable: boolean;
+        autoAllowBashIfSandboxed: boolean;
+        allowUnsandboxedCommands: boolean;
+        network: {
+            allowedDomains: string[];
+            allowMachLookup: string[];
+        };
+    };
+};
+export interface ResolvedExecutable {
+    engine: Engine;
+    /** How the path was chosen; personal settings are the only way to name a specific file. */
+    source: 'personal' | 'path';
+    path: string;
+    realPath: string;
+    version: string;
+}
+export declare function resolveExecutable(engine: Engine, settings: EngineSettings | undefined, env?: NodeJS.ProcessEnv): Promise<ResolvedExecutable>;
+export interface EngineInvocation {
+    engine: Engine;
+    model: string;
+    sessionId: string | null;
+    resume: boolean;
+    cwd: string;
+    schema: object;
+    schemaFile: string;
+    lastMessageFile: string;
+}
+/** The working directory must be participant scratch space; the sandbox permits writes there. */
+export declare function engineArgs(invocation: EngineInvocation): string[];
+export interface EngineEvents {
+    sessionId: string | null;
+    model: string | null;
+    /** The structured final answer, or null when the engine produced none. */
+    output: unknown;
+    error: string | null;
+}
+/** Interprets the JSON-lines stream an engine wrote to stdout, plus Codex's last-message file. */
+export declare function parseEngineOutput(engine: Engine, stdout: string, lastMessage: string | null): EngineEvents;
+/** Output schema for a turn; strict enough for Codex, which requires every property to be listed as required. */
+export declare function responseSchema(kind: TurnKind): object;
